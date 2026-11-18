@@ -142,9 +142,28 @@ try {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
+  const root = page.locator('html');
+  // Check what a player sees while the game module is still loading.
+  await page.route('**/js/app.js', route => route.fulfill({ contentType: 'text/javascript', body: '' }));
   await page.goto(url.href, { waitUntil: 'domcontentloaded' });
+  assert.equal(await root.getAttribute('data-theme'), 'black', 'First visit opens in black');
+  assert.equal(await page.locator('body').evaluate(body => getComputedStyle(body).backgroundColor), 'rgb(0, 0, 0)');
+  assert.equal(await page.locator('meta[name="theme-color"]').getAttribute('content'), '#000000');
+  for (const [stored, expected] of [['green', 'green'], ['retired-theme', 'black']]) {
+    await page.evaluate(theme => localStorage.setItem('foodradar.preferences.v1', JSON.stringify({ theme })), stored);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    assert.equal(await root.getAttribute('data-theme'), expected, 'Opening frame for saved theme ' + stored);
+  }
+  await page.unroute('**/js/app.js');
+  await page.reload({ waitUntil: 'domcontentloaded' });
   const firstRow = page.locator('#venue-list [data-point]').first();
   await firstRow.waitFor();
+  assert.equal(await root.getAttribute('data-theme'), 'black', 'Unknown preferences use black in the running game');
+  await page.evaluate(() => localStorage.removeItem('foodradar.preferences.v1'));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await firstRow.waitFor();
+  assert.equal(await root.getAttribute('data-theme'), 'black', 'A player with no saved choice starts in black');
+  console.log('PASS Black first frame, saved green preference and black fallback for unknown themes');
   const themeButton = page.locator('#theme-btn');
   assert.ok(await themeButton.isVisible(), 'Theme selector is visible on a phone');
   const bounds = await themeButton.boundingBox();

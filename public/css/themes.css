@@ -1,4 +1,4 @@
-/* The first palette also paints the initial frame before preferences are read. */
+/* Shared tokens and the green palette. The selected theme overrides these below. */
 :root {
   color-scheme: dark;
   --bg: #072d23;
@@ -142,8 +142,8 @@
 }
 
 :root:is([data-theme='black'], [data-theme='white']) {
-  --action: var(--brand-color, #ff6400);
-  --action-ink: var(--brand-ink, #120800);
+  --action: var(--brand-color, var(--theme-type));
+  --action-ink: var(--brand-ink, var(--bg));
   --accent-type: var(--brand-readable, var(--theme-type));
   --secondary-accent: var(--muted);
   --selection: var(--raised);
@@ -171,7 +171,7 @@
   --strong-line: #858585;
   --text: #fff;
   --muted: #bfbfbf;
-  --theme-type: #ff985b;
+  --theme-type: #f4f4f4;
   --map-ground: #101010;
   --pin-ground: #080808;
   --atlas-filter: grayscale(1) brightness(.83) contrast(1.19);
@@ -191,7 +191,7 @@
   --strong-line: #737373;
   --text: #121212;
   --muted: #505050;
-  --theme-type: #a03600;
+  --theme-type: #141414;
   --map-ground: #f0f0f0;
   --pin-ground: #fff;
   --atlas-filter: grayscale(1) invert(1) brightness(1.06) contrast(1.07);
