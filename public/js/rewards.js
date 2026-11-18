@@ -1,0 +1,65 @@
+import { brands, esc, icon, rarityNames } from './ui.js';
+
+const REEL_SIZE = 17;
+const WINNING_INDEX = 14;
+
+function banner(brand, label) {
+  const mark = Object.hasOwn(brands, brand) ? icon(brand, 20) : icon('collection', 20);
+  return `<header class="find-banner"><span class="find-brand-symbol">${mark}</span>
+    <span>${esc(label)}</span></header>`;
+}
+
+export function reelMarkup(pool, winningCard, brandName) {
+  const items = pool.length ? pool : [winningCard];
+  const pictures = Array.from({ length: REEL_SIZE }, (_, index) => {
+    const card = index === WINNING_INDEX ? winningCard : items[index % items.length];
+    return `<img src="${esc(card.image)}" width="82" height="80" alt="" decoding="async" draggable="false">`;
+  }).join('');
+
+  return `<section class="find-sheet find-reel" aria-labelledby="find-reel-title">
+    ${banner(winningCard.brand, brandName)}
+    <div class="find-reel-content">
+      <h2 id="find-reel-title">Рулетка находок</h2>
+      <div class="find-track" aria-hidden="true">
+        <div class="roulette"><div class="reel-strip">${pictures}</div></div>
+      </div>
+      <p class="find-spin-status" role="status">${icon('spark', 17)} Открываем находку…</p>
+    </div>
+  </section>`;
+}
+
+function stat(label, value) {
+  return `<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`;
+}
+
+export function rewardMarkup(result) {
+  const { card } = result;
+  const brand = brands[card.brand]?.name ?? card.brand;
+  const rarity = rarityNames[card.rarity] ?? card.rarity;
+  const health = card.maxHp ?? card.hp;
+  const extra = result.isNew ? '' : result.leveledUp ? ' Повторная карта повысила уровень бойца.' : ' Повторная карта пошла на развитие бойца.';
+  const xp = result.routeCompleted ? 'с бонусом за маршрут дня' : 'за посещение';
+  return `<article class="find-sheet find-card" aria-labelledby="find-card-title">
+    ${banner(card.brand, brand)}
+    <div class="find-stage">
+      <div class="find-art"><img src="${esc(card.image)}" alt="${esc(card.name)}" decoding="async" draggable="false"></div>
+      <div class="find-stage-copy">
+        <span class="find-rarity">${icon('star', 14)} ${esc(rarity)} карта</span>
+        <h2 id="find-card-title">${esc(card.name)}</h2>
+        ${card.role ? '<span class="find-class">' + esc(card.role) + '</span>' : ''}
+      </div>
+    </div>
+    <div class="find-body">
+      <div class="find-outcome">${icon('collection', 17)}<strong>${result.isNew ? 'Новый боец в коллекции' : 'Повторная находка'}</strong></div>
+      <dl class="find-stats" aria-label="Характеристики бойца">
+        ${stat('Атака', card.attack)}${stat('Здоровье', health)}${stat('Уровень', card.level)}
+      </dl>
+      <p class="find-effect">Фирменный удар наносит ${esc(card.attack + 3)} урона сквозь защиту и расходует две энергии.${extra}</p>
+      <p class="find-xp">${icon(result.routeCompleted ? 'route' : 'spark', 16)}<span><strong>+${esc(result.playerXp)} опыта</strong> ${xp}</span></p>
+      <div class="find-actions">
+        <button type="button" class="primary" data-training="${esc(card.id)}">${icon('battle', 18)} В первый бой</button>
+        <button type="button" class="outline-btn" data-open="collection">К коллекции</button>
+      </div>
+    </div>
+  </article>`;
+}

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ru" data-theme="green" data-accent-brand="none">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#10372d" />
+    <script>
+      try {
+        const theme = JSON.parse(localStorage.getItem('foodradar.preferences.v1'))?.theme;
+        if (typeof theme === 'string') document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
+    <meta
+      name="description"
+      content="Фудрадар — городская игра. Ищи рестораны, собирай бойцов из меню и вызывай друзей на дуэль."
+    />
+    <title>Фудрадар · Радар заведений</title>
+    <link rel="icon" href="media/signal.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="css/main.css" />
+    <link rel="stylesheet" href="css/duel.css" />
+    <link rel="stylesheet" href="css/themes.css" />
+    <link rel="stylesheet" href="css/rewards.css" />
+    <script defer src="vendor/leaflet/leaflet.js"></script>
+    <script type="module" src="js/app.js"></script>
+  </head>
+  <body>
+    <a href="#main" class="skip">К содержимому</a>
+    <header class="topbar">
+      <div class="top-inner">
+        <button type="button" class="brand-word" data-nav="radar" aria-label="Фудрадар, на главную">
+          <span class="word-logo" aria-hidden="true"><i data-icon="radar"></i></span
+          ><span>Фудрадар</span>
+        </button>
+        <nav class="main-nav" aria-label="Разделы игры">
+          <button type="button" data-nav="radar" aria-current="page">
+            <i data-icon="radar"></i>Радар
+          </button>
+          <button type="button" data-nav="collection">
+            <i data-icon="collection"></i>Коллекция
+          </button>
+          <button type="button" data-nav="arena"><i data-icon="battle"></i>Арена</button>
+        </nav>
+        <div class="top-actions">
+          <button
+            type="button"
+            class="theme-switch"
+            id="theme-btn"
+            aria-haspopup="dialog"
+            aria-label="Выбрать оформление"
+            title="Оформление"
+          >
+            <i data-icon="palette"></i><span>Оформление</span>
+          </button>
+          <button type="button" class="level-button" id="profile-btn" aria-label="Открыть профиль">
+            <span class="level-icon" data-icon="star"></span><span id="level-label">Ур. 1</span>
+          </button>
+        </div>
+      </div>
+    </header>
+    <main class="shell" id="main">
+      <section id="radar-view" aria-labelledby="radar-title">
+        <div class="page-head">
+          <div>
+            <h1 id="radar-title">Радар заведений</h1>
+            <p>Находи заведения, собирай бойцов из меню и выходи на арену.</p>
+          </div>
+          <button type="button" class="soft-btn gps-button" id="gps">
+            <i data-icon="gps"></i><span>Включить GPS</span>
+          </button>
+        </div>
+        <div class="filters" id="brands" role="group" aria-label="Сеть ресторанов"></div>
+        <div class="radar-grid">
+          <section class="map-card" id="map-card" aria-label="Карта заведений">
+            <div id="map" aria-label="Интерактивная карта"></div>
+            <div class="map-top">
+              <span class="map-tag"
+                ><span class="status-dot"></span><span id="map-location">Москва · обзор</span></span
+              >
+              <button
+                type="button"
+                class="map-tool"
+                id="map-size"
+                aria-label="Развернуть карту"
+                aria-pressed="false"
+              >
+                <i data-icon="resize"></i>
+              </button>
+            </div>
+            <div class="map-tools">
+              <div class="zoom-set">
+                <button type="button" id="zoom-in" aria-label="Приблизить карту">
+                  <i data-icon="plus"></i></button
+                ><button type="button" id="zoom-out" aria-label="Отдалить карту">
+                  <i data-icon="minus"></i>
+                </button>
+              </div>
+              <button
+                type="button"
+                class="map-tool"
+                id="recenter"
+                aria-label="Вернуть карту к точке отсчёта"
+              >
+                <i data-icon="gps"></i>
+              </button>
+            </div>
+            <div class="map-key"><b></b><span id="map-key-label">Центр обзора</span></div>
+          </section>
+          <section class="nearby panel" aria-labelledby="near-title">
+            <div class="nearby-head">
+              <div>
+                <div class="micro section-kicker"><i data-icon="locate"></i> Локатор</div>
+                <h2 id="near-title">Точки рядом</h2>
+              </div>
+              <span class="quantity" id="near-total" aria-label="Показано точек">…</span>
+            </div>
+            <p class="near-origin" id="near-origin">Расстояние от центра Москвы</p>
+            <div class="venue-list" id="venue-list" aria-label="Ближайшие заведения">
+              <p class="empty">Загружаем заведения…</p>
+            </div>
+            <div class="route-box" id="route-box"></div>
+          </section>
+        </div>
+        <div role="status" id="geo-status" class="notice" hidden></div>
+        <div class="side-quests">
+          <section class="quest quest-route" id="day-card"></section>
+          <section class="quest quest-scout" id="scout-card"></section>
+        </div>
+      </section>
+      <section id="collection-view" hidden aria-label="Коллекция"></section>
+      <section id="arena-view" hidden aria-label="Арена"></section>
+      <section class="load-error panel" id="load-error" hidden role="alert">
+        <h2>Не удалось открыть каталог</h2>
+        <p>Проверь соединение и попробуй ещё раз.</p>
+        <button class="soft-btn" onclick="location.reload()">Повторить</button>
+      </section>
+      <noscript>Включи JavaScript, чтобы открыть карту и начать игру.</noscript>
+    </main>
+    <footer class="shell footer">
+      <span><img src="media/signal.svg" alt="" /> Фудрадар</span>
+      <div>
+        <button id="sound" type="button"><i data-icon="sound"></i><span>Звук вкл.</span></button
+        ><button id="about" type="button">Об игре</button>
+      </div>
+    </footer>
+    <dialog id="dialog">
+      <div class="dialog-surface">
+        <button class="dialog-close map-tool" id="dialog-close" type="button" aria-label="Закрыть">
+          <i data-icon="close"></i>
+        </button>
+        <div id="dialog-body"></div>
+      </div>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>

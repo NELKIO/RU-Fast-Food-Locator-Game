@@ -1,0 +1,283 @@
+/* The same restaurant photograph and match statistics have six menu treatments. */
+.dialog-surface:has(.find-sheet) {
+  padding: 0;
+  overflow: hidden;
+  border-color: var(--strong-line, var(--line));
+  border-radius: var(--radius, 16px);
+  background: var(--panel);
+}
+.dialog-surface:has(.find-sheet) .dialog-close {
+  top: 5px;
+  right: 7px;
+  width: 40px;
+  height: 40px;
+  color: var(--text);
+  border-color: transparent;
+  background: transparent;
+}
+.find-sheet {
+  --find-pad: clamp(14px, 4.4vw, 24px);
+  --find-art-bg: #245942;
+  --find-art-ink: #f5ffe8;
+  --find-art-muted: #c3f0d2;
+  --find-art-line: #71ab8b;
+  color: var(--text);
+  background: var(--panel);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.find-banner {
+  min-height: 50px;
+  padding: 8px 53px 8px var(--find-pad);
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  font-size: .84rem;
+  font-weight: 720;
+}
+.find-brand-symbol { color: var(--accent-type, var(--accent)); display: inline-grid; place-items: center; }
+.find-stage {
+  isolation: isolate;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+  grid-template-areas: "name art";
+  overflow: hidden;
+  align-items: center;
+  min-height: clamp(135px, 36vw, 181px);
+  padding: 14px var(--find-pad);
+  color: var(--find-art-ink);
+  background: var(--find-art-bg);
+}
+.find-art {
+  grid-area: art;
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  height: clamp(111px, 32vw, 157px);
+}
+.find-stage img {
+  z-index: 1;
+  display: block;
+  height: 100%;
+  width: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 7px 5px #15231942);
+}
+.find-stage-copy {
+  grid-area: name;
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  gap: 7px;
+}
+.find-rarity, .find-class {
+  font-size: clamp(.66rem, 2.5vw, .78rem);
+  font-weight: 640;
+  color: var(--find-art-muted);
+  line-height: 1.25;
+}
+.find-rarity { display: inline-flex; align-items: center; gap: 5px; }
+.find-rarity svg { flex: none; }
+.dialog-surface .find-stage h2 {
+  padding: 0;
+  margin: 0;
+  max-width: 100%;
+  color: var(--find-art-ink);
+  font-size: clamp(1.5rem, 6.6vw, 2.6rem);
+  letter-spacing: -.056em;
+  line-height: 1.02;
+  text-wrap: balance;
+}
+.find-body, .find-reel-content {
+  display: grid;
+  gap: 12px;
+  padding: 16px var(--find-pad) 19px;
+}
+.find-outcome, .find-xp, .find-spin-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  line-height: 1.35;
+}
+.find-outcome { font-size: .9rem; }
+.find-outcome svg, .find-xp svg, .find-spin-status svg { flex: none; color: var(--accent-type, var(--accent)); }
+.find-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 10px 0;
+  border-block: 1px solid var(--line);
+}
+.find-stats > div { padding-inline: 10px; border-left: 1px solid var(--line); }
+.find-stats > div:first-child { padding-left: 0; border: 0; }
+.find-stats dt { color: var(--muted); font-weight: 600; font-size: .71rem; }
+.find-stats dd { margin: 2px 0 0; font-weight: 770; font-size: 1.3rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.dialog-surface .find-effect, .dialog-surface .find-xp, .dialog-surface .find-spin-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: .85rem;
+  line-height: 1.45;
+}
+.find-xp strong { color: var(--text); }
+.find-actions { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 8px; }
+.dialog-surface .find-actions button { justify-content: center; min-height: 45px; margin: 0; padding-inline: 8px; font-size: .875rem; }
+.find-reel-content { gap: 15px; padding-top: 22px; }
+.dialog-surface .find-reel h2 { padding: 0; margin: 0; font-size: clamp(1.6rem, 6.5vw, 2.05rem); line-height: 1.12; }
+.find-track { position: relative; }
+.find-track::before, .find-track::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  width: 13px;
+  height: 8px;
+  margin-left: -6.5px;
+  background: var(--accent-type, var(--accent));
+  pointer-events: none;
+}
+.find-track::before { top: 0; clip-path: polygon(0 0, 100% 0, 50% 100%); }
+.find-track::after { bottom: 0; clip-path: polygon(50% 0,100% 100%,0 100%); }
+.find-reel .roulette {
+  height: clamp(89px, 25vw, 110px);
+  border: 1px solid var(--find-art-line);
+  border-radius: 12px;
+  margin: 0;
+  background: var(--find-art-bg);
+}
+.find-reel .roulette::after {
+  left: 50%; top: 6px; bottom: 6px; width: 82px;
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  border: 1px solid var(--find-art-ink);
+  border-radius: 7px;
+  box-shadow: 0 0 0 200px color-mix(in srgb, var(--find-art-bg) 45%, transparent);
+  pointer-events: none;
+}
+.find-reel .reel-strip { gap: 0; transform: translateX(-41px); }
+.find-reel .reel-strip img {
+  box-sizing: border-box;
+  width: 82px;
+  height: min(80px, 100%);
+  flex: 0 0 82px;
+  max-width: none;
+  margin: 0;
+  padding: 5px;
+  border: 0;
+}
+
+/* Green: an arched paper sleeve in mint, with the product emerging from its open end. */
+:root[data-theme='green'] .find-art::before {
+  content: '';
+  position: absolute;
+  inset: 1% -1% -55% 3%;
+  border-radius: 50% 50% 0 0;
+  transform: rotate(14deg);
+  background: #92d4af;
+  box-shadow: 8px 0 0 #5ba181;
+}
+:root[data-theme='green'] .find-stage { border-bottom: 4px solid #88c89e; }
+:root[data-theme='green'] .find-reel .roulette { background: linear-gradient(105deg, #245942 9%, #478965 50%, #245942 91%); }
+
+/* Chili: two diagonal bands run across the edge of the folded takeaway sleeve. */
+:root[data-theme='chili'] .find-sheet {
+  --find-art-bg: #5c1529;
+  --find-art-ink: #fff4e7;
+  --find-art-muted: #ffd4d5;
+  --find-art-line: #b76777;
+}
+:root[data-theme='chili'] .find-stage, :root[data-theme='chili'] .find-reel .roulette {
+  background: linear-gradient(110deg, transparent 58%, #da2948 58% 66%, #7e1938 66% 68%, #ed7084 68% 73%, transparent 73%), var(--find-art-bg);
+}
+:root[data-theme='chili'] .find-stage h2 { text-transform: uppercase; letter-spacing: -.025em; font-stretch: condensed; font-weight: 520; }
+:root[data-theme='chili'] .find-stage img { transform: rotate(-6deg) scale(1.04); }
+:root[data-theme='chili'] .find-stats { border-top: 2px solid var(--theme-color, var(--accent)); }
+:root[data-theme='chili'] .find-reel .roulette { border-radius: 3px; }
+
+/* Oven: a printed pizzeria menu insert, with a framed illustration and serif lettering. */
+:root[data-theme='oven'] .find-sheet {
+  --find-art-bg: #f5e3bf;
+  --find-art-ink: #452a1d;
+  --find-art-muted: #69432b;
+  --find-art-line: #ad8255;
+}
+:root[data-theme='oven'] .find-stage {
+  grid-template-areas: "art name";
+  grid-template-columns: minmax(0,.88fr) minmax(0,1.12fr);
+  gap: 7px;
+  border-block: 1px solid var(--find-art-line);
+  outline: 1px solid var(--find-art-line);
+  outline-offset: -6px;
+}
+:root[data-theme='oven'] .find-stage h2 { font-family: Georgia, 'Times New Roman', serif; font-weight: 760; }
+:root[data-theme='oven'] .find-stats { border-block-style: dashed; }
+:root[data-theme='oven'] .find-reel .roulette { outline: 1px solid var(--find-art-line); outline-offset: -5px; border-radius: 3px; }
+
+/* Grill: the cream title sits above the orange and tomato stripes of a diner wrapper. */
+:root[data-theme='grill'] .find-sheet {
+  --find-art-bg: #542715;
+  --find-art-ink: #fff0d3;
+  --find-art-muted: #f4d6ac;
+  --find-art-line: #b27e55;
+}
+:root[data-theme='grill'] .find-stage::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 66%; height: 100%;
+  right: -23%; bottom: -48%;
+  border-radius: 48% 0 0 0;
+  background: #74371d;
+  box-shadow: -3px -10px 0 #ffba36, -7px -19px 0 #b53d24, -9px -27px 0 #e5883d;
+  transform: rotate(-8deg);
+}
+:root[data-theme='grill'] .find-stage h2 { font-family: ui-rounded, 'Arial Rounded MT Bold', Inter, sans-serif; font-weight: 900; }
+:root[data-theme='grill'] .find-stats { background: var(--raised); border: 0; border-radius: 16px; padding-inline: 12px; }
+:root[data-theme='grill'] .find-actions button, :root[data-theme='grill'] .find-reel .roulette { border-radius: 24px; }
+:root[data-theme='grill'] .find-reel .roulette { border-bottom: 5px solid #ffaa2e; }
+
+:root:is([data-theme='black'],[data-theme='white']) .find-sheet {
+  --find-art-bg: var(--bg);
+  --find-art-ink: var(--text);
+  --find-art-muted: var(--muted);
+  --find-art-line: var(--line);
+}
+:root:is([data-theme='black'],[data-theme='white']) .find-stage img,
+:root:is([data-theme='black'],[data-theme='white']) .find-reel img { filter: grayscale(1); }
+:root:is([data-theme='black'],[data-theme='white']) .find-stage,
+:root:is([data-theme='black'],[data-theme='white']) .find-reel .roulette { border-bottom: 1px solid var(--line); }
+:root:is([data-theme='black'],[data-theme='white']) .find-rarity svg,
+:root:is([data-theme='black'],[data-theme='white']) .find-brand-symbol { color: var(--brand-readable, var(--accent-type)); }
+:root:is([data-theme='black'],[data-theme='white']) .find-outcome svg,
+:root:is([data-theme='black'],[data-theme='white']) .find-xp svg { color: var(--text); }
+
+/* Black: restrained gallery frame and a single brand registration mark. */
+:root[data-theme='black'] .find-stage { border-left: 4px solid var(--brand-color, var(--accent)); }
+:root[data-theme='black'] .find-art { outline: 1px solid var(--line); outline-offset: -4px; }
+:root[data-theme='black'] .find-stage h2 { font-weight: 800; letter-spacing: -.067em; }
+:root[data-theme='black'] .find-reel .roulette, :root[data-theme='black'] .find-reel .roulette::after { border-radius: 0; }
+
+/* White: a receipt with the photograph at left, a perforation rule and tabular figures. */
+:root[data-theme='white'] .find-stage {
+  grid-template-areas: "art name";
+  grid-template-columns: minmax(0,.8fr) minmax(0,1.2fr);
+  gap: 9px;
+  border-bottom: 2px dashed var(--line);
+}
+:root[data-theme='white'] .find-stage h2 { font-size: clamp(1.45rem, 6vw, 2.3rem); font-weight: 690; }
+:root[data-theme='white'] .find-stats { border-bottom-style: dashed; }
+:root[data-theme='white'] .find-stats dd { font-family: var(--mono, ui-monospace, monospace); }
+:root[data-theme='white'] .find-reel .roulette { border-radius: 0; border-block-style: dashed; background: var(--raised); }
+@media (max-width: 350px) {
+  .find-body { gap: 10px; }
+  .find-stage { min-height: 119px; padding-block: 9px; }
+  .find-art { height: 102px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .find-reel .reel-strip { will-change: auto; transform: translateX(-1189px); }
+  .find-sheet, .find-sheet * { animation: none; transition: none; }
+}
