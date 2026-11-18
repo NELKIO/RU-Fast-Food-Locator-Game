@@ -1,0 +1,130 @@
+[
+  {
+    "id": "bk-whopper",
+    "brand": "bk",
+    "name": "Воппер",
+    "image": "media/menu/bk-whopper.webp",
+    "source": "https://burgerkingrus.ru/category/23",
+    "imageSource": "https://orderapp-app-static.burgerkingrus.ru/x512/catalog/images/dishes/c4b08f2da6def7ff3a566fcb749d2dd0.png"
+  },
+  {
+    "id": "bk-cheeseburger",
+    "brand": "bk",
+    "name": "Чизбургер",
+    "image": "media/menu/bk-cheeseburger.webp",
+    "source": "https://burgerkingrus.ru/category/23",
+    "imageSource": "https://orderapp-app-static.burgerkingrus.ru/x256/catalog/images/group/75038991ff6a526d4e03b2e279ddd202.png"
+  },
+  {
+    "id": "bk-fries",
+    "brand": "bk",
+    "name": "Кинг Фри",
+    "image": "media/menu/bk-fries.webp",
+    "source": "https://burgerkingrus.ru/category/50",
+    "imageSource": "https://orderapp-app-static.burgerkingrus.ru/x256/catalog/images/group/e52e9770edb1f08e9ca09a0e5207cdab.png"
+  },
+  {
+    "id": "bk-onion-rings",
+    "brand": "bk",
+    "name": "Луковые кольца",
+    "image": "media/menu/bk-onion-rings.webp",
+    "source": "https://burgerkingrus.ru/category/50",
+    "imageSource": "https://orderapp-app-static.burgerkingrus.ru/x256/catalog/images/group/72dae7f11576f7ab8ef0404ee96cbeed.png"
+  },
+  {
+    "id": "vkusno-big-hit",
+    "brand": "vkusno",
+    "name": "Биг Хит",
+    "image": "media/menu/vkusno-big-hit.webp",
+    "source": "https://vkusnoitochka.ru/menu/burgery-i-rolly/big-khit",
+    "imageSource": "https://vkusnoitochka.ru/upload/iblock/ad4/mbve3klzfqj8i1katr8pndlmub89zgao/large.png"
+  },
+  {
+    "id": "vkusno-chicken-premier",
+    "brand": "vkusno",
+    "name": "Чикен Премьер",
+    "image": "media/menu/vkusno-chicken-premier.webp",
+    "source": "https://vkusnoitochka.ru/menu/burgery-i-rolly/chiken-premer",
+    "imageSource": "https://vkusnoitochka.ru/upload/iblock/d48/iohs9bl9jqp9sqd9dw5kozw15u3bqv1w/large.png"
+  },
+  {
+    "id": "vkusno-fries",
+    "brand": "vkusno",
+    "name": "Картофель Фри",
+    "image": "media/menu/vkusno-fries.webp",
+    "source": "https://vkusnoitochka.ru/menu/kartofel-i-sneki/kartofel-fri_1",
+    "imageSource": "https://vkusnoitochka.ru/upload/iblock/812/87i9qv76k7m3g5m993n7lox36u91ma1f/large.png"
+  },
+  {
+    "id": "vkusno-pie",
+    "brand": "vkusno",
+    "name": "Пирожок Вишневый",
+    "image": "media/menu/vkusno-pie.webp",
+    "source": "https://vkusnoitochka.ru/menu/deserty_4/pirozhok-vishnevyy",
+    "imageSource": "https://vkusnoitochka.ru/upload/iblock/d70/9yrvnqgcilv581m78d24pz1w3s601rex/large.png"
+  },
+  {
+    "id": "rostics-chefburger",
+    "brand": "rostics",
+    "name": "Шефбургер оригинальный",
+    "image": "media/menu/rostics-chefburger.webp",
+    "source": "https://rostics.ru/product/88735",
+    "imageSource": "https://s82079.cdn.ngenix.net/imo/transform/profile=web0desktop0product/8552d134-defd-4cfb-88b2-9530fef42b3d-1793697101099"
+  },
+  {
+    "id": "rostics-strips",
+    "brand": "rostics",
+    "name": "Стрипсы оригинальные",
+    "image": "media/menu/rostics-strips.webp",
+    "source": "https://rostics.ru/product/85575",
+    "imageSource": "https://s82079.cdn.ngenix.net/imo/transform/profile=web0desktop0product/fe3d8c44-f327-468e-b97b-53a37fa9ed41-1777276085827"
+  },
+  {
+    "id": "rostics-wings",
+    "brand": "rostics",
+    "name": "Острые крылышки",
+    "image": "media/menu/rostics-wings.webp",
+    "source": "https://rostics.ru/product/85466",
+    "imageSource": "https://s82079.cdn.ngenix.net/imo/transform/profile=web0desktop0product/b596e960-ea77-4541-81e4-e68602973993-1777275912955"
+  },
+  {
+    "id": "rostics-twister",
+    "brand": "rostics",
+    "name": "Шефролл оригинальный",
+    "image": "media/menu/rostics-twister.webp",
+    "source": "https://rostics.ru/product/88737",
+    "imageSource": "https://s82079.cdn.ngenix.net/imo/transform/profile=web0desktop0product/048261b1-82ab-4c09-a05a-cf3f188f4e89-1793782607472"
+  },
+  {
+    "id": "dodo-pepperoni",
+    "brand": "dodo",
+    "name": "Пепперони",
+    "image": "media/menu/dodo-pepperoni.webp",
+    "source": "https://dodopizza.ru/moscow/product/pizza-pepperoni",
+    "imageSource": "https://media.dodostatic.net/image/r:520x520/0198bf39dda97082912be8d1f3f2b233.png"
+  },
+  {
+    "id": "dodo-cheese",
+    "brand": "dodo",
+    "name": "Сырная",
+    "image": "media/menu/dodo-cheese.webp",
+    "source": "https://dodopizza.ru/moscow/product/syrnaya-pizza",
+    "imageSource": "https://media.dodostatic.net/image/r:520x520/019f7516635874e6b5ffa526093db47f.png"
+  },
+  {
+    "id": "dodo-dodster",
+    "brand": "dodo",
+    "name": "Додстер",
+    "image": "media/menu/dodo-dodster.webp",
+    "source": "https://dodopizza.ru/moscow/product/dodster-metaprodukt-domik",
+    "imageSource": "https://media.dodostatic.net/image/r:520x520/019e8404ee2a7066a3f0fc32a59a4f99.png"
+  },
+  {
+    "id": "dodo-four-cheeses",
+    "brand": "dodo",
+    "name": "Четыре сыра",
+    "image": "media/menu/dodo-four-cheeses.webp",
+    "source": "https://dodopizza.ru/moscow/bratislavskaya/product/pizza-chetyre-syra",
+    "imageSource": "https://media.dodostatic.net/image/r:520x520/019a109fe01672189d029a725ba99705.png"
+  }
+]
