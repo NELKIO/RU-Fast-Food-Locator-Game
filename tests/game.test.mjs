@@ -2,12 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cardFor, claimVisit, collectionCards, distanceMeters, freshProfile, levelForXp, nearestRestaurants,
-  normalizeProfile, recordBattle, resolveEncounter, scoutEncounter, setTeam, teamCards, todayRoute, visitStatus, xpToNextLevel,
+  grantStarter, normalizeProfile, recordBattle, resolveEncounter, setTeam, teamCards, todayRoute, visitStatus, wildEncounter,
+  wildFighter, xpToNextLevel, WILD_COOLDOWN_MS,
 } from '../public/js/game.js';
 
 const items = [
-  ['bk-cheeseburger', 'bk'], ['bk-fries', 'bk'], ['bk-onion-rings', 'bk'], ['bk-whopper', 'bk'],
-  ['vkusno-fries', 'vkusno'], ['vkusno-big-hit', 'vkusno'], ['dodo-cheese', 'dodo'], ['rostics-strips', 'rostics'],
+  ['bk-chicken-parmesan', 'bk'], ['bk-fries', 'bk'], ['bk-onion-rings', 'bk'], ['bk-whopper', 'bk'],
+  ['vkusno-nuggets', 'vkusno'], ['vkusno-big-hit', 'vkusno'], ['dodo-cheese', 'dodo'], ['rostics-strips', 'rostics'],
+  ['bk-angus-parmigiano', 'bk'],
 ].map(([id, brand]) => ({id, brand, name: id, image: `media/${id}.webp`, source: 'https://example.org/menu'}));
 const first = {id: 'osm:one', brand: 'bk', lat: 55.75, lon: 37.61};
 const second = {id: 'osm:two', brand: 'bk', lat: 55.75, lon: 37.63};
@@ -59,28 +61,33 @@ test('permission denial, old samples, future fixes and kilometre-wide accuracy c
   assert.equal(visitStatus(p, first, {...here, lat: here.lat + 0.00115, accuracy: 120}, noon).reason, 'too-far');
 });
 
-test('the first real visit returns a usable chain-specific fighter and an immediately playable encounter', () => {
+test('the first real visit returns a chain-specific fighter and lures a wild fighter of the same chain', () => {
   const before = freshProfile();
-  const received = claimAt(before, pizza);
+  const received = claimAt(before, first);
   assert.equal(received.ok, true);
-  assert.equal(received.card.brand, 'dodo');
-  assert.equal(received.card.id, 'dodo-cheese');
-  assert.equal(received.card.image, 'media/dodo-cheese.webp');
+  assert.equal(received.card.brand, 'bk');
+  assert.equal(received.card.id, 'bk-fries');
+  assert.equal(received.card.image, 'media/bk-fries.webp');
   assert.deepEqual(teamCards(received.profile, items).map(card => card.id), [received.card.id]);
-  assert.equal(received.profile.visits[pizza.id].count, 1);
+  assert.equal(received.profile.visits[first.id].count, 1);
   assert.equal(received.encounter.kind, 'recruit');
-  assert.ok(items.some(item => item.id === received.encounter.enemyId));
-  assert.notEqual(received.encounter.enemyId, received.card.id);
-  const won = resolveEncounter(received.profile, received.encounter.id, true, items);
+  assert.deepEqual(received.spawned, received.encounter);
+  assert.ok(received.encounter.enemyId.startsWith('bk-'));
+  assert.notEqual(received.encounter.enemyId, received.card.id, 'an unseen dish is preferred');
+  const won = resolveEncounter(received.profile, received.encounter.id, true, items, {now: noon + 1});
   assert.equal(won.ok, true);
   assert.equal(won.card.id, received.encounter.enemyId);
-  assert.equal(won.profile.collection[received.card.id].xp, 5);
+  assert.equal(won.profile.collection[received.card.id].xp, 10);
   assert.equal(won.profile.collection[won.card.id].xp, 0);
   assert.equal(won.profile.battles.wins, 1);
   assert.equal(won.profile.encounter, null);
+  assert.equal(won.profile.lastScoutAt, noon + 1);
   assert.equal(resolveEncounter(won.profile, received.encounter.id, true, items).ok, false);
   assert.equal(received.profile.collection[won.card.id], undefined);
   assert.deepEqual(before, freshProfile());
+  const next = claimAt(received.profile, second, noon + 1);
+  assert.equal(next.spawned, null, 'a waiting wild fighter is not replaced by the next visit');
+  assert.equal(next.encounter.id, received.encounter.id);
 });
 
 test('a cooldown is exactly six hours and applies only to the claimed location', () => {
@@ -140,7 +147,7 @@ test('roulette boundaries, rarity, stats and card mastery are stable regardless 
     assert.equal(original.attack, rank10.baseAttack);
     assert.equal(original.maxHp, rank10.baseHp);
     assert.ok(original.attack >= 3 && original.attack <= 8);
-    assert.ok(original.hp >= 14 && original.hp <= 28);
+    assert.ok(original.hp >= 14 && original.hp <= 30);
     assert.equal(original.rarity, rank10.rarity);
     assert.ok(rank10.attack > original.attack);
   }
@@ -153,7 +160,7 @@ test('teams support owned characters in chosen order and reject unowned, duplica
   const p = freshProfile();
   assert.deepEqual(teamCards(p, items), []);
   for (const item of items.slice(0, 4)) p.collection[item.id] = {copies: 1, xp: 10};
-  const ids = ['bk-whopper', 'bk-fries', 'bk-cheeseburger'];
+  const ids = ['bk-whopper', 'bk-fries', 'bk-chicken-parmesan'];
   const selected = setTeam(p, ids);
   assert.equal(selected.ok, true);
   assert.deepEqual(teamCards(selected.profile, items).map(card => card.id), ids);
@@ -164,24 +171,56 @@ test('teams support owned characters in chosen order and reject unowned, duplica
   assert.equal(setTeam(selected.profile, [ids[2]]).ok, true);
 });
 
-test('scouting keeps a pending encounter, respects 15 minutes and pays a training party once', () => {
-  assert.equal(scoutEncounter(freshProfile(), items, {now: noon}).reason, 'no-team');
-  const start = claimAt(freshProfile());
-  assert.equal(scoutEncounter(start.profile, items, {now: noon}).encounter.id, start.encounter.id);
-  const lost = resolveEncounter(start.profile, start.encounter.id, false, items);
-  assert.equal(lost.card, null);
-  assert.equal(lost.profile.battles.losses, 1);
-  assert.equal(lost.profile.xp, start.profile.xp);
-  const found = scoutEncounter(lost.profile, items, {now: noon, rng: () => 0.9});
-  assert.equal(found.encounter.kind, 'training');
-  assert.equal(resolveEncounter(found.profile, start.encounter.id, true, items).ok, false);
-  const success = resolveEncounter(found.profile, found.encounter.id, true, items);
-  assert.equal(success.card, null);
-  assert.equal(success.partyXp, 14);
-  assert.equal(success.profile.collection[start.card.id].xp, 14);
-  assert.equal(success.profile.battles.wins, 1);
-  assert.equal(scoutEncounter(success.profile, items, {now: noon + 899_999}).remainingMs, 1);
-  assert.equal(scoutEncounter(success.profile, items, {now: noon + 900_000}).ok, true);
+test('every new player gets one common starter, exactly once', () => {
+  const starter = grantStarter(freshProfile(), items, {rng: () => 0.999});
+  assert.equal(starter.ok, true);
+  assert.equal(starter.card.rarity, 'common');
+  assert.deepEqual(starter.profile.team, [starter.card.id]);
+  assert.equal(grantStarter(starter.profile, items).reason, 'has-fighters');
+  assert.equal(grantStarter(freshProfile(), []).reason, 'empty-menu');
+});
+
+test('a wild fighter waits until fought, then the next one appears after exactly 15 minutes', () => {
+  assert.equal(wildEncounter(freshProfile(), items, {now: noon}).reason, 'no-team');
+  const {profile} = grantStarter(freshProfile(), items, {rng: () => 0});
+  const found = wildEncounter(profile, items, {now: noon, rng: () => 0});
+  assert.equal(found.reason, 'found');
+  assert.equal(found.encounter.kind, 'recruit');
+  assert.equal(wildEncounter(found.profile, items, {now: noon + 5}).encounter.id, found.encounter.id);
+  const lost = resolveEncounter(found.profile, found.encounter.id, false, items, {now: noon});
+  assert.deepEqual([lost.card, lost.partyXp, lost.profile.battles.losses, lost.profile.encounter], [null, 3, 1, null]);
+  assert.equal(lost.profile.xp, profile.xp);
+  assert.equal(wildEncounter(lost.profile, items, {now: noon + WILD_COOLDOWN_MS - 1}).remainingMs, 1);
+  const again = wildEncounter(lost.profile, items, {now: noon + WILD_COOLDOWN_MS});
+  assert.equal(again.ok, true);
+  assert.notEqual(again.encounter.id, found.encounter.id);
+});
+
+test('a wild fighter is sized to the team, so any rarity is a fair fight', () => {
+  const encounter = {id: 'w', enemyId: 'bk-angus-parmigiano', kind: 'recruit', startedAt: noon};
+  const base = cardFor(items.find(item => item.id === 'bk-angus-parmigiano'));
+  assert.deepEqual(wildFighter(encounter, items), base);
+  const one = [cardFor(items.find(item => item.id === 'bk-fries'))];
+  const alone = wildFighter(encounter, items, one);
+  const power = card => card.maxHp * card.attack;
+  assert.ok(Math.abs(power(alone) / power(one[0]) - 0.95) < 0.2, power(alone));
+  assert.ok(alone.skill.power < base.skill.power && alone.skill.power >= 1);
+  assert.equal(alone.hp, alone.maxHp);
+  const three = ['bk-fries', 'bk-whopper', 'vkusno-big-hit'].map(id => cardFor(items.find(item => item.id === id), 5));
+  const crowd = wildFighter(encounter, items, three);
+  assert.ok(crowd.maxHp > alone.maxHp && crowd.attack >= alone.attack);
+  assert.equal(wildFighter({...encounter, enemyId: 'ghost'}, items, one), null);
+});
+
+test('dishes that left the roster are merged into their replacements in old saves', () => {
+  const saved = normalizeProfile({
+    collection: {'bk-cheeseburger': {copies: 2, xp: 12}, 'bk-chicken-parmesan': {copies: 1, xp: 30}, 'vkusno-fries': {copies: 1, xp: 0}},
+    team: ['bk-cheeseburger', 'vkusno-fries'],
+    encounter: {id: 'e1', enemyId: 'vkusno-fries', kind: 'training', startedAt: noon},
+  });
+  assert.deepEqual(saved.collection, {'bk-chicken-parmesan': {copies: 3, xp: 30}, 'vkusno-nuggets': {copies: 1, xp: 0}});
+  assert.deepEqual(saved.team, ['bk-chicken-parmesan', 'vkusno-nuggets']);
+  assert.deepEqual(saved.encounter, {id: 'e1', enemyId: 'vkusno-nuggets', kind: 'recruit', startedAt: noon});
 });
 
 test('completed duels credit the chosen fighter and never pay a repeated match identifier', () => {
@@ -194,7 +233,7 @@ test('completed duels credit the chosen fighter and never pay a repeated match i
   assert.equal(result.ok, true);
   assert.equal(result.profile.xp, beforeXp + 12);
   assert.equal(result.profile.collection[fighter].xp, 12);
-  assert.equal(result.profile.collection[start.card.id].xp, 5);
+  assert.equal(result.profile.collection[start.card.id].xp, 10);
   const replayed = recordBattle(JSON.parse(JSON.stringify(result.profile)), payload);
   assert.equal(replayed.reason, 'already-recorded');
   assert.deepEqual(replayed.profile, result.profile);
@@ -221,15 +260,15 @@ test('draws are counted separately in encounters and online matches, including p
 
 test('only the fighters who actually participated receive encounter experience', () => {
   const start = claimAt(freshProfile());
-  const victory = resolveEncounter(start.profile, start.encounter.id, true, items);
+  const victory = resolveEncounter(start.profile, start.encounter.id, true, items, {now: noon});
   assert.equal(victory.profile.team.length, 2);
-  const scout = scoutEncounter(victory.profile, items, {now: noon, rng: () => .9});
+  const scout = wildEncounter(victory.profile, items, {now: noon + WILD_COOLDOWN_MS, rng: () => .9});
   const participant = victory.card.id;
   const reserved = start.card.id;
   const before = scout.profile.collection[reserved].xp;
   const win = resolveEncounter(scout.profile, scout.encounter.id, true, items, {teamIds: [participant, participant, 'unowned']});
   assert.equal(win.profile.collection[reserved].xp, before);
-  assert.equal(win.profile.collection[participant].xp, 14);
+  assert.equal(win.profile.collection[participant].xp, 10);
 });
 
 test('untrusted saved data is repaired without accepting prototype keys, invalid coordinates or non-owned teams', () => {

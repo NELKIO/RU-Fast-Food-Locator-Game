@@ -1,4 +1,5 @@
 import { brands, esc, icon, rarityNames } from './ui.js';
+import { describeSkill } from './fighters.js';
 
 const REEL_SIZE = 17;
 const WINNING_INDEX = 14;
@@ -32,33 +33,35 @@ function stat(label, value) {
   return `<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`;
 }
 
-export function rewardMarkup(result) {
+export function rewardMarkup(result, wildName = '') {
   const { card } = result;
   const brand = brands[card.brand]?.name ?? card.brand;
   const rarity = rarityNames[card.rarity] ?? card.rarity;
   const health = card.maxHp ?? card.hp;
-  const extra = result.isNew ? '' : result.leveledUp ? ' Повторная карта повысила уровень бойца.' : ' Повторная карта пошла на развитие бойца.';
+  const outcome = result.isNew ? 'Новый боец в коллекции' : result.leveledUp ? 'Повтор — боец вырос в уровне' : 'Повтор — опыт бойцу';
   const xp = result.routeCompleted ? 'с бонусом за маршрут дня' : 'за посещение';
+  const skill = card.skill;
   return `<article class="find-sheet find-card" aria-labelledby="find-card-title">
     ${banner(card.brand, brand)}
     <div class="find-stage">
       <div class="find-art"><img src="${esc(card.image)}" alt="${esc(card.name)}" decoding="async" draggable="false"></div>
       <div class="find-stage-copy">
-        <span class="find-rarity">${icon('star', 14)} ${esc(rarity)} карта</span>
+        <span class="find-rarity">${icon('star', 14)} ${esc(rarity)}</span>
         <h2 id="find-card-title">${esc(card.name)}</h2>
         ${card.role ? '<span class="find-class">' + esc(card.role) + '</span>' : ''}
       </div>
     </div>
     <div class="find-body">
-      <div class="find-outcome">${icon('collection', 17)}<strong>${result.isNew ? 'Новый боец в коллекции' : 'Повторная находка'}</strong></div>
+      <div class="find-outcome">${icon('collection', 17)}<strong>${outcome}</strong></div>
       <dl class="find-stats" aria-label="Характеристики бойца">
         ${stat('Атака', card.attack)}${stat('Здоровье', health)}${stat('Уровень', card.level)}
       </dl>
-      <p class="find-effect">Фирменный удар наносит ${esc(card.attack + 3)} урона сквозь защиту и расходует две энергии.${extra}</p>
+      ${skill ? `<p class="find-effect"><strong>«${esc(skill.name)}»</strong> ${esc(describeSkill(skill, card.attack))}</p>` : ''}
       <p class="find-xp">${icon(result.routeCompleted ? 'route' : 'spark', 16)}<span><strong>+${esc(result.playerXp)} опыта</strong> ${xp}</span></p>
+      ${wildName ? `<p class="find-wild">${icon('battle', 16)}<span>${result.spawned ? 'Рядом появился дикий боец' : 'Тебя ждёт дикий боец'} — <strong>${esc(wildName)}</strong>. Победи его на арене.</span></p>` : ''}
       <div class="find-actions">
-        <button type="button" class="primary" data-training="${esc(card.id)}">${icon('battle', 18)} В первый бой</button>
-        <button type="button" class="outline-btn" data-open="collection">К коллекции</button>
+        <button type="button" class="primary" data-close>${icon('check', 18)} Забрать</button>
+        <button type="button" class="outline-btn" data-wild>${icon('battle', 17)} На арену</button>
       </div>
     </div>
   </article>`;

@@ -19,7 +19,6 @@
   --cover-art: url('../media/menu/vkusno-chicken-premier.webp');
   --cover-shape: radial-gradient(ellipse 18% 115% at 74% 150%, #ff9556 0 66%, transparent 67%),
     radial-gradient(ellipse 15% 142% at 73% 50%, #89d3ae 0 64%, transparent 65%);
-  --atlas-filter: grayscale(1) sepia(.92) saturate(2.9) hue-rotate(92deg) brightness(1.15);
   --tiles-filter: grayscale(1) invert(.91) sepia(.86) saturate(2.5) hue-rotate(92deg) brightness(.92);
   --map-ground: #103e31;
   --pin-ground: #13352d;
@@ -67,7 +66,6 @@
   --cover-muted: #f4c7cc;
   --cover-art: url('../media/menu/rostics-wings.webp');
   --cover-shape: linear-gradient(113deg, transparent 61%, #fb4148 61% 64%, transparent 64% 66%, #d795a2 66% 69%, transparent 69%);
-  --atlas-filter: grayscale(1) sepia(1) saturate(3.2) hue-rotate(293deg) brightness(1.2);
   --tiles-filter: grayscale(1) invert(.91) sepia(1) saturate(3) hue-rotate(293deg) brightness(.97);
   --map-ground: #421521;
   --pin-ground: #331522;
@@ -98,7 +96,6 @@
   --cover-art: url('../media/menu/dodo-pepperoni.webp');
   --cover-shape: radial-gradient(ellipse 22% 110% at 75% 110%, #805235 0 54%, transparent 55%),
     radial-gradient(ellipse 13% 110% at 68% 0%, #513322 0 55%, transparent 56%);
-  --atlas-filter: grayscale(.92) sepia(.95) saturate(1.9) hue-rotate(341deg) brightness(1.23);
   --tiles-filter: grayscale(1) invert(.92) sepia(.98) saturate(1.65) hue-rotate(341deg) brightness(.94);
   --map-ground: #3c2a22;
   --pin-ground: #38291f;
@@ -129,7 +126,6 @@
   --cover-art: url('../media/menu/bk-whopper.webp');
   --cover-shape: radial-gradient(ellipse 21% 185% at 74% 132%, #ffaa00 0 54%, transparent 55%),
     radial-gradient(ellipse 20% 220% at 76% 155%, #d93122 0 61%, transparent 62%);
-  --atlas-filter: grayscale(1) sepia(.95) saturate(2.6) hue-rotate(340deg) brightness(1.25);
   --tiles-filter: grayscale(1) invert(.91) sepia(.96) saturate(2.3) hue-rotate(340deg) brightness(.93);
   --map-ground: #482a1d;
   --pin-ground: #412518;
@@ -174,7 +170,6 @@
   --theme-type: #f4f4f4;
   --map-ground: #101010;
   --pin-ground: #080808;
-  --atlas-filter: grayscale(1) brightness(.83) contrast(1.19);
   --tiles-filter: grayscale(1) invert(1) brightness(.78) contrast(1.12);
   --fog: #000d;
   --art-shadow: transparent;
@@ -194,7 +189,6 @@
   --theme-type: #141414;
   --map-ground: #f0f0f0;
   --pin-ground: #fff;
-  --atlas-filter: grayscale(1) invert(1) brightness(1.06) contrast(1.07);
   --tiles-filter: grayscale(1) brightness(1.03) contrast(.96);
   --fog: #24242469;
   --art-shadow: #2424241a;
@@ -203,7 +197,7 @@
 
 html, body { background: var(--bg); color: var(--text); }
 ::selection { background: var(--action); color: var(--action-ink); }
-a, .level-icon, .gps-button { color: var(--accent-type); }
+a, .level-icon { color: var(--accent-type); }
 button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible {
   outline-color: var(--accent-type);
 }
@@ -267,11 +261,6 @@ h1, .brand-word, .nearby h2, .duel-heading h2, .duel-box h2, .dialog-surface h2 
 #radar-view .page-head p { color: var(--cover-muted); }
 :root[data-theme='chili'] #radar-view .page-head h1 { text-transform: uppercase; letter-spacing: -.036em; }
 :root[data-theme='grill'] #radar-view .page-head { border-color: #f5ebdc; }
-:root[data-theme='grill'] #radar-view .page-head .gps-button {
-  color: #502314;
-  background: #f5ebdc;
-  border-color: #92694b;
-}
 :root:is([data-theme='black'],[data-theme='white']) #radar-view .page-head {
   padding-inline: 0;
   min-height: 106px;
@@ -302,7 +291,6 @@ h1, .brand-word, .nearby h2, .duel-heading h2, .duel-box h2, .dialog-surface h2 
   border-radius: 12px;
 }
 .theme-switch svg { width: 18px; height: 18px; }
-.gps-button { color: var(--accent-type); border-color: var(--active-line); white-space: nowrap; }
 .primary, .primary:hover:not(:disabled), .duel-page .duel-primary, .skip {
   color: var(--action-ink);
   background: var(--action);
@@ -333,8 +321,8 @@ h1, .brand-word, .nearby h2, .duel-heading h2, .duel-box h2, .dialog-surface h2 
   background-color: var(--map-ground);
   background-image: linear-gradient(var(--rule) 1px, transparent 1px), linear-gradient(90deg, var(--rule) 1px, transparent 1px);
 }
-.raster-tiles { filter: var(--tiles-filter); }
-#map .leaflet-image-layer { filter: var(--atlas-filter); }
+/* One filter on the whole tile pane, never per tile: a single composited layer stays smooth. */
+#map .leaflet-tile-pane { filter: var(--tiles-filter); }
 #map .radar-range { stroke: var(--position); }
 #map .target-line { stroke: var(--action); }
 #map .target-range { stroke: var(--action); fill: var(--action); }
@@ -523,7 +511,6 @@ button:disabled, .duel-page button:disabled {
   #radar-view .page-head > div { display: contents; }
   #radar-view .page-head h1 { font-size: clamp(25px, 6.5vw, 38px); grid-column: 1; grid-row: 1; }
   #radar-view .page-head p { grid-column: 1; grid-row: 2; max-width: 26em; margin: 0; }
-  #radar-view .page-head .gps-button { grid-column: 2; grid-row: 1; min-height: 32px; padding: 4px 7px; }
   #radar-view .page-head::after { inset: 28px 1% -13px auto; width: 28%; }
   :root:is([data-theme='black'],[data-theme='white']) #radar-view .page-head { min-height: 75px; }
   #radar-view.is-tracking .page-head { min-height: 64px; margin-top: 9px; padding-block: 8px; }
@@ -544,3 +531,68 @@ button:disabled, .duel-page button:disabled {
 @media (forced-colors: active) {
   .theme-option[aria-pressed='true'], .filter[aria-pressed='true'], .venue-row[aria-pressed='true'] { outline: 2px solid Highlight; }
 }
+
+/* Map pins: they pop in, and venues sharing a spot stack into one pin with a count. */
+.venue-pin { position: relative; }
+.venue-pin .pin-face { animation: pin-pop 0.32s cubic-bezier(0.2, 1.4, 0.4, 1) both; transform-origin: 50% 100%; }
+.venue-pin .pin-face.pin-back {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  left: calc(4px + var(--n) * 11px);
+  top: calc(-2px - var(--n) * 4px);
+  z-index: -1;
+  opacity: 0.95;
+}
+.venue-pin.grouped > .pin-face:not(.pin-back) { position: relative; left: -4px; }
+.pin-count {
+  position: absolute;
+  right: -6px;
+  bottom: 1px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  font: 800 11px/1 var(--mono, ui-monospace, monospace);
+  color: var(--action-ink, #102010);
+  background: var(--action, var(--accent));
+  box-shadow: 0 0 0 2px var(--pin-ground);
+}
+@keyframes pin-pop { from { opacity: 0; transform: rotate(-45deg) translate(6px, 6px) scale(0.4); } }
+.user-map-dot.live { animation: dot-pulse 2.4s ease-out infinite; }
+@keyframes dot-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--position) 60%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 16px transparent; }
+}
+.pin-popup .leaflet-popup-content-wrapper {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--strong-line);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px #0006;
+}
+.pin-popup .leaflet-popup-tip { background: var(--panel); border: 1px solid var(--strong-line); }
+.pin-popup .leaflet-popup-content { margin: 10px; font: inherit; }
+.pin-popup a.leaflet-popup-close-button { color: var(--muted); }
+.pin-chooser { display: grid; gap: 4px; animation: rise-in 0.25s ease-out; }
+.pin-chooser > strong { font-size: 12px; color: var(--muted); padding: 0 4px 4px; font-weight: 600; }
+.pin-chooser button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  padding: 8px;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--raised, transparent);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.pin-chooser button:hover { border-color: var(--accent-type, var(--accent)); }
+.pin-chooser button > span:last-child { display: grid; gap: 1px; min-width: 0; }
+.pin-chooser b { font-size: 13px; }
+.pin-chooser small { font-size: 11px; color: var(--muted); }

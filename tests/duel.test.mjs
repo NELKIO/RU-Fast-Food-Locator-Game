@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyMove, battleStats, legalMoves, startBattle, validTeam } from '../public/js/duel-engine.js';
+import { applyMove, battleStats, botMove, legalMoves, MAX_ENERGY, START_ENERGY, startBattle, validTeam } from '../public/js/duel-engine.js';
 import { DuelRoom, newRoomCode, parseRoomCode, RECONNECT_MS, SILENT_MS } from '../public/js/duel-room.js';
 import { SIGNAL_RELAYS } from '../public/js/duel-transport.js';
 import { makeCodec } from '../public/js/duel-relay.js';
@@ -11,17 +11,105 @@ const b = { id: 'fries', hp: 18, attack: 3 };
 const c = { id: 'cola', hp: 8, attack: 2 };
 const catalog = [a, b, c].map(card => ({ ...card, baseHp: card.hp, baseAttack: card.attack }));
 
-test('a guard cuts a 5-point hit to 3, then clears; a charged special deals 8 through a fresh guard', () => {
-  let fight = startBattle([[a], [b]], 1);
-  const start = fight;
-  for (const [side, action] of [[1, 'guard'], [0, 'hit'], [1, 'hit'], [0, 'hit'], [1, 'guard']]) {
-    fight = applyMove(fight, side, action);
+// One fighter per side; side 0 moves first and neither side gets the tempo energy.
+function duel(left, right, first = 0) {
+  return startBattle([[{ id: 'left', hp: 20, attack: 5, ...left }], [{ id: 'right', hp: 20, attack: 5, ...right }]], first, { tempo: false });
+}
+const fighter = (state, side) => state.teams[side][state.active[side]];
+function play(state, ...moves) {
+  for (const move of moves) {
+    const next = applyMove(state, state.turn, move);
+    assert.ok(next, 'illegal move ' + move);
+    state = next;
   }
-  assert.equal(start.teams[1][0].hp, 18);
-  assert.deepEqual([fight.teams[0][0].charge, fight.teams[1][0].hp], [2, 10]);
-  fight = applyMove(fight, 0, 'special');
-  assert.deepEqual([fight.teams[1][0].hp, fight.teams[1][0].guarding, fight.teams[0][0].charge], [2, false, 0]);
-  assert.equal(applyMove(fight, 0, 'hit'), null);
+  return state;
+}
+
+test('guard halves a hit rounding up and charges energy; the second player in a duel starts with one extra energy', () => {
+  let fight = play(duel({}, {}), 'guard', 'hit');
+  assert.deepEqual([fighter(fight, 0).hp, fighter(fight, 0).guarding, fighter(fight, 0).energy], [17, false, 2]);
+  assert.equal(fight.last.blocked, true);
+  const online = startBattle([[a], [b]], 1);
+  assert.deepEqual([online.teams[0][0].energy, online.teams[1][0].energy], [START_ENERGY + 1, START_ENERGY]);
+  const solo = startBattle([[a], [b]], 0, { tempo: false });
+  assert.deepEqual([solo.teams[0][0].energy, solo.teams[1][0].energy], [START_ENERGY, START_ENERGY]);
+});
+
+test('a skill needs its energy, spends it, names itself and pierces guard when it says so', () => {
+  const skill = { name: 'Укол', cost: 2, power: 3, pierce: true };
+  let fight = duel({ skill }, {}, 1);
+  fight = play(fight, 'guard');
+  assert.ok(!legalMoves(fight).includes('special'));
+  fight = play(fight, 'hit', 'guard');
+  assert.equal(fighter(fight, 0).energy, 2);
+  fight = play(fight, 'special');
+  assert.deepEqual([fight.last.skill, fight.last.damage, fight.last.blocked], ['Укол', 8, false]);
+  assert.equal(fighter(fight, 0).energy, 0);
+});
+
+test('a shield soaks damage before health; drain heals half the dealt damage rounding up', () => {
+  let fight = duel({ skill: { cost: 1, shield: 4 } }, { skill: { cost: 1, power: 0, drain: true } });
+  fight = play(fight, 'special');
+  assert.equal(fighter(fight, 0).shield, 4);
+  fight = play(fight, 'hit');
+  assert.deepEqual([fight.last.absorbed, fight.last.damage, fighter(fight, 0).hp, fighter(fight, 0).shield], [4, 1, 19, 0]);
+  fight = play(fight, 'hit', 'special');
+  assert.equal(fight.last.damage, 5);
+  assert.equal(fight.last.heal, 3);
+  assert.equal(fighter(fight, 1).hp, 18);
+});
+
+test('burning ticks after the burning fighter acts, pauses on a switch and runs out', () => {
+  const teams = [
+    [{ id: 'torch', hp: 20, attack: 1, skill: { cost: 1, power: 0, burn: { dmg: 2, turns: 2 } } }],
+    [{ id: 'target', hp: 20, attack: 1 }, { id: 'bench', hp: 20, attack: 1 }],
+  ];
+  let fight = play(startBattle(teams, 0, { tempo: false }), 'special');
+  assert.deepEqual([fight.teams[1][0].hp, fight.teams[1][0].burn], [19, { dmg: 2, turns: 2 }]);
+  fight = play(fight, 'switch:1', 'hit', 'switch:0');
+  assert.equal(fight.teams[1][0].hp, 19, 'switching does not burn');
+  fight = play(fight, 'hit', 'hit');
+  assert.deepEqual([fight.last.burned, fight.teams[1][0].hp], [2, 16]);
+  fight = play(fight, 'hit', 'hit');
+  assert.deepEqual([fight.teams[1][0].hp, fight.teams[1][0].burn], [13, null]);
+  fight = play(fight, 'hit', 'hit');
+  assert.equal(fight.last.burned, 0);
+});
+
+test('weaken stops three below base attack; buff stops four above; sap empties energy', () => {
+  let fight = play(duel({ attack: 6 }, { hp: 40, skill: { cost: 1, weaken: 2, sap: true } }), 'hit', 'special');
+  assert.deepEqual([fighter(fight, 0).attack, fighter(fight, 0).energy], [4, 0]);
+  assert.deepEqual(fight.last.effects, ['weaken', 'sap']);
+  fight = play(fight, 'hit', 'hit', 'hit', 'special');
+  assert.equal(fighter(fight, 0).attack, 3);
+  fight = play(fight, 'hit', 'hit', 'hit', 'special');
+  assert.equal(fighter(fight, 0).attack, 3);
+  assert.ok(!fight.last.effects.includes('weaken'));
+  fight = play(duel({ skill: { cost: 1, power: 0, buff: 3 } }, {}), 'special', 'hit', 'hit', 'hit', 'special');
+  assert.equal(fighter(fight, 0).attack, 9);
+});
+
+test('execute adds damage only against a hurt target; recoil never knocks out its user; team heal reaches the bench', () => {
+  const finisher = { skill: { cost: 1, power: 0, execute: 4 } };
+  let fight = play(duel(finisher, {}), 'special');
+  assert.deepEqual([fight.last.damage, fight.last.executed], [5, false]);
+  fight = play(duel(finisher, {}), 'hit', 'hit', 'hit', 'hit', 'special');
+  assert.deepEqual([fight.last.damage, fight.last.executed], [9, true]);
+  fight = play(duel({ hp: 2, skill: { cost: 1, power: 1, recoil: 5 } }, {}), 'special');
+  assert.deepEqual([fighter(fight, 0).hp, fight.last.recoil], [1, 1]);
+  const medics = [[{ id: 'medic', hp: 20, attack: 1, skill: { cost: 1, team: 5 } }, { id: 'bench', hp: 20, attack: 1 }], [{ id: 'foe', hp: 20, attack: 4 }]];
+  fight = play(startBattle(medics, 1, { tempo: false }), 'hit', 'switch:1', 'hit', 'switch:0', 'hit', 'special');
+  assert.deepEqual(fight.teams[0].map(f => f.hp), [17, 20]);
+  assert.ok(fight.last.effects.includes('team'));
+});
+
+test('the bot takes a knockout when one hit is enough and otherwise uses a damaging skill', () => {
+  let fight = duel({}, { hp: 3 });
+  assert.equal(botMove(fight, () => 0), 'hit');
+  fight = duel({ skill: { cost: 1, power: 2 } }, {});
+  assert.equal(botMove(fight, () => 0), 'special');
+  for (let i = 0; i < 40 && fight.winner === null; i++) fight = applyMove(fight, fight.turn, botMove(fight, () => 0.5));
+  assert.notEqual(fight.winner, null);
 });
 
 test('switching consumes the turn; the first surviving reserve replaces a defeated fighter', () => {
@@ -50,9 +138,12 @@ test('the 48th turn ends a stalemate; the larger remaining health fraction wins,
 });
 
 test('competition uses base stats, single-player retains levels; invalid team selections are rejected', () => {
-  const card = { ...catalog[0], maxHp: 28, attack: 9 };
-  assert.deepEqual(battleStats(card, true), { id: 'burger', hp: 18, attack: 5 });
-  assert.deepEqual(battleStats(card), { id: 'burger', hp: 28, attack: 9 });
+  const skill = { name: 'Укус', cost: 9, power: 2, label: 'ignored' };
+  const card = { ...catalog[0], maxHp: 28, attack: 9, skill };
+  const clean = { name: 'Укус', cost: MAX_ENERGY, power: 2 };
+  assert.deepEqual(battleStats(card, true), { id: 'burger', hp: 18, attack: 5, skill: clean });
+  assert.deepEqual(battleStats(card), { id: 'burger', hp: 28, attack: 9, skill: clean });
+  assert.deepEqual(battleStats(catalog[1]).skill, { name: 'Фирменный приём', cost: 2 });
   const index = new Map(catalog.map(item => [item.id, item]));
   for (const ids of [[], ['ghost'], ['cola', 'cola'], ['cola', 'fries', 'burger', 'ghost'], null]) {
     assert.equal(validTeam(ids, index), false);
@@ -195,4 +286,21 @@ test('catalog mismatch aborts both seats; leaving a live match also reaches the 
   normal.ready();
   normal.guest.cancel('quit'); normal.deliver();
   assert.deepEqual([normal.host.reason, normal.guest.reason], ['quit', 'quit']);
+});
+
+test('the last mover keeps a finished result when the acknowledgment never arrives', () => {
+  const network = pair();
+  const { host, guest, queue, deliver } = network;
+  network.ready();
+  for (let turn = 0; turn < 6; turn++) { (turn % 2 ? guest : host).move('hit'); deliver(); }
+  assert.equal(host.move('hit'), true);
+  assert.equal(host.state.winner, 0);
+  assert.equal(host.finished, false);
+  queue.length = 0;
+  host.disconnect('g');
+  network.elapse(RECONNECT_MS + 10);
+  host.tick();
+  assert.deepEqual([host.finished, host.reason, host.settledAlone], [true, null, true]);
+  host.cancel('left');
+  assert.equal(host.reason, null, 'a settled match cannot be cancelled afterwards');
 });

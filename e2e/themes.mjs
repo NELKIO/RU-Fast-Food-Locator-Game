@@ -182,10 +182,10 @@ try {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await firstRow.waitFor();
     assert.equal(await page.locator('html').getAttribute('data-theme'), theme, 'Theme survives reload');
-    assert.equal(await page.evaluate(() => window.geolocationCalls), 0, 'Appearance and reload do not ask for location');
+    assert.equal(await page.evaluate(() => window.geolocationCalls), 1, 'Each load asks for location once, by itself');
   }
   assert.equal(signatures.size, themes.length, 'Six themes produce six different rendered palettes');
-  console.log('PASS Six distinct mobile palettes, contrast, width, no location requests and persistence');
+  console.log('PASS Six distinct mobile palettes, contrast, width, one automatic location request per load and persistence');
 
   const directory = await context.request.get(new URL('data/venues.json', url).href);
   assert.equal(directory.status(), 200, 'Restaurant fixtures available at the tested site');

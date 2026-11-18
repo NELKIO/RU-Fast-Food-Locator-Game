@@ -48,3 +48,25 @@ test('each collectible has its own local image and a link to a restaurant menu',
     assert.equal(image.readUInt32LE(4) + 8, image.length, item.id);
   }
 });
+
+test('every dish on the menu is a hand-made fighter, eight per chain with the same rarity spread', async () => {
+  const { FIGHTERS, RARITIES, RENAMED, describeSkill } = await import('../public/js/fighters.js');
+  const menu = readCatalog('menu');
+  assert.deepEqual(menu.map(item => item.id).sort(), Object.keys(FIGHTERS).sort());
+  for (const brand of brands) {
+    const tiers = menu.filter(item => item.brand === brand).map(item => FIGHTERS[item.id].rarity);
+    assert.deepEqual(RARITIES.map(r => tiers.filter(t => t === r).length), [3, 2, 2, 1], brand);
+  }
+  assert.ok(menu.some(item => item.id === 'bk-angus-parmigiano' && /Ангус Пармеджано/.test(item.name)));
+  for (const [old, next] of Object.entries(RENAMED)) {
+    assert.ok(!FIGHTERS[old] && FIGHTERS[next], old);
+  }
+  const names = new Set();
+  for (const [id, fighter] of Object.entries(FIGHTERS)) {
+    assert.ok(fighter.basic && fighter.skill.name, id);
+    assert.ok(fighter.skill.cost >= 1 && fighter.skill.cost <= 3, id);
+    assert.ok(!names.has(fighter.skill.name), 'duplicate skill ' + fighter.skill.name);
+    names.add(fighter.skill.name);
+    assert.match(describeSkill(fighter.skill, fighter.attack), /^[А-ЯЁ0-9].+\.$/u, id);
+  }
+});

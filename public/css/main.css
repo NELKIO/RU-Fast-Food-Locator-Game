@@ -240,10 +240,6 @@ h3 {
   border-color: #728461;
   background: #283329;
 }
-.gps-button {
-  white-space: nowrap;
-  color: var(--accent);
-}
 .primary {
   background: var(--accent);
   color: var(--lime-ink);
@@ -457,9 +453,7 @@ h3 {
 body.map-open {
   overflow: hidden;
 }
-.raster-tiles {
-  filter: invert(0.94) grayscale(0.85) hue-rotate(165deg) brightness(0.76) contrast(0.95);
-}
+
 .leaflet-control-attribution.leaflet-control {
   font:
     9px/1.6 Inter,
@@ -1136,15 +1130,6 @@ dialog::backdrop {
     margin-top: 7px;
     max-width: 34em;
   }
-  .gps-button {
-    padding: 7px 9px;
-    font-size: 12px;
-    min-height: 37px;
-    gap: 5px;
-  }
-  .gps-button svg {
-    width: 16px;
-  }
   .filters {
     margin-bottom: 10px;
     gap: 6px;
@@ -1279,9 +1264,6 @@ dialog::backdrop {
   .shell {
     padding-inline: 12px;
   }
-  .gps-button {
-    padding: 6px;
-  }
   .page-head h1 {
     font-size: 27px;
   }
@@ -1339,12 +1321,6 @@ dialog::backdrop {
     grid-row: 2;
     margin: 0;
   }
-  #radar-view .gps-button {
-    grid-column: 2;
-    grid-row: 1;
-    min-height: 32px;
-    font-size: 11px;
-  }
   .map-card {
     height: clamp(205px, 28vh, 290px);
   }
@@ -1381,3 +1357,78 @@ dialog::backdrop {
     font-size: 43px;
   }
 }
+
+/* Wild fighter teaser on the radar */
+.quest-scout:has(.wild-teaser) { padding: 0; }
+.wild-teaser {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  width: 100%;
+  min-height: inherit;
+  padding: 15px 20px;
+  cursor: pointer;
+  color: inherit;
+}
+.wild-teaser:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; border-radius: inherit; }
+.wild-teaser:hover .round-btn { border-color: var(--accent); }
+.wild-copy { display: grid; min-width: 0; }
+.wild-portrait { overflow: visible; }
+.wild-portrait img { width: 118%; height: 118%; object-fit: contain; animation: wild-bob 3s ease-in-out infinite; }
+.wild-teaser .round-btn { color: var(--accent); animation: wild-call 2.4s ease-in-out infinite; }
+@keyframes wild-bob { 50% { transform: translateY(-3px) rotate(-3deg); } }
+@keyframes wild-call { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent); } }
+
+/* Skill description on cards and dialogs */
+.skill-box {
+  display: grid;
+  gap: 4px;
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.skill-box small { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
+.skill-box small svg { color: var(--accent); }
+.skill-box strong { font-size: 16px; letter-spacing: -0.02em; }
+.dialog-surface .skill-box p { margin: 0; font-size: 13px; line-height: 1.45; }
+.card-xp { color: var(--muted); font-size: 13px; }
+.find-wild { display: flex; gap: 7px; align-items: flex-start; margin: 0; font-size: .85rem; line-height: 1.45; color: var(--muted); }
+.find-wild svg { flex: none; color: var(--accent-type, var(--accent)); margin-top: 2px; }
+.find-wild strong { color: var(--text); }
+.dialog-surface .find-effect strong { color: var(--text); }
+
+/* GPS status appears only when something needs attention */
+#geo-status:not([hidden]) { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; animation: rise-in 0.3s ease-out; }
+#geo-status .soft-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 12px; font-size: 13px; }
+.map-tag.searching .status-dot { animation: gps-search 1.2s ease-in-out infinite; }
+.map-tag.live .status-dot { animation: gps-live 2.6s ease-out infinite; }
+@keyframes gps-search { 50% { opacity: 0.25; transform: scale(0.7); } }
+@keyframes gps-live { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 9px transparent; } }
+
+/* Motion: views, dialogs, toasts and cards ease in instead of popping */
+#radar-view:not([hidden]),
+#collection-view:not([hidden]),
+#arena-view:not([hidden]) { animation: view-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); }
+dialog[open] .dialog-surface { animation: sheet-in 0.34s cubic-bezier(0.2, 0.9, 0.25, 1); }
+dialog[open]::backdrop { animation: fade-in 0.25s ease-out; }
+#toast:not([hidden]) { animation: toast-in 0.35s cubic-bezier(0.2, 1.2, 0.4, 1); }
+.menu-grid .menu-card { animation: rise-in 0.36s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 22ms); }
+.menu-card { transition: border-color 0.18s, transform 0.18s; }
+.menu-card:hover { transform: translateY(-2px); }
+.menu-card img { transition: transform 0.25s; }
+.menu-card:hover img { transform: scale(1.05) rotate(-2deg); }
+.quest { animation: rise-in 0.4s ease-out both; }
+.quest + .quest { animation-delay: 60ms; }
+.reward-stage img { animation: card-reveal 0.5s cubic-bezier(0.2, 1.3, 0.4, 1); }
+:is(.primary, .outline-btn, .soft-btn, .filter, .venue-row, .round-btn, .menu-card):not(:disabled):active { transform: scale(0.97); }
+.venue-row { transition: background-color 0.15s, border-color 0.15s; }
+@keyframes view-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(24px) scale(0.97); } }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 16px) scale(0.95); } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes card-reveal { from { opacity: 0; transform: scale(0.7) rotate(-6deg); } }
