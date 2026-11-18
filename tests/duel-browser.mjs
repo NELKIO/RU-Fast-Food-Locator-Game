@@ -11,9 +11,13 @@ const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
 const sample = [
-  { id: 'burger', name: 'Воппер', brand: 'bk', attack: 6, hp: 19 },
-  { id: 'fries', name: 'Картофель фри', brand: 'rostics', attack: 3, hp: 12 }
+  { id: 'burger', name: 'Воппер', brand: 'bk', rarity: 'epic', attack: 6, hp: 19, maxHp: 19,
+    skill: { name: 'Пламя гриля', cost: 2, power: 1, burn: { dmg: 3, turns: 3 } } },
+  { id: 'fries', name: 'Картофель фри', brand: 'rostics', rarity: 'common', attack: 3, hp: 12, maxHp: 12,
+    skill: { name: 'Соль на рану', cost: 1, power: 2 } }
 ];
+const wildCard = { id: 'wild-pie', name: 'Пирожок', brand: 'vkusno', rarity: 'common', attack: 1, hp: 4, maxHp: 4,
+  skill: { name: 'Осторожно, горячо', cost: 2, power: 1 } };
 const fixture = `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="stylesheet" href="/css/duel.css"><style>body{background:#171917;color:#fff;font:16px system-ui;margin:12px}</style>
   <main id="game"></main><script type="module">
@@ -25,7 +29,10 @@ const fixture = `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name
     window.results = [];
     window.attempts = 0;
     const id = options.get('side') === 'guest' ? 'fries' : 'burger';
-    mountDuels(document.querySelector('main'),{cards:${JSON.stringify(sample)},ownedIds:[id],initialCardId:id,
+    const cards = ${JSON.stringify(sample)};
+    const wild = ${JSON.stringify(wildCard)};
+    mountDuels(document.querySelector('main'),{
+      read: () => ({cards, owned: [id], team: [id], wild: {id: 'wild-1', opponent: () => wild}, wildWaitMs: 0}),
       initialMode:options.get('mode')||'online',award:async result=>{
         window.attempts++;
         await new Promise(done=>setTimeout(done,45));
@@ -225,17 +232,21 @@ try {
   await Promise.all(migrated.map(page => page.context().close()));
   console.log('PASS direct connection cut after a confirmed turn / live handover to encrypted fallback / same completed match');
   const local = await newPage();
-  await local.goto(origin + '/fixture?mode=training');
-  await local.getByRole('heading', { name: 'Тренировка' }).waitFor();
+  await local.goto(origin + '/fixture?mode=lobby');
+  await local.getByRole('heading', { name: 'Пирожок' }).waitFor();
+  await local.getByRole('button', { name: 'Сразиться' }).click();
+  await local.getByRole('heading', { name: 'Дикий боец' }).waitFor();
   await playToEnd([local]);
   await local.getByRole('heading', { name: 'Победа!' }).waitFor();
-  assert.equal(await local.evaluate(() => window.results[0]?.cardId), 'burger');
-  console.log('PASS local training / first item / one result / no browser errors');
+  assert.deepEqual(await local.evaluate(() => window.results.map(r => [r.mode, r.encounterId, r.won, r.teamIds])),
+    [['wild', 'wild-1', true, ['burger']]]);
+  await local.getByRole('button', { name: 'На арену' }).waitFor();
+  console.log('PASS wild fight from the arena lobby / one result for the encounter / no browser errors');
   await local.context().close();
   const failed = await newPage();
-  await failed.goto(origin + '/fixture?mode=training&fail=1');
+  await failed.goto(origin + '/fixture?mode=wild&fail=1');
   await playToEnd([failed]);
-  assert.match(await failed.locator('.duel-result').innerText(), /Не удалось подтвердить/);
+  assert.match(await failed.locator('.duel-result').innerText(), /Не удалось записать/);
   assert.deepEqual(await failed.evaluate(() => [window.attempts, window.results.length]), [1, 0]);
   await failed.context().close();
   console.log('PASS failed profile write / result shown without claiming XP / no duplicate reward attempt');

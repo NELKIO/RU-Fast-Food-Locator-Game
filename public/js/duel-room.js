@@ -1,7 +1,8 @@
 import { applyMove, battleStats, MAX_TURNS, startBattle, validTeam } from './duel-engine.js';
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const PROTOCOL = 1;
+// Version 2: fighters carry signature skills, so version-1 clients must not join.
+const PROTOCOL = 2;
 export const SILENT_MS = 12_000;
 export const RECONNECT_MS = 25_000;
 
@@ -43,10 +44,22 @@ export class DuelRoom {
     this.lastSeen = 0;
     this.lostAt = null;
     this.reason = null;
+    this.settledAlone = false;
   }
 
+  // The outcome is fixed once the last move is played. If the peer's acknowledgment never
+  // arrives before the reconnect window closes, the result still stands on this device.
   get finished() {
-    return !!this.state && this.state.winner !== null && this.confirmed === this.history.length;
+    return !!this.state && this.state.winner !== null &&
+      (this.confirmed === this.history.length || this.settledAlone);
+  }
+
+  expire() {
+    if (this.state && this.state.winner !== null) {
+      this.settledAlone = true;
+      this.lostAt = null;
+      this.onChange();
+    } else this.cancel('timeout');
   }
 
   get actionable() {
@@ -135,7 +148,7 @@ export class DuelRoom {
     // A hello can only bind a peer already admitted by the authenticated transport.
     if (!this.known.has(peer)) return;
     if (peer === this.peer && this.lostAt !== null && this.now() - this.lostAt >= RECONNECT_MS) {
-      this.cancel('timeout');
+      this.expire();
     }
     if (this.reason) {
       if (peer === this.peer && data.kind !== 'stop') {
@@ -221,7 +234,7 @@ export class DuelRoom {
       this.onChange();
     }
     if (this.lostAt !== null && now - this.lostAt >= RECONNECT_MS) {
-      this.cancel('timeout');
+      this.expire();
       return;
     }
     if (!this.matchId || !this.peerHasState) {

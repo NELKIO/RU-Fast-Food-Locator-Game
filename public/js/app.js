@@ -10,12 +10,15 @@ import {
   collectionCards,
   setTeam,
   todayRoute,
-  scoutEncounter,
+  wildEncounter,
+  wildFighter,
+  grantStarter,
   resolveEncounter,
   recordBattle,
-  SCOUT_COOLDOWN_MS,
+  WILD_COOLDOWN_MS,
   GPS_RULES,
 } from './game.js';
+import { describeSkill } from './fighters.js';
 import { mountDuels } from './duels.js';
 import { reelMarkup, rewardMarkup } from './rewards.js';
 
@@ -75,6 +78,7 @@ let selected = null,
   map = null,
   geoWatch = null,
   geoMessage = '',
+  geoRetry = false,
   requesting = false;
 let nearby = [],
   collectionFilter = 'all',
@@ -186,11 +190,12 @@ listen('sound', () => {
 });
 updateSound();
 
+// GPS starts by itself when the page opens. The player only sees it when something is wrong.
 function askGps() {
-  resumeSound();
-  if (!navigator.geolocation) {
+  if (!navigator.geolocation || !window.isSecureContext) {
     geoMessage =
-      'Этот браузер не предоставляет GPS. Для отметки открой игру в браузере с геолокацией по HTTPS или на localhost.';
+      'Этот браузер не даёт геолокацию. Открой игру в обычном браузере по HTTPS, чтобы отмечаться у заведений.';
+    geoRetry = false;
     renderGeo();
     return;
   }
@@ -217,13 +222,18 @@ function askGps() {
     },
     (error) => {
       requesting = false;
+      // A watch keeps trying after a timeout; a known position is still better than an alarm.
+      if (error.code !== 1 && fix) {
+        renderGeo();
+        return;
+      }
       const reasons = {
-        1: 'Доступ к геолокации выключен. Разреши его в настройках сайта и нажми «Включить GPS». Пока доступен обзор Москвы.',
-        2: 'Устройство пока не определило координаты. Выйди на открытое место и попробуй ещё раз.',
-        3: 'GPS не успел найти позицию. Можно повторить поиск.',
+        1: 'Нет доступа к геолокации — пока показываем центр Москвы. Разреши геолокацию для этого сайта в настройках браузера.',
+        2: 'Не получается поймать GPS. Выйди на открытое место.',
+        3: 'GPS долго ищет сигнал. Выйди на открытое место.',
       };
-      geoMessage =
-        reasons[error.code] || 'Не удалось определить местоположение. Повтори поиск GPS.';
+      geoMessage = reasons[error.code] || 'Не удалось определить местоположение.';
+      geoRetry = true;
       if (error.code === 1) {
         navigator.geolocation.clearWatch(geoWatch);
         geoWatch = null;
@@ -236,29 +246,38 @@ function askGps() {
     { enableHighAccuracy: true, maximumAge: 10000, timeout: 18000 },
   );
 }
-listen('gps', askGps);
+$('geo-status').addEventListener('click', (e) => {
+  if (e.target.closest('[data-gps-retry]')) askGps();
+});
 
 function renderGeo() {
-  $('gps').disabled = requesting;
-  const gpsLabel = requesting
-    ? 'Ищем GPS…'
-    : fix
-      ? 'GPS ±' + Math.round(fix.accuracy) + ' м'
-      : 'Включить GPS';
-  $('gps').setAttribute('aria-label', gpsLabel);
-  text($('gps').querySelector('span'), gpsLabel);
-  text($('map-location'), fix ? 'GPS · ±' + Math.round(fix.accuracy) + ' м' : 'Москва · обзор');
+  text(
+    $('map-location'),
+    fix ? 'Ты здесь · ±' + Math.round(fix.accuracy) + ' м' : requesting ? 'Ищем тебя…' : 'Москва · обзор',
+  );
   $('map-location').parentElement.classList.toggle('live', Boolean(fix));
+  $('map-location').parentElement.classList.toggle('searching', requesting && !fix);
   text($('map-key-label'), fix ? 'Твоя позиция' : 'Центр обзора');
-  let notice = geoMessage;
-  if (!notice && fix && Date.now() - fix.timestamp > GPS_RULES.maxAgeMs)
-    notice = 'Координаты устарели. Обнови GPS, чтобы подтвердить посещение.';
-  else if (!notice && fix?.accuracy > GPS_RULES.maxAccuracy)
-    notice =
-      'GPS пока неточен. Для отметки нужна погрешность до 120 м. На открытом месте сигнал обычно лучше.';
+  let notice = geoMessage,
+    retry = Boolean(geoMessage) && geoRetry;
+  if (!notice && fix && Date.now() - fix.timestamp > GPS_RULES.maxAgeMs) {
+    notice = 'Координаты давно не обновлялись.';
+    retry = true;
+  } else if (!notice && fix?.accuracy > GPS_RULES.maxAccuracy)
+    notice = 'GPS пока неточен: для отметки нужна погрешность до 120 м. На открытом месте сигнал лучше.';
   if (!notice && !store.persistent)
     notice = 'Браузер ограничил хранение данных. Прогресс доступен до закрытия страницы.';
-  text($('geo-status'), notice);
+  html(
+    $('geo-status'),
+    notice
+      ? '<span>' +
+          esc(notice) +
+          '</span>' +
+          (retry
+            ? '<button type="button" class="soft-btn" data-gps-retry>' + icon('gps', 15) + 'Повторить</button>'
+            : '')
+      : '',
+  );
   $('geo-status').hidden = !notice;
 }
 function renderBrands() {
@@ -391,20 +410,20 @@ function renderRoute() {
   const state = visitStatus(profile, target, fix);
   const reasons = {
     ready: 'Ты в радиусе точки. Награда доступна.',
-    'no-location': 'Включи GPS, чтобы подтвердить посещение.',
+    'no-location': requesting ? 'Определяем, где ты…' : 'Нужна геолокация, чтобы подтвердить посещение.',
     stale: 'Координаты устарели. Обнови GPS.',
     inaccurate: 'Нужен более точный сигнал GPS.',
     'too-far': 'Подойди к цели на ' + Math.round(state.radius || 65) + ' м.',
     cooldown: 'Следующая находка через ' + formatWait(state.remainingMs) + '.',
   };
-  const gpsAction = ['no-location', 'stale', 'inaccurate'].includes(state.reason);
+  const gpsAction = ['no-location', 'stale', 'inaccurate'].includes(state.reason) && !requesting;
   const call = state.ok
     ? 'Открыть рулетку'
-    : gpsAction
-      ? fix
+    : requesting && !fix
+      ? 'Ищем GPS…'
+      : gpsAction
         ? 'Обновить GPS'
-        : 'Включить GPS'
-      : 'В пути';
+        : 'В пути';
   const disabled = state.ok || gpsAction ? '' : ' disabled';
   html(
     box,
@@ -503,6 +522,26 @@ function rarityTag(card) {
     '</span>'
   );
 }
+// What the fighter does in a fight, in the same words the arena uses.
+function skillBox(card) {
+  const skill = card.skill;
+  if (!skill) return '';
+  return (
+    '<div class="skill-box"><small>' +
+    icon('spark', 13) +
+    ' Фирменный приём · ' +
+    skill.cost +
+    ' энерг.</small><strong>«' +
+    esc(skill.name) +
+    '»</strong><p>' +
+    esc(describeSkill(skill, card.attack)) +
+    '</p><small>Обычный удар «' +
+    esc(card.basic || 'Удар') +
+    '» — ' +
+    esc(card.attack) +
+    ' урона и +1 энергия</small></div>'
+  );
+}
 function cardStats(card) {
   return (
     '<div class="stat-grid"><div><strong>' +
@@ -546,7 +585,10 @@ async function spinReward() {
     } catch {}
   } else strip.style.transform = final;
   if (dialogRun !== run || !$('dialog').open) return;
-  openDialog('Награда · ' + card.name, rewardMarkup(result));
+  openDialog(
+    'Награда · ' + card.name,
+    rewardMarkup(result, result.encounter ? menuById.get(result.encounter.enemyId)?.name : ''),
+  );
 }
 
 function strongCards() {
@@ -574,72 +616,50 @@ function renderQuests() {
       (n > 1 ? 'done' : '') +
       '"></b></div></div>',
   );
-  const e = profile.encounter,
-    wait =
-      profile.lastScoutAt === null
-        ? 0
-        : Math.max(0, profile.lastScoutAt + SCOUT_COOLDOWN_MS - Date.now());
-  const detail = e
-    ? 'Обнаружен соперник · ' + (menuById.get(e.enemyId)?.name || 'дикая встреча')
-    : wait
-      ? 'Новый поиск через ' + formatWait(wait)
-      : 'Ищи встречи, чтобы пополнить команду';
+  const e = currentWild(),
+    item = e && menuById.get(e.enemyId),
+    wait = wildWait();
   html(
-    $('scout-card'),
-    '<div class="quest-icon">' +
-      icon('compass', 27) +
-      '</div><div><h2>Полевая разведка</h2><p>' +
-      esc(detail) +
-      '</p></div><button class="quest-tail round-btn" data-scout type="button" aria-label="' +
-      (e ? 'Открыть встречу' : 'Начать разведку') +
-      '">' +
-      icon('arrow', 19) +
-      '</button>',
+    $('wild-card'),
+    item
+      ? '<button type="button" class="wild-teaser" data-wild aria-label="Сразиться с диким бойцом: ' +
+          esc(item.name) +
+          '"><span class="quest-icon wild-portrait">' +
+          cardImage(item) +
+          '</span><span class="wild-copy"><h2>Дикий боец рядом</h2><p>' +
+          esc(item.name) +
+          ' · победи — и он твой</p></span><span class="quest-tail round-btn">' +
+          icon('battle', 19) +
+          '</span></button>'
+      : '<div class="quest-icon">' +
+          icon('compass', 27) +
+          '</div><div><h2>Дикий боец</h2><p>' +
+          (wait ? 'Следующий появится через ' + formatWait(wait) + ' или сразу у заведения' : 'Появится после отметки у заведения') +
+          '</p></div>',
   );
 }
-async function openScout() {
-  const res = await store.update((p) => scoutEncounter(p, menu));
-  if (!res.ok) {
-    if (res.reason === 'no-team')
-      openDialog(
-        'Полевая разведка',
-        '<div class="micro section-kicker">' +
-          icon('compass', 14) +
-          ' Разведка</div><h2>Нужен первый боец</h2><p>Выбери заведение на радаре и открой рулетку, когда подойдёшь к нему. С полученным бойцом можно отправиться на поиски соперника.</p><button class="primary" data-open="radar">К радару ' +
-          icon('arrow', 16) +
-          '</button>',
-      );
-    else
-      showToast(
-        res.reason === 'cooldown'
-          ? 'Новый поиск через ' + formatWait(res.remainingMs)
-          : 'Не удалось открыть встречу.',
-      );
-    return;
+function currentWild() {
+  const e = profile.encounter;
+  return e && menuById.has(e.enemyId) ? e : null;
+}
+function wildWait() {
+  return profile.lastScoutAt === null
+    ? 0
+    : Math.max(0, profile.lastScoutAt + WILD_COOLDOWN_MS - Date.now());
+}
+// A new wild fighter shows up by itself once the pause after the last one is over.
+let wildPending = false;
+async function ensureWild() {
+  if (wildPending || !menu.length || currentWild() || wildWait() > 0 || !profile.team.length) return;
+  wildPending = true;
+  try {
+    await store.update((p) => wildEncounter(p, menu));
+  } finally {
+    wildPending = false;
   }
-  const e = res.encounter,
-    item = menuById.get(e.enemyId);
-  openDialog(
-    'Полевая встреча',
-    '<div class="micro section-kicker">' +
-      icon('compass', 14) +
-      ' Полевая разведка</div><div class="reward-stage">' +
-      cardImage(item, 'reward-img') +
-      '</div><h2>' +
-      esc(item.name) +
-      '</h2><p>' +
-      (e.kind === 'recruit'
-        ? 'Победи в бою, чтобы получить этого бойца в коллекцию.'
-        : 'Это тренировочная встреча. Победа принесёт бойцам команды по 14 опыта.') +
-      '</p><button class="primary" data-encounter="' +
-      esc(e.id) +
-      '">' +
-      icon('battle', 17) +
-      ' Вступить в бой</button>',
-  );
 }
-$('scout-card').addEventListener('click', (e) => {
-  if (e.target.closest('[data-scout]')) openScout();
+$('wild-card').addEventListener('click', (e) => {
+  if (e.target.closest('[data-wild]')) switchTab('arena', { initialMode: 'wild' });
 });
 
 function renderCollection() {
@@ -659,11 +679,13 @@ function renderCollection() {
     ['team', 'Команда'],
   ];
   const tiles = visible
-    .map((c) => {
+    .map((c, i) => {
       const entry = profile.collection[c.id];
       return (
         '<button type="button" class="menu-card ' +
         (entry ? 'owned' : 'locked') +
+        '" style="--i:' +
+        Math.min(i, 24) +
         '" data-card="' +
         esc(c.id) +
         '">' +
@@ -716,14 +738,13 @@ function showCard(id) {
     entry = profile.collection[id],
     inTeam = profile.team.includes(id);
   const action = entry
-    ? '<div class="dialog-actions"><button class="primary" data-training="' +
+    ? '<div class="dialog-actions"><button class="' +
+      (inTeam ? 'outline-btn' : 'primary') +
+      '" data-team="' +
       esc(id) +
       '">' +
-      icon('battle', 16) +
-      ' Тренировка</button><button class="outline-btn" data-team="' +
-      esc(id) +
-      '">' +
-      (inTeam ? 'Из команды' : 'В команду') +
+      icon(inTeam ? 'minus' : 'plus', 16) +
+      (inTeam ? 'Убрать из команды' : 'В команду') +
       '</button></div>'
     : '<button class="primary" data-visit-brand="' +
       esc(card.brand) +
@@ -745,8 +766,9 @@ function showCard(id) {
       (entry ? 'В коллекции, ' + entry.copies + ' экз.' : 'Можно получить в рулетке этой сети.') +
       '</p>' +
       cardStats(card) +
+      skillBox(card) +
       (entry
-        ? '<p>Опыт бойца · ' +
+        ? '<p class="card-xp">Опыт бойца · ' +
           esc(card.xp) +
           (card.xpToNext
             ? ' · до нового уровня ' + esc(card.xpToNext)
@@ -839,10 +861,20 @@ listen('about', () => {
     'Об игре',
     '<div class="micro section-kicker">' +
       icon('radar', 14) +
-      ' Фудрадар</div><h2>Как играть</h2><ol class="about-list"><li>Выбери ресторан и включи геолокацию. Радар показывает расстояние по прямой.</li><li>У цели открой рулетку. Следующая находка в этой точке доступна через шесть часов.</li><li>Испытай бойца на тренировке, отправься в разведку или пригласи друга на арену.</li></ol><p>Профиль хранится в этом браузере. GPS используется для расчётов на устройстве. При просмотре онлайн-карты её провайдер получает запросы фрагментов видимой области.</p><p>Адреса четырёх сетей — All The Places. Карта — OpenStreetMap, OpenFreeMap и OpenMapTiles. Источник фото доступен на карточке каждого блюда.</p><p><a href="https://www.alltheplaces.xyz/" target="_blank" rel="noopener">All The Places</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></p>',
+      ' Фудрадар</div><h2>Как играть</h2><ol class="about-list"><li>Выбери заведение на карте и дойди до него. Расстояние считается по прямой.</li><li>У цели открой рулетку и получи бойца из меню. Та же точка снова наградит через шесть часов.</li><li>После отметки рядом появляется дикий боец. Победи его на арене — и он твой. Ещё на арене можно позвать друга на дуэль по ссылке.</li></ol><p>Профиль хранится в этом браузере. GPS используется для расчётов на устройстве. При просмотре онлайн-карты её провайдер получает запросы фрагментов видимой области.</p><p>Адреса четырёх сетей — All The Places. Карта — OpenStreetMap. Фото блюд — из официальных меню, ссылка есть на карточке.</p><p><a href="https://www.alltheplaces.xyz/" target="_blank" rel="noopener">All The Places</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></p>',
   );
 });
 
+function arenaData() {
+  const e = currentWild();
+  return {
+    cards: strongCards(),
+    owned: owned(),
+    team: [...profile.team],
+    wild: e && { id: e.id, opponent: (team) => wildFighter(e, menu, team) },
+    wildWaitMs: wildWait(),
+  };
+}
 function switchTab(next, options = {}) {
   if (!Object.hasOwn(tabs, next)) return;
   if (tab === 'arena' && onlineActive && next !== 'arena' && !options.confirmed) {
@@ -874,34 +906,27 @@ function switchTab(next, options = {}) {
     renderQuests();
   } else if (next === 'collection') renderCollection();
   else {
-    const enc = options.encounterId,
-      initialTeamIds = [...profile.team];
+    ensureWild();
     duelCleanup = mountDuels($('arena-view'), {
-      cards: strongCards(),
-      ownedIds: owned(),
-      initialTeamIds,
-      initialCardId: options.initialCardId,
+      read: arenaData,
       initialMode: options.initialMode || 'lobby',
-      encounterCardId: options.encounterCardId,
       onBack: () => switchTab('radar'),
       onStateChange: (active) => {
         onlineActive = active;
       },
+      onTeamChange: (ids) => store.update((p) => setTeam(p, ids)),
       award: async (result) => {
         const saved =
-          enc && result.mode === 'encounter'
+          result.mode === 'wild'
             ? await store.update((p) =>
-                resolveEncounter(p, enc, result.won, menu, {
-                  teamIds: result.teamIds || initialTeamIds,
+                resolveEncounter(p, result.encounterId, result.won, menu, {
+                  teamIds: result.teamIds,
                   draw: result.draw,
+                  now: Date.now(),
                 }),
               )
             : await store.update((p) => recordBattle(p, result));
-        if (!saved.ok) return saved;
-        if (saved.card) showToast('В коллекции · ' + saved.card.name);
-        else if (saved.leveledUp) showToast('Боец получил новый уровень!');
-        else if (saved.partyXp && result.mode === 'encounter')
-          showToast('Опыт участников · +' + saved.partyXp);
+        if (saved.ok && saved.leveledUp) showToast('Боец получил новый уровень!');
         return saved;
       },
     });
@@ -923,22 +948,10 @@ $('dialog-body').addEventListener('click', async (e) => {
     showToast('Оформление · ' + themes[appearance].name);
   } else if (b.hasAttribute('data-stay')) closeDialog();
   else if (b.dataset.leave) switchTab(b.dataset.leave, { confirmed: true });
+  else if (b.hasAttribute('data-close')) closeDialog();
+  else if (b.hasAttribute('data-wild')) switchTab('arena', { initialMode: currentWild() ? 'wild' : 'lobby' });
   else if (b.dataset.open) switchTab(b.dataset.open);
-  else if (b.dataset.training)
-    switchTab('arena', { initialMode: 'training', initialCardId: b.dataset.training });
-  else if (b.dataset.encounter) {
-    const enc = profile.encounter;
-    if (!enc || b.dataset.encounter !== enc.id) {
-      closeDialog();
-      showToast('Эта встреча уже завершена.');
-      return;
-    }
-    switchTab('arena', {
-      initialMode: 'encounter',
-      encounterId: enc.id,
-      encounterCardId: enc.enemyId,
-    });
-  } else if (b.dataset.visitBrand) {
+  else if (b.dataset.visitBrand) {
     brand = b.dataset.visitBrand;
     savePref('brand', brand);
     selected = null;
@@ -970,7 +983,25 @@ store.subscribe((next) => {
     renderGeo();
   }
   if (tab === 'collection') renderCollection();
+  if (tab === 'arena') duelCleanup?.refresh?.();
 });
+function welcome(card) {
+  openDialog(
+    'Твой первый боец',
+    '<div class="micro section-kicker">' +
+      icon('star', 14) +
+      ' Добро пожаловать</div><div class="reward-stage">' +
+      cardImage(card, 'reward-img') +
+      rarityTag(card) +
+      '</div><h2>Твой первый боец — ' +
+      esc(card.name) +
+      '</h2><p>Он уже в команде. Подходи к заведениям на карте: там выпадают новые бойцы и появляются дикие соперники. Победишь дикого — заберёшь себе.</p>' +
+      skillBox(card) +
+      '<button class="primary" data-close>Поехали ' +
+      icon('arrow', 16) +
+      '</button>',
+  );
+}
 async function loadCatalog(name) {
   const r = await fetch('data/' + name + '.json');
   if (!r.ok) throw Error(name + ': ' + r.status);
@@ -989,11 +1020,11 @@ async function init() {
   renderBrands();
   renderRadar();
   renderQuests();
+  const starter = await store.update((p) => grantStarter(p, menu));
+  await ensureWild();
   if (/^#duel=/i.test(location.hash)) switchTab('arena', { initialMode: 'online' });
-  try {
-    if ((await navigator.permissions?.query({ name: 'geolocation' }))?.state === 'granted')
-      askGps();
-  } catch {}
+  else if (starter.ok) welcome(starter.card);
+  askGps();
   window.addEventListener('hashchange', () => {
     if (/^#duel=/i.test(location.hash) && !onlineActive)
       switchTab('arena', { initialMode: 'online' });
@@ -1004,6 +1035,7 @@ async function init() {
     renderGeo();
     renderQuests();
     proximity();
+    ensureWild();
   }
   window.setInterval(refreshTime, 15000);
   document.addEventListener('visibilitychange', refreshTime);

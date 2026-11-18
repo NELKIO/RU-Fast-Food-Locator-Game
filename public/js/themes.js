@@ -1,6 +1,6 @@
 import { icon } from './ui.js';
 
-export const DEFAULT_THEME = 'green';
+export const DEFAULT_THEME = 'black';
 export const themes = {
   chili: {
     name: 'Острый соус',

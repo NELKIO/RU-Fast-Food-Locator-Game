@@ -1,5 +1,7 @@
+import { FIGHTERS, RARITIES, RENAMED, ROLES } from './fighters.js';
+
 export const VISIT_COOLDOWN_MS = 6 * 60 * 60 * 1000;
-export const SCOUT_COOLDOWN_MS = 15 * 60 * 1000;
+export const WILD_COOLDOWN_MS = 15 * 60 * 1000;
 export const MAX_TEAM_SIZE = 3;
 export const GPS_RULES = Object.freeze({
   baseRadius: 65,
@@ -10,17 +12,12 @@ export const GPS_RULES = Object.freeze({
 });
 
 const BRANDS = new Set(['bk', 'vkusno', 'rostics', 'dodo']);
-const RARITIES = ['common', 'rare', 'epic', 'legendary'];
 const LOOT_WEIGHTS = [60, 27, 11, 2];
 const XP_THRESHOLDS = [0, 10, 25, 45, 70, 100, 135, 175, 220, 270];
 const DUPLICATE_XP = 10;
 const ROUTE_XP = 25;
-const RECIPES = {
-  'bk-cheeseburger': 'common', 'bk-fries': 'rare', 'bk-onion-rings': 'epic', 'bk-whopper': 'legendary',
-  'vkusno-fries': 'common', 'vkusno-pie': 'rare', 'vkusno-chicken-premier': 'epic', 'vkusno-big-hit': 'legendary',
-  'rostics-strips': 'common', 'rostics-twister': 'rare', 'rostics-wings': 'epic', 'rostics-chefburger': 'legendary',
-  'dodo-cheese': 'common', 'dodo-pepperoni': 'rare', 'dodo-dodster': 'epic', 'dodo-four-cheeses': 'legendary',
-};
+const WILD_WIN = {player: 15, party: 10};
+const WILD_LOSS_PARTY_XP = 3;
 
 function validId(value) {
   if (Number.isSafeInteger(value) && value >= 0) return String(value);
@@ -40,8 +37,12 @@ function timestamp(value) {
   return Number.isFinite(value) && value >= 0 && value <= 8.64e15 ? Math.trunc(value) : null;
 }
 
+function current(id) {
+  return id && Object.hasOwn(RENAMED, id) ? RENAMED[id] : id;
+}
+
 function uniqueIds(value) {
-  return Array.isArray(value) ? [...new Set(value.map(validId).filter(Boolean))] : [];
+  return Array.isArray(value) ? [...new Set(value.map(validId).map(current).filter(Boolean))] : [];
 }
 
 export function freshProfile() {
@@ -76,7 +77,13 @@ export function normalizeProfile(value) {
   if (record(value.collection)) {
     for (const [id, item] of Object.entries(value.collection)) {
       if (!validId(id) || !record(item) || !count(item.copies)) continue;
-      profile.collection[id] = {copies: count(item.copies), xp: count(item.xp, XP_THRESHOLDS.at(-1))};
+      // A dish that left the roster merges into its replacement instead of vanishing.
+      const key = current(id);
+      const kept = profile.collection[key];
+      profile.collection[key] = {
+        copies: count((kept?.copies ?? 0) + count(item.copies)),
+        xp: Math.max(kept?.xp ?? 0, count(item.xp, XP_THRESHOLDS.at(-1))),
+      };
     }
   }
   profile.team = uniqueIds(value.team).filter(id => Object.hasOwn(profile.collection, id)).slice(0, MAX_TEAM_SIZE);
@@ -89,9 +96,13 @@ export function normalizeProfile(value) {
   }
   profile.daily = cleanRoute(value.daily);
   const encounter = value.encounter;
+  // Older saves also had a 'training' kind; every wild fighter can now be won.
   if (record(encounter) && validId(encounter.id) && validId(encounter.enemyId) &&
       ['recruit', 'training'].includes(encounter.kind) && timestamp(encounter.startedAt) !== null) {
-    profile.encounter = {id: validId(encounter.id), enemyId: validId(encounter.enemyId), kind: encounter.kind, startedAt: timestamp(encounter.startedAt)};
+    profile.encounter = {
+      id: validId(encounter.id), enemyId: current(validId(encounter.enemyId)), kind: 'recruit',
+      startedAt: timestamp(encounter.startedAt),
+    };
   }
   profile.encounterSequence = count(value.encounterSequence);
   profile.lastScoutAt = timestamp(value.lastScoutAt);
@@ -183,22 +194,34 @@ function hashId(id) {
   return hash >>> 0;
 }
 
+// A dish without a hand-made entry still fights, with stats derived from its id.
+function fallbackFighter(id) {
+  const hash = hashId(id);
+  const tier = hash % RARITIES.length;
+  const role = ['striker', 'allround', 'guard'][(hash >>> 4) % 3];
+  const attack = {striker: 5, allround: 4, guard: 3}[role] + tier;
+  return {
+    rarity: RARITIES[tier], role, hp: {striker: 15, allround: 18, guard: 21}[role] + 2 * tier, attack,
+    basic: 'Удар', skill: {name: 'Фирменный удар', cost: 2, power: 3},
+  };
+}
+
+export function fighterFor(id) {
+  const key = validId(id);
+  if (!key) return null;
+  return Object.hasOwn(FIGHTERS, key) ? FIGHTERS[key] : fallbackFighter(key);
+}
+
 export function cardFor(item, level = 1) {
   const id = validId(item?.id);
   if (!id || !BRANDS.has(item.brand)) return null;
-  const hash = hashId(id);
-  const rarity = RECIPES[id] ?? RARITIES[hash % RARITIES.length];
-  const tier = RARITIES.indexOf(rarity);
-  const role = (hash >>> 4) % 3;
-  const baseAttack = [5, 4, 3][role] + tier;
-  const baseHp = [14, 17, 20][role] + 2 * tier + (hash >>> 9) % 3;
+  const fighter = fighterFor(id);
   const rank = Math.max(1, count(level, XP_THRESHOLDS.length));
-  const maxHp = baseHp + 2 * (rank - 1);
+  const maxHp = fighter.hp + 2 * (rank - 1);
   return {
-    ...item, id, rarity, level: rank, baseAttack, baseHp, maxHp, hp: maxHp,
-    attack: baseAttack + Math.floor((rank - 1) / 2),
-    role: ['Штурмовик', 'Универсал', 'Защитник'][role],
-    element: ['Жар', 'Хруст', 'Свежесть', 'Сладость'][(hash >>> 12) % 4],
+    ...item, id, rarity: fighter.rarity, level: rank, baseAttack: fighter.attack, baseHp: fighter.hp, maxHp, hp: maxHp,
+    attack: fighter.attack + Math.floor((rank - 1) / 2),
+    role: ROLES[fighter.role], basic: fighter.basic, skill: {...fighter.skill},
   };
 }
 
@@ -273,20 +296,33 @@ function giveCard(saved, item) {
   return {isNew: false, leveledUp: levelForXp(entry.xp) > oldLevel};
 }
 
-function newEncounter(saved, items, now, rng, firstVisit = false) {
-  const kind = firstVisit || unit(rng) < 0.6 ? 'recruit' : 'training';
-  const unseen = kind === 'recruit' ? items.filter(item => !Object.hasOwn(saved.collection, item.id)) : [];
-  const enemy = choose(unseen.length ? unseen : items, rng);
+// Wild fighters prefer dishes the player has not found yet.
+function spawnWild(saved, items, now, rng, brand = null) {
+  const pool = brand ? items.filter(item => item.brand === brand) : items;
+  if (!pool.length) return null;
+  const unseen = pool.filter(item => !Object.hasOwn(saved.collection, item.id));
+  const enemy = choose(unseen.length && unit(rng) < 0.75 ? unseen : pool, rng);
   saved.encounterSequence += 1;
   saved.encounter = {
     id: `${now.toString(36)}-${saved.encounterSequence.toString(36)}`,
-    enemyId: String(enemy.id), kind, startedAt: now,
+    enemyId: String(enemy.id), kind: 'recruit', startedAt: now,
   };
   return saved.encounter;
 }
 
 function hasCurrentEncounter(saved, items) {
   return Boolean(saved.encounter && items.some(item => String(item.id) === saved.encounter.enemyId));
+}
+
+// Every new player starts with one random common fighter, so the arena is never empty.
+export function grantStarter(profile, menu, {rng = Math.random} = {}) {
+  const saved = normalizeProfile(profile);
+  if (Object.keys(saved.collection).length) return {ok: false, reason: 'has-fighters', profile: saved};
+  const commons = menuItems(menu).filter(item => fighterFor(item.id).rarity === 'common');
+  const item = choose(commons.length ? commons : menuItems(menu), rng);
+  if (!item) return {ok: false, reason: 'empty-menu', profile: saved};
+  giveCard(saved, item);
+  return {ok: true, reason: 'starter', profile: saved, card: ownedCard(item, saved.collection[item.id])};
 }
 
 export function claimVisit(profile, point, fix, menu, {now = Date.now(), rng = Math.random} = {}) {
@@ -299,7 +335,6 @@ export function claimVisit(profile, point, fix, menu, {now = Date.now(), rng = M
 
   const id = String(point.id);
   const visits = saved.visits[id]?.count ?? 0;
-  const firstEver = Object.keys(saved.visits).length === 0;
   saved.visits[id] = {count: count(visits + 1), lastAt: now};
   const reward = giveCard(saved, item);
   const route = todayRoute(saved, now);
@@ -310,29 +345,58 @@ export function claimVisit(profile, point, fix, menu, {now = Date.now(), rng = M
   const playerXp = (visits === 0 ? 12 : 8) + (routeCompleted ? ROUTE_XP : 0);
   saved.xp = count(saved.xp + playerXp);
 
+  // A visit lures a wild fighter of the same chain, unless one is already waiting.
+  let spawned = null;
   if (!hasCurrentEncounter(saved, items)) {
     saved.encounter = null;
-    if (firstEver || unit(rng) < 0.45) newEncounter(saved, items, now, rng, firstEver);
+    spawned = spawnWild(saved, items, now, rng, point.brand);
   }
   return {
     ...status, ...reward, reason: 'claimed', profile: saved, firstVisit: visits === 0,
     card: ownedCard(item, saved.collection[item.id]), playerXp, routeCompleted, routeXp: routeCompleted ? ROUTE_XP : 0,
-    encounter: saved.encounter,
+    encounter: saved.encounter, spawned,
   };
 }
 
-export function scoutEncounter(profile, menu, {now = Date.now(), rng = Math.random} = {}) {
+// Returns the waiting wild fighter, spawning a new one once the 15-minute pause has passed.
+export function wildEncounter(profile, menu, {now = Date.now(), rng = Math.random} = {}) {
   const saved = normalizeProfile(profile);
   const items = menuItems(menu);
   if (!items.length) return {ok: false, reason: 'empty-menu', profile: saved};
   if (timestamp(now) === null) return {ok: false, reason: 'invalid-time', profile: saved};
   if (hasCurrentEncounter(saved, items)) return {ok: true, reason: 'active', profile: saved, encounter: saved.encounter};
   if (!saved.team.some(id => items.some(item => String(item.id) === id))) return {ok: false, reason: 'no-team', profile: saved};
-  const remainingMs = saved.lastScoutAt === null ? 0 : Math.max(0, saved.lastScoutAt + SCOUT_COOLDOWN_MS - now);
+  const remainingMs = saved.lastScoutAt === null ? 0 : Math.max(0, saved.lastScoutAt + WILD_COOLDOWN_MS - now);
   if (remainingMs > 0) return {ok: false, reason: 'cooldown', profile: saved, remainingMs};
-  saved.lastScoutAt = now;
-  const encounter = newEncounter(saved, items, now, rng);
+  const encounter = spawnWild(saved, items, now, rng);
   return {ok: true, reason: 'found', profile: saved, encounter, remainingMs: 0};
+}
+
+// The wild fighter fights alone against the whole team, so its size is fitted to that team:
+// it keeps its own move set, and its health × attack lands at WILD_STRENGTH of the team's
+// (total health × average attack), which leaves the player a fair edge whatever the rarity.
+const WILD_STRENGTH = 0.95;
+// A scaled-down wild fighter also gets a proportionally weaker signature move.
+function shrinkSkill(skill, scale) {
+  if (scale >= 1) return {...skill};
+  const fit = value => Math.max(1, Math.round(value * scale));
+  const out = {...skill};
+  for (const key of ['power', 'heal', 'shield', 'team', 'execute']) if (Number.isFinite(out[key]) && out[key] > 0) out[key] = fit(out[key]);
+  if (out.burn) out.burn = {...out.burn, dmg: fit(out.burn.dmg)};
+  return out;
+}
+
+export function wildFighter(encounter, menu, team = []) {
+  const item = menuItems(menu).find(entry => String(entry.id) === encounter?.enemyId);
+  if (!item) return null;
+  const card = cardFor(item, 1);
+  const members = (Array.isArray(team) ? team : []).filter(c => Number.isFinite(c?.attack) && Number.isFinite(c?.maxHp ?? c?.hp)).slice(0, MAX_TEAM_SIZE);
+  if (!members.length) return card;
+  const health = members.reduce((sum, c) => sum + (c.maxHp ?? c.hp), 0);
+  const attack = members.reduce((sum, c) => sum + c.attack, 0) / members.length;
+  const scale = Math.sqrt(WILD_STRENGTH * health * attack / (card.maxHp * card.attack));
+  const maxHp = Math.max(8, Math.round(card.maxHp * scale));
+  return {...card, maxHp, hp: maxHp, attack: Math.max(2, Math.round(card.attack * scale)), skill: shrinkSkill(card.skill, scale)};
 }
 
 function battleOutcome(won, draw) {
@@ -356,24 +420,25 @@ function finishBattle(saved, outcome, playerXp, cardIds, cardXp) {
   return leveledIds;
 }
 
-export function resolveEncounter(profile, encounterId, won, menu, {teamIds, draw = false} = {}) {
+export function resolveEncounter(profile, encounterId, won, menu, {teamIds, draw = false, now = Date.now()} = {}) {
   const saved = normalizeProfile(profile);
   const encounter = saved.encounter;
   if (!encounter || encounter.id !== encounterId) return {ok: false, reason: 'no-encounter', profile: saved};
   const outcome = battleOutcome(won, draw);
   if (!outcome) return {ok: false, reason: 'invalid-result', profile: saved};
   const enemy = menuItems(menu).find(item => String(item.id) === encounter.enemyId);
-  if (won && encounter.kind === 'recruit' && !enemy) return {ok: false, reason: 'missing-card', profile: saved};
+  if (won && !enemy) return {ok: false, reason: 'missing-card', profile: saved};
 
   const party = teamIds ? uniqueIds(teamIds).filter(id => Object.hasOwn(saved.collection, id)).slice(0, MAX_TEAM_SIZE) : [...saved.team];
-  const recruits = won && encounter.kind === 'recruit';
-  const reward = recruits ? giveCard(saved, enemy) : {isNew: false, leveledUp: false};
-  const partyXp = won ? (recruits ? 5 : 14) : 0;
-  const playerXp = won ? (recruits ? 15 : 18) : 0;
+  const reward = won ? giveCard(saved, enemy) : {isNew: false, leveledUp: false};
+  const partyXp = won ? WILD_WIN.party : outcome === 'lost' ? WILD_LOSS_PARTY_XP : 0;
+  const playerXp = won ? WILD_WIN.player : 0;
   const leveledIds = finishBattle(saved, outcome, playerXp, party, partyXp);
+  // Win or lose, the wild fighter leaves and the next one appears after the pause.
   saved.encounter = null;
+  if (timestamp(now) !== null) saved.lastScoutAt = timestamp(now);
   return {
-    ok: true, reason: outcome, profile: saved, encounter, card: recruits ? ownedCard(enemy, saved.collection[enemy.id]) : null,
+    ok: true, reason: outcome, profile: saved, encounter, card: won ? ownedCard(enemy, saved.collection[enemy.id]) : null,
     playerXp, partyXp, isNew: reward.isNew, leveledUp: reward.leveledUp || leveledIds.length > 0, leveledIds,
   };
 }
