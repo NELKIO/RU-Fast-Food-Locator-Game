@@ -112,6 +112,58 @@ test('the bot takes a knockout when one hit is enough and otherwise uses a damag
   assert.notEqual(fight.winner, null);
 });
 
+test('armour trims blows that do not pierce, never below 1; thorns hurt the attacker but never knock it out', () => {
+  let fight = play(duel({}, { trait: { armor: 2 } }), 'hit');
+  assert.deepEqual([fight.last.damage, fight.last.armored], [3, 2]);
+  fight = play(duel({ attack: 2 }, { trait: { armor: 2 } }), 'hit');
+  assert.equal(fight.last.damage, 1);
+  fight = play(duel({ skill: { cost: 1, power: 0, pierce: true } }, { trait: { armor: 2 } }), 'special');
+  assert.equal(fight.last.damage, 5);
+  fight = play(duel({ hp: 2 }, { trait: { thorns: 2 } }), 'hit');
+  assert.deepEqual([fight.last.thorns, fighter(fight, 0).hp], [1, 1]);
+  fight = play(duel({}, { trait: { thorns: 2 } }), 'hit');
+  assert.deepEqual([fight.last.thorns, fighter(fight, 0).hp], [2, 18]);
+});
+
+test('regeneration follows own actions but not while burning; rage adds to blows at half health', () => {
+  let fight = play(duel({ trait: { regen: 2 } }, {}), 'guard', 'hit', 'hit');
+  assert.deepEqual([fight.last.regen, fighter(fight, 0).hp], [2, 19]);
+  const torch = { skill: { cost: 1, power: 0, burn: { dmg: 1, turns: 3 } } };
+  fight = play(duel({ trait: { regen: 2 } }, torch), 'guard', 'special', 'hit');
+  assert.equal(fight.last.regen, 0);
+  fight = play(duel({ hp: 20, trait: { rage: 3 } }, { attack: 10 }), 'hit', 'hit', 'hit');
+  assert.deepEqual([fight.last.damage, fight.last.rage], [8, true]);
+});
+
+test('fireproof stops burning, steady stops weakening and energy loss, quick starts charged, vamp heals on hits', () => {
+  const nasty = { skill: { cost: 1, power: 0, burn: { dmg: 2, turns: 2 }, weaken: 2, sap: true } };
+  let fight = play(duel({ trait: { fireproof: true } }, nasty, 1), 'special');
+  assert.deepEqual([fighter(fight, 0).burn, fighter(fight, 0).attack], [null, 3]);
+  fight = play(duel({ trait: { steady: true } }, nasty, 1), 'special');
+  assert.deepEqual([fighter(fight, 0).attack, fighter(fight, 0).energy, fighter(fight, 0).burn?.dmg], [5, 1, 2]);
+  assert.equal(duel({ trait: { quick: 1 } }, {}).teams[0][0].energy, START_ENERGY + 1);
+  fight = play(duel({ trait: { vamp: 2 } }, {}), 'guard', 'hit', 'hit');
+  assert.deepEqual([fight.last.heal, fighter(fight, 0).hp], [2, 19]);
+});
+
+test('last stand survives the first lethal blow once; a super move costs 3 and shatter strips shield and guard', () => {
+  let fight = play(duel({ attack: 30 }, { trait: { laststand: true } }), 'hit');
+  assert.deepEqual([fighter(fight, 1).hp, fight.last.saved, fight.winner], [1, true, null]);
+  fight = play(fight, 'hit', 'hit');
+  assert.equal(fight.winner, 0);
+  const ultimate = { name: 'Финал', cost: 3, power: 4, shatter: true };
+  fight = play(duel({ ultimate }, { skill: { cost: 1, shield: 6 } }, 1), 'guard', 'hit', 'special');
+  assert.ok(!legalMoves(fight).includes('ultimate'));
+  fight = play(fight, 'hit', 'guard');
+  assert.ok(legalMoves(fight).includes('ultimate'));
+  fight = play(fight, 'ultimate');
+  assert.deepEqual([fight.last.skill, fight.last.damage, fight.last.blocked, fighter(fight, 1).shield, fighter(fight, 0).energy], ['Финал', 9, false, 0, 0]);
+  assert.ok(fight.last.effects.includes('shatter'));
+  assert.equal(botMove(duel({ ultimate: { cost: 3, power: 1 }, trait: { quick: 2 } }, {}), () => 0.9), 'ultimate');
+  const stats = battleStats({ id: 'x', hp: 9, attack: 2, skill: { cost: 2 }, ultimate, trait: { armor: 1, name: 'ignored' } }, true);
+  assert.deepEqual([stats.ultimate.name, stats.trait], ['Финал', { armor: 1 }]);
+});
+
 test('switching consumes the turn; the first surviving reserve replaces a defeated fighter', () => {
   let fight = startBattle([[a, { ...c, hp: 2 }], [b]]);
   fight = applyMove(fight, 0, 'switch:1');

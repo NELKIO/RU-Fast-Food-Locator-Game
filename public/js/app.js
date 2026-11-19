@@ -18,7 +18,7 @@ import {
   WILD_COOLDOWN_MS,
   GPS_RULES,
 } from './game.js';
-import { describeSkill } from './fighters.js';
+import { describeSkill, describeTrait } from './fighters.js';
 import { mountDuels } from './duels.js';
 import { reelMarkup, rewardMarkup } from './rewards.js';
 
@@ -543,16 +543,32 @@ function rarityTag(card) {
 function skillBox(card) {
   const skill = card.skill;
   if (!skill) return '';
-  return (
-    '<div class="skill-box"><small>' +
-    icon('spark', 13) +
-    ' Фирменный приём · ' +
-    skill.cost +
+  const move = (label, glyph, s) =>
+    '<small>' +
+    icon(glyph, 13) +
+    ' ' +
+    label +
+    ' · ' +
+    s.cost +
     ' энерг.</small><strong>«' +
-    esc(skill.name) +
+    esc(s.name) +
     '»</strong><p>' +
-    esc(describeSkill(skill, card.attack)) +
-    '</p><small>Обычный удар «' +
+    esc(describeSkill(s, card.attack)) +
+    '</p>';
+  return (
+    '<div class="skill-box">' +
+    move('Фирменный приём', 'spark', skill) +
+    (card.ultimate ? move('Суперприём', 'trophy', card.ultimate) : '') +
+    (card.trait
+      ? '<small>' +
+        icon('star', 13) +
+        ' Талант</small><strong>«' +
+        esc(card.trait.name) +
+        '»</strong><p>' +
+        esc(describeTrait(card.trait)) +
+        '</p>'
+      : '') +
+    '<small>Обычный удар «' +
     esc(card.basic || 'Удар') +
     '» — ' +
     esc(card.attack) +

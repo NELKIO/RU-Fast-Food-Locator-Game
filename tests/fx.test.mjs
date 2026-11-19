@@ -37,13 +37,14 @@ test('every fighter has its own hand-made skill and basic attack animation', () 
 
 test('recipes only use known steps, anchors and shapes, and land before they end', () => {
   for (const [id, fighter] of Object.entries(FIGHTERS)) {
-    for (const command of ['special', 'hit', 'guard', 'switch:1']) {
-      const effects = command === 'special' ? ['burn', 'weaken', 'sap', 'buff', 'shield', 'team', 'cleanse'].filter(k => fighter.skill[k]) : [];
-      const plan = movePlan(event(id, command, { effects, heal: 2, recoil: 1, executed: true, blocked: true, absorbed: 1, burned: 1, ko: ['x'] }),
-        { brand: id.split('-')[0], energyFor: fighter.skill });
+    for (const command of ['special', 'hit', 'guard', 'switch:1', ...(fighter.ultimate ? ['ultimate'] : [])]) {
+      const skill = command === 'ultimate' ? fighter.ultimate : fighter.skill;
+      const effects = ['special', 'ultimate'].includes(command) ? ['burn', 'weaken', 'sap', 'buff', 'shield', 'team', 'cleanse', 'shatter'].filter(k => skill[k]) : [];
+      const plan = movePlan(event(id, command, { effects, heal: 2, recoil: 1, executed: true, blocked: true, absorbed: 1, burned: 1, ko: ['x'], thorns: 1, saved: true }),
+        { brand: id.split('-')[0], energyFor: skill });
       checkSteps(plan.steps, `${id} ${command}`);
       assert.ok(plan.impact >= 0 && plan.impact < plan.end, `${id} ${command}: impact ${plan.impact} end ${plan.end}`);
-      assert.ok(plan.end <= 2600, `${id} ${command} is too long: ${plan.end}`);
+      assert.ok(plan.end <= (command === 'ultimate' ? 2950 : 2600), `${id} ${command} is too long: ${plan.end}`);
       if (command === 'hit') assert.ok(plan.impact <= 700, `${id}: a plain hit should land quickly, not at ${plan.impact}`);
     }
   }

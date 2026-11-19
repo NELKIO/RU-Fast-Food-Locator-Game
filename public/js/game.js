@@ -222,6 +222,7 @@ export function cardFor(item, level = 1) {
     ...item, id, rarity: fighter.rarity, level: rank, baseAttack: fighter.attack, baseHp: fighter.hp, maxHp, hp: maxHp,
     attack: fighter.attack + Math.floor((rank - 1) / 2),
     role: ROLES[fighter.role], basic: fighter.basic, skill: {...fighter.skill},
+    ...(fighter.ultimate && {ultimate: {...fighter.ultimate}}), ...(fighter.trait && {trait: {...fighter.trait}}),
   };
 }
 
@@ -396,7 +397,8 @@ export function wildFighter(encounter, menu, team = []) {
   const attack = members.reduce((sum, c) => sum + c.attack, 0) / members.length;
   const scale = Math.sqrt(WILD_STRENGTH * health * attack / (card.maxHp * card.attack));
   const maxHp = Math.max(8, Math.round(card.maxHp * scale));
-  return {...card, maxHp, hp: maxHp, attack: Math.max(2, Math.round(card.attack * scale)), skill: shrinkSkill(card.skill, scale)};
+  return {...card, maxHp, hp: maxHp, attack: Math.max(2, Math.round(card.attack * scale)), skill: shrinkSkill(card.skill, scale),
+    ...(card.ultimate && {ultimate: shrinkSkill(card.ultimate, scale)})};
 }
 
 function battleOutcome(won, draw) {

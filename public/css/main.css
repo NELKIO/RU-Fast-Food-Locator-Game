@@ -1389,3 +1389,4 @@ dialog[open]::backdrop { animation: fade-in 0.25s ease-out; }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 16px) scale(0.95); } }
 @keyframes rise-in { from { opacity: 0; transform: translateY(8px); } }
 @keyframes card-reveal { from { opacity: 0; transform: scale(0.7) rotate(-6deg); } }
+.skill-box p + small { margin-top: 8px; }

@@ -579,13 +579,15 @@ const SKILL = {
       { type: 'rise', t: 700, at: 'src', shape: ['plus', 'leaf'], colors: [...HEAL, '#3fae49'], dur: 600, rate: 20 },
     ],
   }),
+  // The slice lands, the cheese stretches back and wraps the pizza in a melted shield.
   'dodo-cheese': () => ({
-    covers: ['sap'],
+    covers: ['shield'],
     steps: [
       toss('slice', { t: 0, size: 14, spin: 6, travel: 380, impact: CHEESE, sparks: 12 }),
       { type: 'bolt', t: 380, color: '#ffd23f', width: 8, amp: 4, sag: 40, dur: 720, segments: 8 },
       { type: 'bolt', t: 440, color: '#ffe98a', width: 4, amp: 7, sag: 26, dur: 640, segments: 8 },
-      { type: 'projectile', t: 760, from: 'tgt', to: 'src', shape: 'orb', colors: ['#ffe066'], size: 4, count: 4, gap: 60, fan: 14, travel: 400, arc: 0.12, alternate: true },
+      { type: 'ring', t: 700, at: 'src', color: '#ffd23f', from: 96, to: 34, width: 7, dur: 420 },
+      { type: 'bubble', t: 820, at: 'src', color: '#ffd23f', size: 1.35, dur: 900 },
     ],
   }),
   'dodo-oven-potatoes': () => ({
@@ -635,6 +637,9 @@ function layers(event, skill, covered, t0, brand) {
   if (has('sap')) steps.push({ type: 'projectile', t: t0 + 160, from: 'tgt', to: 'src', shape: 'orb', colors: ['#ffe066'], size: 4, count: 4, gap: 60, fan: 14, travel: 400, arc: 0.3, alternate: true });
   if (has('buff')) steps.push({ type: 'rise', t: t0 + 120, at: 'src', shape: 'arrowUp', colors: GOLD, dur: 420, rate: 14, size: [7, 10] }, { type: 'ring', t: t0 + 120, at: 'src', color: '#ffd76a', width: 4, dur: 400 });
   if (has('shield')) steps.push({ type: 'bubble', t: t0 + 120, at: 'src', color: BRAND[brand]?.shield ?? '#8fd3ff', hex: true, size: 1.35, dur: 800 });
+  if (has('shatter')) steps.push({ type: 'burst', t: t0 - 60, at: 'tgt', shape: 'shard', colors: ['#bfe6ff', '#ffffff', '#ffd76a'], count: 16, speed: [200, 420], life: [320, 560], size: [3, 6], gravity: 500 }, { type: 'ring', t: t0 - 60, at: 'tgt', shape: 'hex', color: '#ffffff', from: 40, to: 110, width: 4, dur: 320 });
+  if (event.thorns) steps.push({ type: 'burst', t: t0 + 160, at: 'src', shape: 'spark', colors: ['#7bd88f', '#ff6b6b'], count: 9, speed: [120, 260], life: [260, 420], size: [2, 4] });
+  if (event.saved) steps.push({ type: 'ring', t: t0 + 120, at: 'tgt', color: '#ffd76a', from: 20, to: 120, width: 6, dur: 520 }, { type: 'burst', t: t0 + 160, at: 'tgt', shape: 'star', colors: GOLD, count: 8, speed: [80, 200], life: [500, 800], size: [5, 8] });
   if (has('team')) steps.push({ type: 'rise', t: t0 + 100, at: 'src', shape: 'heart', colors: ['#ff7a86', '#ffffff'], dur: 600, rate: 20 });
   if (skill?.drain && !covered.has('drain') && event.heal) steps.push({ type: 'projectile', t: t0 + 160, from: 'tgt', to: 'src', shape: 'orb', colors: ['#8ff0b0'], size: 5, count: 4, gap: 50, fan: 14, travel: 420, arc: 0.3, alternate: true });
   if (event.heal && !covered.has('heal') && !covered.has('team') && !(skill?.drain && !covered.has('drain'))) steps.push({ type: 'rise', t: t0 + 140, at: 'src', shape: 'plus', colors: HEAL, dur: 480, rate: 18 });
@@ -670,6 +675,26 @@ function genericSkill(skill, brand) {
   return { steps };
 }
 
+// A super move replays the fighter's own skill animation inside a golden wind-up and shockwave.
+const ULT_LEAD = 300;
+function ultimateFx(id, skill, brand) {
+  const base = (SKILL[id] ?? (() => genericSkill(skill, brand)))();
+  const shifted = base.steps.map((step) => ({ ...step, t: (step.t ?? 0) + ULT_LEAD }));
+  const impact = fxTiming(shifted).impact;
+  const steps = [
+    { type: 'ring', t: 0, at: 'src', color: '#ffd76a', from: 120, to: 26, width: 6, dur: 320 },
+    { type: 'burst', t: 40, at: 'src', shape: 'twinkle', colors: GOLD, count: 14, speed: [90, 220], life: [380, 620], size: [4, 8] },
+    { type: 'flash', t: 120, screen: true, color: '#ffd76a', alpha: 0.12, dur: 260 },
+    ...shifted,
+  ];
+  if (impact !== null) steps.push(
+    { type: 'ring', t: impact, at: 'tgt', color: '#ffd76a', from: 30, to: 150, width: 7, dur: 460 },
+    { type: 'burst', t: impact, at: 'tgt', shape: 'star', colors: GOLD, count: 10, speed: [160, 320], life: [420, 700], size: [5, 9], gravity: 260 },
+    { type: 'shake', t: impact, mag: 7, dur: 280 },
+  );
+  return { ...base, steps };
+}
+
 // Everything the arena needs for one engine event: the steps and the moments that matter.
 export function movePlan(event, { brand, energyFor } = {}) {
   const id = event.fighter;
@@ -677,6 +702,7 @@ export function movePlan(event, { brand, energyFor } = {}) {
   if (event.command.startsWith('switch:')) recipe = { steps: enterFx(brand) };
   else if (event.command === 'guard') recipe = { steps: guardFx(brand) };
   else if (event.command === 'special') recipe = (SKILL[id] ?? (() => genericSkill(energyFor, brand)))();
+  else if (event.command === 'ultimate') recipe = ultimateFx(id, energyFor, brand);
   else recipe = { steps: (BASIC[id] ?? (() => throwBasic('orb', [BRAND[brand]?.glow ?? '#fff', '#ffffff'], { size: 8, halo: BRAND[brand]?.main ?? '#fff', spin: 0 })))() };
   const timing = fxTiming(recipe.steps);
   const steps = [...recipe.steps];

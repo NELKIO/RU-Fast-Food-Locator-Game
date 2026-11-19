@@ -287,3 +287,16 @@
   .duel-page, .duel-page *, .duel-page *::before, .duel-page *::after { animation: none !important; }
   .duel-pop { transform: translate(-50%, -20px); }
 }
+
+/* Epic and legendary fighters: the signature move and the super move share the top row. */
+.duel-controls.has-ultimate .duel-skill { grid-column: auto; }
+.duel-ultimate .duel-glyph { color: #ffd166; }
+.duel-ultimate.is-ready:enabled {
+  border-color: #ffd166;
+  background: color-mix(in srgb, #ffd166 12%, var(--duel-panel));
+}
+.duel-callout.is-ultimate {
+  background: linear-gradient(90deg, #ffd166, #ff9f43);
+  color: #2a1606;
+  font-size: clamp(1.05rem, 4.6vw, 1.35rem);
+}

@@ -50,7 +50,7 @@ test('each collectible has its own local image and a link to a restaurant menu',
 });
 
 test('every dish on the menu is a hand-made fighter, one legend per chain and commons the most frequent', async () => {
-  const { FIGHTERS, RARITIES, RENAMED, describeSkill } = await import('../public/js/fighters.js');
+  const { FIGHTERS, RARITIES, RENAMED, describeSkill, describeTrait } = await import('../public/js/fighters.js');
   const menu = readCatalog('menu');
   assert.deepEqual(menu.map(item => item.id).sort(), Object.keys(FIGHTERS).sort());
   for (const brand of brands) {
@@ -69,11 +69,42 @@ test('every dish on the menu is a hand-made fighter, one legend per chain and co
     assert.ok(!FIGHTERS[old] && FIGHTERS[next], old);
   }
   const names = new Set();
+  const unique = name => {
+    assert.ok(name && !names.has(name), 'duplicate or missing name ' + name);
+    names.add(name);
+  };
   for (const [id, fighter] of Object.entries(FIGHTERS)) {
     assert.ok(fighter.basic && fighter.skill.name, id);
-    assert.ok(fighter.skill.cost >= 1 && fighter.skill.cost <= 3, id);
-    assert.ok(!names.has(fighter.skill.name), 'duplicate skill ' + fighter.skill.name);
-    names.add(fighter.skill.name);
+    assert.ok(fighter.skill.cost >= 1 && fighter.skill.cost <= 2, id);
+    unique(fighter.skill.name);
     assert.match(describeSkill(fighter.skill, fighter.attack), /^[А-ЯЁ0-9].+\.$/u, id);
+    if (fighter.ultimate) {
+      unique(fighter.ultimate.name);
+      assert.equal(fighter.ultimate.cost, 3, id);
+      assert.match(describeSkill(fighter.ultimate, fighter.attack), /^[А-ЯЁ0-9].+\.$/u, id);
+    }
+    if (fighter.trait) {
+      unique(fighter.trait.name);
+      assert.match(describeTrait(fighter.trait), /^[А-ЯЁ].+\.$/u, id);
+    }
+  }
+});
+
+test('rarer fighters have more: a talent from rare up, a super move from epic up, a double talent for legends', async () => {
+  const { FIGHTERS } = await import('../public/js/fighters.js');
+  const { TRAIT_KEYS } = await import('../public/js/duel-engine.js');
+  const ladder = { common: [false, false], rare: [true, false], epic: [true, true], legendary: [true, true] };
+  for (const [id, f] of Object.entries(FIGHTERS)) {
+    assert.deepEqual([Boolean(f.trait), Boolean(f.ultimate)], ladder[f.rarity], id);
+    const keys = Object.keys(f.trait ?? {}).filter(k => k !== 'name');
+    if (f.trait) assert.ok(keys.length >= 1 && keys.every(k => TRAIT_KEYS.includes(k)), id);
+    // A legend's talent does two things at once, and last stand belongs to legends alone.
+    if (f.trait) assert.equal(keys.length, f.rarity === 'legendary' ? 2 : 1, id);
+    if (keys.includes('laststand')) assert.equal(f.rarity, 'legendary', id);
+  }
+  // Base stats climb with rarity: the weakest rare outlasts or outhits an average common, and so on.
+  const avg = (r, k) => { const g = Object.values(FIGHTERS).filter(f => f.rarity === r); return g.reduce((n, f) => n + f[k], 0) / g.length; };
+  for (const k of ['hp', 'attack']) {
+    assert.ok(avg('common', k) < avg('rare', k) && avg('rare', k) < avg('epic', k) && avg('epic', k) < avg('legendary', k), k);
   }
 });

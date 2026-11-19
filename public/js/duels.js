@@ -1,6 +1,6 @@
 import { brands, esc, formatWait, icon, rarityNames } from './ui.js';
 import { applyMove, battleStats, botMove, currentFighter, legalMoves, MAX_ENERGY, startBattle } from './duel-engine.js';
-import { describeSkill } from './fighters.js';
+import { describeSkill, describeTrait } from './fighters.js';
 import { DuelRoom, newRoomCode, parseRoomCode, RECONNECT_MS } from './duel-room.js';
 import { connectDuel } from './duel-transport.js';
 import { createFx } from './battle-fx.js';
@@ -34,6 +34,7 @@ function pips(filled, total, label) {
 
 const rules = `<details class="duel-rules"><summary>Как идёт бой</summary>
   <p>Ходите по очереди. Удар и защита дают +1 энергии, максимум ${MAX_ENERGY}. Энергия тратится на фирменный приём — у каждого бойца он свой.</p>
+  <p>Чем реже боец, тем больше он умеет: у редкого есть талант, который работает сам, у эпического и легендарного — ещё и суперприём за ${MAX_ENERGY} энергии. Талант легенды делает сразу две вещи.</p>
   <p>Защита вдвое ослабляет следующий удар, если он не «сквозь защиту». Выбитого бойца сразу заменяет следующий из команды. Замена по своей воле стоит хода.</p>
   <p>Через 48 ходов побеждает команда, у которой осталось больше здоровья. В дуэли с другом у всех базовые характеристики, а команды выравниваются по меньшей.</p></details>`;
 
@@ -45,7 +46,7 @@ function story(event, name) {
   if (event.command.startsWith('switch:')) parts.push(`${who} уходит. На арену выходит ${target}.`);
   else if (event.command === 'guard') parts.push(`${who} уходит в защиту.`);
   else {
-    const opening = event.skill ? `${who}: «${event.skill}».` : `${who} бьёт.`;
+    const opening = event.command === 'ultimate' ? `${who}: суперприём «${event.skill}»!` : event.skill ? `${who}: «${event.skill}».` : `${who} бьёт.`;
     parts.push(opening);
     if (event.damage) parts.push(`${target} −${event.damage} HP${event.executed ? ', добивание' : ''}.`);
     else if (event.command === 'hit' || event.skill && event.blocked) parts.push(`${target} не получает урона.`);
@@ -54,11 +55,14 @@ function story(event, name) {
     if (event.heal) parts.push(`+${event.heal} HP.`);
     const effects = {
       burn: `${target} горит.`, weaken: `Атака ${target} падает.`, sap: `${target} теряет энергию.`,
-      buff: `Атака ${who} растёт.`, shield: `${who} под щитом.`, cleanse: 'Огонь потушен.'
+      buff: `Атака ${who} растёт.`, shield: `${who} под щитом.`, cleanse: 'Огонь потушен.', shatter: 'Защита сбита.'
     };
     for (const effect of event.effects) if (effects[effect]) parts.push(effects[effect]);
     if (event.recoil) parts.push(`Отдача −${event.recoil}.`);
+    if (event.thorns) parts.push(`${who} укололся: −${event.thorns}.`);
+    if (event.saved) parts.push(`${target} выстоял на 1 HP!`);
   }
+  if (event.regen) parts.push(`${who} восстанавливается: +${event.regen}.`);
   if (event.burned) parts.push(`${who} обжигается: −${event.burned}.`);
   for (const id of event.ko) parts.push(`${name(id)} выбит!`);
   event.entered.forEach((id, side) => { if (id && !event.command.startsWith('switch:')) parts.push(`Выходит ${name(id)}.`); });
@@ -257,6 +261,8 @@ export function mountDuels(container, options) {
         <p class="duel-wild-stats"><span class="rarity ${esc(enemy.rarity)}">${esc(rarityNames[enemy.rarity] ?? '')}</span>
           <span>${icon('heart', 13)} ${enemy.maxHp}</span><span>${icon('battle', 13)} ${enemy.attack}</span></p>
         <p class="duel-wild-skill"><strong>«${esc(enemy.skill.name)}»</strong> ${esc(describeSkill(enemy.skill, enemy.attack))}</p>
+        ${enemy.ultimate ? `<p class="duel-wild-skill"><strong>Суперприём «${esc(enemy.ultimate.name)}»</strong> ${esc(describeSkill(enemy.ultimate, enemy.attack))}</p>` : ''}
+        ${enemy.trait ? `<p class="duel-wild-skill"><strong>Талант «${esc(enemy.trait.name)}»</strong> ${esc(describeTrait(enemy.trait))}</p>` : ''}
       </div>
       <p class="duel-wild-deal">${icon('trophy', 16)}<span>${owns ? 'Победа прокачает его копию в коллекции и даст опыт команде.' : 'Победи — и он перейдёт в твою коллекцию.'}</span></p>
       ${button('wild', 'Сразиться', { primary: true, icon: 'battle', disabled: !selected.length })}
@@ -360,7 +366,13 @@ export function mountDuels(container, options) {
     const swaps = state.teams[side].map((reserve, index) => index !== state.active[side] && reserve.hp > 0 ?
       `<button type="button" class="duel-swap" data-duel-action="move:switch:${index}" ${enabled ? '' : 'disabled'}>
         ${artwork(catalog.get(reserve.id))}<span>Выпустить ${esc(name(reserve.id))}<small>${reserve.hp} / ${reserve.maxHp} HP</small></span></button>` : '').join('');
-    return `<div class="duel-controls">${special}${hit}${guard}</div>${swaps ? '<div class="duel-subs">' + swaps + '</div>' : ''}`;
+    const ult = fighter.ultimate;
+    const ultReady = ult && fighter.energy >= ult.cost;
+    const ultimate = ult ? `<button type="button" class="duel-move duel-skill duel-ultimate${ultReady ? ' is-ready' : ''}" data-duel-action="move:ultimate" ${enabled && allowed.has('ultimate') ? '' : 'disabled'}>
+      <span class="duel-glyph">${icon('trophy', 20)}</span>
+      <span><strong>${esc(ult.name)} ${pips(Math.min(fighter.energy, ult.cost), ult.cost, 'Стоит ' + ult.cost + ' энергии')}</strong>
+      <small>${esc(describeSkill(ult, fighter.attack))}</small></span></button>` : '';
+    return `<div class="duel-controls${ult ? ' has-ultimate' : ''}">${special}${ultimate}${hit}${guard}</div>${swaps ? '<div class="duel-subs">' + swaps + '</div>' : ''}`;
   }
 
   function resultText(state, side) {
@@ -449,7 +461,7 @@ export function mountDuels(container, options) {
     const actor = event.side === side ? 'me' : 'foe';
     const card = catalog.get(event.fighter);
     const fighter = state.teams[event.side].find(f => f.id === event.fighter);
-    const plan = movePlan(event, { brand: card?.brand, energyFor: fighter?.skill });
+    const plan = movePlan(event, { brand: card?.brand, energyFor: event.command === 'ultimate' ? fighter?.ultimate : fighter?.skill });
     plan.alias = { src: actor, tgt: actor === 'me' ? 'foe' : 'me' };
     fxUntil = performance.now() + plan.end;
     clearTimeout(fxTimer);
@@ -502,11 +514,14 @@ export function mountDuels(container, options) {
       if (event.effects.includes('buff')) pop(actor, 'Атака ↑', 'heal', after + 140);
       if (event.effects.includes('shield')) pop(actor, 'Щит', 'heal', after);
       if (event.effects.includes('cleanse')) pop(actor, 'Потушен', 'heal', after + 140);
+      if (event.effects.includes('shatter')) pop(other, 'Щит сбит', 'info', hit - 120);
+      if (event.thorns) pop(actor, '−' + event.thorns, 'damage', after + 200);
+      if (event.saved) pop(other, 'Выстоял!', 'heal', after);
     }
     if (event.burned) pop(actor, '−' + event.burned, 'burn', after + 340);
     if (event.skill && motion) {
       const callout = document.createElement('div');
-      callout.className = 'duel-callout is-' + actor;
+      callout.className = 'duel-callout is-' + actor + (event.command === 'ultimate' ? ' is-ultimate' : '');
       callout.textContent = event.skill;
       page.querySelector('.duel-stage')?.append(callout);
       setTimeout(() => callout.remove(), 1200);
