@@ -181,6 +181,8 @@ export function makeMap({ onPick, venues }) {
           if (entry.items.length === 1) onPick(entry.items[0]);
           else choose(entry.items, e.latlng, entry.marker);
         })
+        // A double tap on a pin picks the venue twice (making it the target) instead of zooming.
+        .on('dblclick', (e) => L.DomEvent.stopPropagation(e))
         .addTo(map);
       pins.set(key, entry);
     }

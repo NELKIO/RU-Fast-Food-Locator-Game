@@ -53,6 +53,31 @@ export const FIGHTERS = {
     rarity: 'common', role: 'allround', hp: 17, attack: 4, basic: 'Щипок',
     skill: { name: 'Панцирь в кляре', cost: 2, shield: 7 },
   },
+  'bk-cheese-medallions': {
+    rarity: 'rare', role: 'striker', hp: 19, attack: 6, basic: 'Бросок медальона',
+    skill: { name: 'Горячая начинка', cost: 2, power: 2, burn: { dmg: 2, turns: 2 } },
+  },
+  'bk-shrimp-roll': {
+    rarity: 'common', role: 'allround', hp: 17, attack: 4, basic: 'Удар роллом',
+    skill: { name: 'Креветочный ролл', cost: 2, power: 1, shield: 4 },
+  },
+  'bk-sundae': {
+    rarity: 'common', role: 'guard', hp: 18, attack: 3, basic: 'Шоколадные брызги',
+    skill: { name: 'Холодный десерт', cost: 2, weaken: 1, heal: 4 },
+  },
+  // Стаканы колы: чем больше стакан, тем реже и сильнее боец
+  'bk-cola-08': {
+    rarity: 'epic', role: 'guard', hp: 25, attack: 6, basic: 'Ледяной всплеск',
+    skill: { name: 'Ледяной фонтан', cost: 2, power: 2, weaken: 2, cleanse: true },
+  },
+  'bk-cola-05': {
+    rarity: 'rare', role: 'allround', hp: 20, attack: 5, basic: 'Струя колы',
+    skill: { name: 'Шипучка', cost: 2, power: 2, sap: true },
+  },
+  'bk-cola-04': {
+    rarity: 'common', role: 'guard', hp: 18, attack: 3, basic: 'Брызги колы',
+    skill: { name: 'Глоток со льдом', cost: 1, heal: 3, cleanse: true },
+  },
 
   // Вкусно — и точка — классика и большие порции
   'vkusno-big-hit': {
@@ -84,6 +109,18 @@ export const FIGHTERS = {
     skill: { name: 'Осторожно, горячо', cost: 2, power: 1, burn: { dmg: 2, turns: 3 } },
   },
 
+  'vkusno-double-cheeseburger': {
+    rarity: 'rare', role: 'striker', hp: 20, attack: 6, basic: 'Сырный хлопок',
+    skill: { name: 'Двойная порция', cost: 2, power: 2, execute: 3 },
+  },
+  'vkusno-caesar-roll': {
+    rarity: 'common', role: 'allround', hp: 17, attack: 4, basic: 'Хрустящий лист',
+    skill: { name: 'Соус цезарь', cost: 2, power: 1, heal: 2, weaken: 1 },
+  },
+  'vkusno-chocolate-cake': {
+    rarity: 'common', role: 'guard', hp: 19, attack: 3, basic: 'Шоколадная крошка',
+    skill: { name: 'Шоколадный слой', cost: 2, shield: 4, heal: 2 },
+  },
   'vkusno-macarons': {
     rarity: 'common', role: 'guard', hp: 19, attack: 3, basic: 'Хруст безе',
     skill: { name: 'Сахарная кома', cost: 2, sap: true, heal: 3 },
@@ -122,15 +159,31 @@ export const FIGHTERS = {
     rarity: 'common', role: 'guard', hp: 20, attack: 4, basic: 'Пинок',
     skill: { name: 'Подсечка', cost: 2, power: 1, sap: true },
   },
+  'rostics-chefburger-junior': {
+    rarity: 'common', role: 'striker', hp: 16, attack: 5, basic: 'Мини-удар',
+    skill: { name: 'Юный шеф', cost: 2, power: 2, buff: 1 },
+  },
+  'rostics-fries': {
+    rarity: 'common', role: 'striker', hp: 16, attack: 5, basic: 'Картофельный тычок',
+    skill: { name: 'Горсть фри', cost: 1, power: 1, execute: 2 },
+  },
+  'rostics-ice-cream-cone': {
+    rarity: 'common', role: 'guard', hp: 19, attack: 3, basic: 'Холодок',
+    skill: { name: 'Заморозка', cost: 2, sap: true, weaken: 1, cleanse: true },
+  },
 
   // Додо Пицца — печь и сыр
-  'dodo-four-cheeses': {
-    rarity: 'legendary', role: 'guard', hp: 30, attack: 6, basic: 'Сырный удар',
-    skill: { name: 'Сырный квартет', cost: 3, power: 2, weaken: 2, shield: 4 },
-  },
   'dodo-pepperoni': {
-    rarity: 'epic', role: 'striker', hp: 22, attack: 7, basic: 'Острый ломтик',
-    skill: { name: 'Острые кружки', cost: 2, power: 3, burn: { dmg: 2, turns: 2 } },
+    rarity: 'legendary', role: 'striker', hp: 27, attack: 7, basic: 'Острый ломтик',
+    skill: { name: 'Острые кружки', cost: 3, power: 4, burn: { dmg: 3, turns: 3 } },
+  },
+  'dodo-four-cheeses': {
+    rarity: 'epic', role: 'guard', hp: 25, attack: 6, basic: 'Сырный удар',
+    skill: { name: 'Сырный квартет', cost: 2, power: 1, weaken: 2, shield: 3 },
+  },
+  'dodo-diablo': {
+    rarity: 'epic', role: 'striker', hp: 22, attack: 7, basic: 'Перчинка',
+    skill: { name: 'Адское пламя', cost: 2, power: 4, burn: { dmg: 2, turns: 2 }, recoil: 2 },
   },
   'dodo-dodster': {
     rarity: 'epic', role: 'allround', hp: 23, attack: 6, basic: 'Ролл-удар',
@@ -143,6 +196,14 @@ export const FIGHTERS = {
   'dodo-margherita': {
     rarity: 'rare', role: 'guard', hp: 23, attack: 4, basic: 'Лист базилика',
     skill: { name: 'Итальянская классика', cost: 2, shield: 5, heal: 3 },
+  },
+  'dodo-bbq': {
+    rarity: 'rare', role: 'allround', hp: 21, attack: 5, basic: 'Копчёный ломтик',
+    skill: { name: 'Дымок барбекю', cost: 2, power: 1, weaken: 1, burn: { dmg: 2, turns: 3 } },
+  },
+  'dodo-hawaiian': {
+    rarity: 'common', role: 'allround', hp: 18, attack: 4, basic: 'Ананасный кубик',
+    skill: { name: 'Сладкий ананас', cost: 2, power: 1, heal: 3 },
   },
   'dodo-cheese': {
     rarity: 'common', role: 'guard', hp: 20, attack: 4, basic: 'Тянучка',

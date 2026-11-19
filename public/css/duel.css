@@ -167,7 +167,7 @@
 .duel-chip.is-guard, .duel-chip.is-shield, .duel-chip.is-buff { color: var(--duel-accent); }
 .duel-chip.is-burn { color: var(--duel-burn); }
 .duel-chip.is-weaken { color: var(--duel-foe); }
-.duel-fighter.is-ko .duel-art { opacity: .28; filter: grayscale(1); transform: translateY(8px) rotate(-7deg) scale(.9); animation: duel-ko .6s ease-in; }
+.duel-fighter.is-ko .duel-art { opacity: .28; filter: grayscale(1); transform: translateY(8px) rotate(-7deg) scale(.9); animation: duel-ko .6s ease-in var(--hp-delay, 0s) both; }
 .duel-fighter.is-ko h3 { text-decoration: line-through; text-decoration-thickness: 1px; color: var(--duel-muted); }
 .duel-log {
   min-height: 2.6em; padding: 6px 4px; font-size: .88rem; line-height: 1.35; text-align: center; color: var(--duel-muted);
@@ -176,10 +176,12 @@
 .duel-alert { border-left: 2px solid var(--duel-foe); padding: 3px 0 3px 12px; }
 
 /* Effects */
-.act-lunge-up .duel-art { animation: duel-lunge-up .42s cubic-bezier(.3, 0, .3, 1); }
-.act-lunge-down .duel-art { animation: duel-lunge-down .42s cubic-bezier(.3, 0, .3, 1); }
-.act-hit .duel-art { animation: duel-hit .42s ease-out .16s; }
-.act-hit { animation: duel-flash .5s ease-out .16s; }
+.act-lunge-up .duel-art { animation: duel-lunge-up .42s cubic-bezier(.3, 0, .3, 1) var(--act-delay, 0s); }
+.act-lunge-down .duel-art { animation: duel-lunge-down .42s cubic-bezier(.3, 0, .3, 1) var(--act-delay, 0s); }
+.act-hit .duel-art { animation: duel-hit .42s ease-out var(--act-delay, .16s); }
+.act-hit { animation: duel-flash .5s ease-out var(--act-delay, .16s); }
+/* The battle effects canvas covers the viewport above the page but never takes a tap. */
+.duel-fx { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 40; pointer-events: none; }
 .act-enter .duel-art { animation: duel-enter .5s cubic-bezier(.2, 1.3, .4, 1); }
 .act-guard .duel-portrait::after {
   content: ''; position: absolute; inset: 4px; border-radius: 50%; border: 2px solid var(--duel-accent);

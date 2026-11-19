@@ -309,10 +309,34 @@ $('brands').addEventListener('click', (e) => {
   renderBrands();
   renderRadar();
 });
+// A second tap on the venue the player has just picked makes it the target, so they do not
+// have to scroll down to the button and back up to the map. An automatic selection (the
+// nearest venue) does not count as the first tap.
+let tappedId = null;
 function pick(venue, fromList = false) {
   if (!venue) return;
+  const again = venue.id === tappedId && venue.id === selected?.id;
+  tappedId = venue.id;
+  if (again && venue.id !== target?.id) {
+    chooseTarget(venue);
+    showToast('Цель: ' + brands[venue.brand].name + ' · ' + venue.address);
+    return;
+  }
   selected = venue;
   renderRadar({ focus: fromList });
+  if (venue.id !== target?.id && (prefs.tapHints ?? 0) < 3) {
+    savePref('tapHints', (prefs.tapHints ?? 0) + 1);
+    showToast('Нажми ещё раз — и это заведение станет целью');
+  }
+}
+function chooseTarget(venue) {
+  resumeSound();
+  selected = venue;
+  target = venue;
+  readyNotified = false;
+  savePref('target', target.id);
+  renderRadar();
+  if (!fix && !requesting) askGps();
 }
 $('venue-list').addEventListener('click', (e) => {
   const row = e.target.closest('[data-point]');
@@ -479,14 +503,8 @@ $('route-box').addEventListener('click', (e) => {
     return;
   }
   const act = e.target.closest('[data-act]')?.dataset.act;
-  if (act === 'target' && selected) {
-    resumeSound();
-    target = selected;
-    readyNotified = false;
-    savePref('target', target.id);
-    renderRadar();
-    if (!fix && !requesting) askGps();
-  } else if (act === 'current' && target) {
+  if (act === 'target' && selected) chooseTarget(selected);
+  else if (act === 'current' && target) {
     if (brand !== 'all' && brand !== target.brand) {
       brand = target.brand;
       savePref('brand', brand);
@@ -877,7 +895,8 @@ function arenaData() {
 }
 function switchTab(next, options = {}) {
   if (!Object.hasOwn(tabs, next)) return;
-  if (tab === 'arena' && onlineActive && next !== 'arena' && !options.confirmed) {
+  // Inside the arena its own tab returns to the lobby; leaving a live room still asks first.
+  if (tab === 'arena' && onlineActive && !options.confirmed && !options.initialMode) {
     openDialog(
       'Покинуть сетевую комнату',
       '<h2>Выйти из комнаты?</h2><p>Соперник увидит, что ты вышел. Незавершённый матч закончится без награды.</p><div class="dialog-actions"><button class="primary" data-stay>Остаться</button><button class="outline-btn" data-leave="' +
@@ -886,7 +905,6 @@ function switchTab(next, options = {}) {
     );
     return;
   }
-  if (tab === 'arena' && next === 'arena' && duelCleanup && !options.initialMode) return;
   closeDialog();
   if (duelCleanup) {
     duelCleanup();
