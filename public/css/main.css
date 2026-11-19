@@ -650,20 +650,6 @@ body.map-open {
   line-height: 1.05;
   margin: 5px 0;
 }
-.route-actions {
-  display: flex;
-  align-items: stretch;
-  gap: 7px;
-}
-.route-actions .route-cancel {
-  width: 42px;
-  flex: none;
-  align-self: stretch;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  display: grid;
-  place-items: center;
-}
 .side-quests {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1207,9 +1193,6 @@ dialog::backdrop {
     height: 32px;
     border-radius: 9px;
   }
-  .nearby.has-target .venue-list {
-    max-height: 105px;
-  }
   .route-box {
     padding-top: 8px;
   }
@@ -1326,32 +1309,6 @@ dialog::backdrop {
   }
   .venue-list {
     max-height: 151px;
-  }
-  .is-tracking .nearby {
-    order: -1;
-  }
-  .is-tracking .nearby.has-target {
-    display: grid;
-    grid-template-columns: 1fr auto;
-  }
-  .is-tracking .has-target .route-box {
-    grid-column: 1/-1;
-    grid-row: 1;
-    border-top: 0;
-    padding: 0 0 12px;
-    margin: 0 0 9px;
-    border-bottom: 1px solid var(--line);
-  }
-  .is-tracking .has-target .nearby-head,
-  .is-tracking .has-target .near-origin,
-  .is-tracking .has-target .venue-list {
-    grid-column: 1/-1;
-  }
-  .is-tracking .has-target .venue-list {
-    max-height: 84px;
-  }
-  .is-tracking .has-target h2 {
-    font-size: 17px;
   }
   .is-tracking .route-stat {
     font-size: 43px;

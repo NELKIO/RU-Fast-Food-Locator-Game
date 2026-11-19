@@ -157,6 +157,18 @@ try {
     'Expected roughly 900 m from the chosen street; saw ' + far,
   );
   assert.equal(await p.locator('[data-act="claim"]').count(), 0);
+  // On the way there is nothing to press: no dead button, only the cancel cross beside the find.
+  assert.equal(await p.locator('#route-box [data-act="gps"]').count(), 0);
+  assert.doesNotMatch(await p.locator('#route-box').textContent(), /В пути/);
+  const [mapBox, routeBox, listBox, featureBox, crossBox] = await Promise.all(
+    ['#map-card', '#route-box', '.nearby', '#route-box .route-feature', '#route-box .route-cancel'].map((s) =>
+      p.locator(s).boundingBox(),
+    ),
+  );
+  assert.ok(routeBox.y >= mapBox.y + mapBox.height, 'the target block sits under the map');
+  assert.ok(listBox.y >= routeBox.y + routeBox.height, 'nearby points follow the target block');
+  assert.ok(crossBox.x >= featureBox.x + featureBox.width, 'the cross sits to the right of the find');
+  assert.ok(Math.abs(crossBox.y + crossBox.height / 2 - (featureBox.y + featureBox.height / 2)) < 4);
   await p.locator('[data-point]').nth(1).click();
   await p.getByRole('button', { name: /Текущая цель/ }).click();
   assert.match(await p.locator('.route-detail').textContent(), /Манежная/);
@@ -195,6 +207,23 @@ try {
   await p.locator('.main-nav [data-nav="collection"]').click();
   await p.getByRole('button', { name: 'У меня', exact: true }).click();
   assert.equal(await p.locator('.menu-card').count(), Object.keys(afterBattle.collection).length);
+  // The deck on top mirrors the team: + adds a fighter, × takes one out, the last one stays.
+  const deckIds = () => p.locator('.deck-card').evaluateAll((els) => els.map((e) => e.dataset.card));
+  assert.deepEqual(await deckIds(), afterBattle.team);
+  const spare = p.locator('[data-deck-add]').first();
+  if (await spare.count()) {
+    const id = await spare.getAttribute('data-deck-add');
+    await spare.click();
+    await p.waitForFunction((n) => document.querySelectorAll('.deck-card').length === n, afterBattle.team.length + 1);
+    assert.deepEqual((await saved(p)).team, [...afterBattle.team, id]);
+    await p.locator(`[data-deck-remove="${id}"]`).click();
+    await p.waitForFunction((n) => document.querySelectorAll('.deck-card').length === n, afterBattle.team.length);
+  }
+  for (const id of afterBattle.team.slice(1)) await p.locator(`[data-deck-remove="${id}"]`).click();
+  await p.waitForFunction(() => document.querySelectorAll('.deck-card').length === 1);
+  await p.locator('[data-deck-remove]').click();
+  await p.locator('#toast:not([hidden])', { hasText: 'хотя бы один' }).waitFor();
+  assert.deepEqual((await saved(p)).team, afterBattle.team.slice(0, 1));
   await p.locator('.menu-card').first().click();
   assert.ok(await p.getByRole('link', { name: 'В официальном меню' }).isVisible());
   assert.equal(await p.getByRole('button', { name: 'Тренировка' }).count(), 0);
@@ -204,7 +233,7 @@ try {
   assert.match(await p.locator('#route-box').textContent(), /Следующая находка через/);
   assert.equal(await p.locator('[data-act="claim"]').count(), 0);
   assert.deepEqual((await saved(p)).collection, afterBattle.collection);
-  log('Wild fight from the reward, earned fighters and six-hour location cooldown survive reload');
+  log('Wild fight from the reward, deck edits, earned fighters and six-hour location cooldown survive reload');
   await p.locator('[data-brand="vkusno"]').click();
   await p.locator('[data-point="vkusno-88"]').click();
   await p.getByRole('button', { name: 'Сменить цель' }).click();

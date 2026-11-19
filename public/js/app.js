@@ -399,7 +399,7 @@ function renderRoute() {
     ${icon('next', 15)}</button>`
     : '';
   const selectedActive = selected.id === target?.id;
-  box.parentElement.classList.toggle('has-target', selectedActive);
+  box.classList.toggle('has-target', selectedActive);
   if (!selectedActive) {
     const earlier = profile.visits[selected.id]?.lastAt;
     const state = visitStatus(profile, selected, fix);
@@ -441,14 +441,21 @@ function renderRoute() {
     cooldown: 'Следующая находка через ' + formatWait(state.remainingMs) + '.',
   };
   const gpsAction = ['no-location', 'stale', 'inaccurate'].includes(state.reason) && !requesting;
-  const call = state.ok
-    ? 'Открыть рулетку'
-    : requesting && !fix
-      ? 'Ищем GPS…'
-      : gpsAction
-        ? 'Обновить GPS'
-        : 'В пути';
-  const disabled = state.ok || gpsAction ? '' : ' disabled';
+  const searching = requesting && !fix;
+  // Only a real next step gets a button; while walking there is nothing to press.
+  const action =
+    state.ok || gpsAction || searching
+      ? '<button type="button" class="' +
+        (state.ok ? 'primary' : 'outline-btn') +
+        '" data-act="' +
+        (state.ok ? 'claim' : 'gps') +
+        '"' +
+        (searching ? ' disabled' : '') +
+        '>' +
+        icon(state.ok ? 'spark' : 'gps', 17) +
+        (state.ok ? 'Открыть рулетку' : searching ? 'Ищем GPS…' : 'Обновить GPS') +
+        '</button>'
+      : '';
   html(
     box,
     '<div class="micro section-kicker">' +
@@ -461,20 +468,12 @@ function renderRoute() {
       esc(target.address) +
       '<br>' +
       esc(reasons[state.reason] || 'Проверяем позицию…') +
-      '</p>' +
+      '</p><div class="route-row">' +
       feature +
-      '<div class="route-actions"><button type="button" class="' +
-      (state.ok ? 'primary' : 'outline-btn') +
-      '" data-act="' +
-      (state.ok ? 'claim' : 'gps') +
-      '"' +
-      disabled +
-      '>' +
-      icon(state.ok ? 'spark' : 'gps', 17) +
-      call +
-      '</button><button class="route-cancel" data-act="cancel" aria-label="Отменить цель" title="Отменить цель">' +
+      '<button type="button" class="route-cancel" data-act="cancel" aria-label="Отменить цель" title="Отменить цель">' +
       icon('close', 17) +
-      '</button></div>',
+      '</button></div>' +
+      action,
   );
 }
 function proximity() {
@@ -694,12 +693,70 @@ function renderCollection() {
   const switches = [
     ['all', 'Все находки'],
     ['mine', 'У меня'],
-    ['team', 'Команда'],
+    ['team', 'Колода'],
   ];
+  const byId = new Map(cards.map((c) => [c.id, c]));
+  const deck = profile.team.map((id) => byId.get(id)).filter(Boolean);
+  const slots = [0, 1, 2]
+    .map((n) => {
+      const c = deck[n];
+      if (!c)
+        return (
+          '<div class="deck-slot is-empty"><span class="deck-num">' +
+          (n + 1) +
+          '</span>' +
+          icon('plus', 18) +
+          '<small>' +
+          (count > deck.length ? 'Нажми «+» на бойце' : 'Пусто') +
+          '</small></div>'
+        );
+      return (
+        '<div class="deck-slot" style="--deck-color:' +
+        esc(brands[c.brand].color) +
+        '"><button type="button" class="deck-card" data-card="' +
+        esc(c.id) +
+        '"><span class="deck-num">' +
+        (n + 1) +
+        '</span>' +
+        cardImage(c) +
+        '<strong>' +
+        esc(c.name) +
+        '</strong><small>Ур. ' +
+        c.level +
+        '</small></button><button type="button" class="deck-remove" data-deck-remove="' +
+        esc(c.id) +
+        '" aria-label="Убрать из колоды: ' +
+        esc(c.name) +
+        '" title="Убрать из колоды">' +
+        icon('close', 14) +
+        '</button></div>'
+      );
+    })
+    .join('');
+  const deckBox = count
+    ? '<section class="deck panel" aria-labelledby="deck-title"><div class="deck-head"><h2 id="deck-title">Колода</h2><small>' +
+      deck.length +
+      ' из 3 · выходят по порядку</small></div><div class="deck-slots">' +
+      slots +
+      '</div></section>'
+    : '';
+  const canAdd = deck.length < 3;
   const tiles = visible
     .map((c, i) => {
       const entry = profile.collection[c.id];
+      const add =
+        entry && canAdd && !profile.team.includes(c.id)
+          ? '<button type="button" class="deck-add" data-deck-add="' +
+            esc(c.id) +
+            '" aria-label="В колоду: ' +
+            esc(c.name) +
+            '" title="В колоду">' +
+            icon('plus', 15) +
+            '</button>'
+          : '';
       return (
+        '<div class="menu-cell">' +
+        add +
         '<button type="button" class="menu-card ' +
         (entry ? 'owned' : 'locked') +
         '" style="--i:' +
@@ -720,7 +777,7 @@ function renderCollection() {
             ' · ' +
             (profile.team.includes(c.id) ? 'В команде' : entry.copies + ' экз.')
           : 'Ещё не найдено') +
-        '</small></button>'
+        '</small></button></div>'
       );
     })
     .join('');
@@ -729,7 +786,9 @@ function renderCollection() {
     count +
     ' из ' +
     menu.length +
-    ' бойцов. Дубликаты и бои повышают уровень бойца.</p></div></div><div class="catalog-bar" role="group" aria-label="Фильтр коллекции">' +
+    ' бойцов. Дубликаты и бои повышают уровень бойца.</p></div></div>' +
+    deckBox +
+    '<div class="catalog-bar" role="group" aria-label="Фильтр коллекции">' +
     switches
       .map(
         ([k, v]) =>
@@ -748,6 +807,20 @@ function renderCollection() {
       : '<div class="panel empty"><h3>Здесь появится первый боец</h3><p>Выбери ресторан на радаре и открой рулетку у цели.</p><button class="soft-btn" data-open="radar">К радару ' +
         icon('arrow', 16) +
         '</button></div>');
+}
+// Adds a fighter to the end of the deck or takes it out; the deck keeps one to three fighters.
+async function toggleTeam(id) {
+  const res = await store.update((p) =>
+    setTeam(p, p.team.includes(id) ? p.team.filter((k) => k !== id) : [...p.team, id]),
+  );
+  if (res.ok) showToast('Колода сохранена.');
+  else
+    showToast(
+      profile.team.includes(id)
+        ? 'В колоде должен остаться хотя бы один боец.'
+        : 'В колоде уже три бойца. Сначала убери одного.',
+    );
+  return res.ok;
 }
 function showCard(id) {
   const item = menuById.get(id);
@@ -802,8 +875,10 @@ function showCard(id) {
 $('collection-view').addEventListener('click', (e) => {
   const f = e.target.closest('[data-catalog]'),
     card = e.target.closest('[data-card]'),
-    open = e.target.closest('[data-open]');
-  if (f) {
+    open = e.target.closest('[data-open]'),
+    deckEdit = e.target.closest('[data-deck-add], [data-deck-remove]');
+  if (deckEdit) toggleTeam(deckEdit.dataset.deckAdd || deckEdit.dataset.deckRemove);
+  else if (f) {
     collectionFilter = f.dataset.catalog;
     renderCollection();
   } else if (card) showCard(card.dataset.card);
@@ -977,14 +1052,8 @@ $('dialog-body').addEventListener('click', async (e) => {
     switchTab('radar');
   } else if (b.dataset.team) {
     const id = b.dataset.team;
-    const res = await store.update((p) =>
-      setTeam(p, p.team.includes(id) ? p.team.filter((k) => k !== id) : [...p.team, id]),
-    );
-    if (res.ok) {
-      showCard(id);
-      showToast('Команда сохранена.');
-    } else {
-      showToast('В команде должно быть от одного до трёх бойцов.');
+    if (await toggleTeam(id)) showCard(id);
+    else {
       const p = document.createElement('p');
       p.setAttribute('role', 'status');
       p.textContent = 'В команде должно быть от одного до трёх бойцов.';
