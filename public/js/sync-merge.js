@@ -61,6 +61,23 @@ function compact(entry) {
   return entry;
 }
 
+// True when `a` is ahead of `b` in at least one counter.
+function exceeds(a, b) {
+  if (['xp', 'wins', 'losses', 'draws'].some(key => a[key] > b[key])) return true;
+  if (Object.entries(a.cards).some(([id, [copies, xp]]) => copies > (b.cards[id]?.[0] ?? 0) || xp > (b.cards[id]?.[1] ?? 0))) return true;
+  return Object.entries(a.visits).some(([id, visits]) => visits > (b.visits[id] ?? 0));
+}
+
+function minus(a, b) {
+  const out = cleanContribution(null);
+  for (const key of ['xp', 'wins', 'losses', 'draws']) out[key] = Math.max(0, a[key] - b[key]);
+  for (const [id, [copies, xp]] of Object.entries(a.cards)) {
+    out.cards[id] = [Math.max(0, copies - (b.cards[id]?.[0] ?? 0)), Math.max(0, xp - (b.cards[id]?.[1] ?? 0))];
+  }
+  for (const [id, visits] of Object.entries(a.visits)) out.visits[id] = Math.max(0, visits - (b.visits[id] ?? 0));
+  return compact(out);
+}
+
 function larger(a, b) {
   const out = cleanContribution(null);
   for (const key of ['xp', 'wins', 'losses', 'draws']) out[key] = Math.max(a[key], b[key]);
@@ -126,12 +143,25 @@ function laterRoute(a, b) {
 export function mergeProfile(local, docs = [], {now = Date.now(), device} = {}) {
   const base = normalizeProfile(local);
   const sync = base.sync ?? {device: device ?? newDeviceId(), key: null, devices: {}, team: [...base.team], teamAt: 0};
-  const me = sync.device;
+  let me = sync.device;
   const clean = docs.map(cleanDoc).filter(Boolean);
 
   // 1. The ledger: my entry from my own play, every device at its largest known value.
   const devices = {...sync.devices};
-  devices[me] = ownEntry(base, me, devices);
+  const stored = Object.hasOwn(devices, me) ? devices[me] : cleanContribution(null);
+  const ownNow = ownEntry(base, me, devices);
+  const published = clean.filter(doc => Object.hasOwn(doc.devices, me)).map(doc => doc.devices[me]);
+  const remoteMine = published.length ? published.reduce(larger) : null;
+  if (remoteMine && exceeds(remoteMine, stored)) {
+    // The relays know more of this device than the device itself: it was rolled back (restored from
+    // an old backup, or a profile write was lost). Its old entry stays at the larger known value and
+    // what it played since the rollback goes under a new id, so neither part can hide the other.
+    devices[me] = larger(stored, remoteMine);
+    me = newDeviceId();
+    devices[me] = minus(ownNow, stored);
+  } else {
+    devices[me] = ownNow;
+  }
   for (const doc of clean) {
     for (const [id, entry] of Object.entries(doc.devices)) devices[id] = Object.hasOwn(devices, id) ? larger(devices[id], entry) : entry;
   }
@@ -167,8 +197,9 @@ export function mergeProfile(local, docs = [], {now = Date.now(), device} = {}) 
   for (const loser of candidates.slice(1)) if (loser.id !== merged.encounter.id) retired.add(loser.id);
   merged.retired = keepNewestRetired([...retired]);
 
-  // The team: a local change since the last sync gets the current time.
-  const localTeamAt = sameList(base.team, sync.team) ? sync.teamAt : now;
+  // The team: a local change since the last sync gets a time later than any seen so far (a logical
+  // clock), so it wins even when another device's clock runs far ahead.
+  const localTeamAt = sameList(base.team, sync.team) ? sync.teamAt : Math.max(now, sync.teamAt + 1);
   let team = base.team, teamAt = localTeamAt;
   // Equal times fall back to comparing the line-ups, so every device makes the same choice.
   for (const doc of clean) {
