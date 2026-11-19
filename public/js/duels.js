@@ -88,7 +88,8 @@ function chips(fighter) {
 }
 
 export function mountDuels(container, options) {
-  const { read, initialMode, award, onBack, onStateChange, onTeamChange, onShowCard } = options;
+  const { read, initialMode, award, onBack, onStateChange, onTeamChange, onShowCard, onFightChange } = options;
+  let wildFighting = false;
   let data, catalog, owned;
   let selected = [];
   function sync() {
@@ -649,6 +650,9 @@ export function mountDuels(container, options) {
     }
     entering = [false, false];
     navLock(!!room && !room.reason && !room.finished);
+    // A wild fight is in progress until its result is saved; device sync waits for it.
+    const fighting = !!local && !['saved', 'failed'].includes(rewardState);
+    if (fighting !== wildFighting) { wildFighting = fighting; onFightChange?.(fighting); }
   }
 
   async function copyInvite() {
@@ -707,6 +711,7 @@ export function mountDuels(container, options) {
 
   const cleanup = () => {
     disposed = true;
+    if (wildFighting) { wildFighting = false; onFightChange?.(false); }
     if (room) forgetInvite();
     room?.cancel('left');
     clearTimeout(thinking);

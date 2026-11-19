@@ -417,3 +417,58 @@ test('restoring a backup that held offline progress not yet synced loses nothing
   for (const [id, n] of Object.entries(truth.cards)) if (n) assert.ok(got.cards[id] >= n && got.cards[id] <= n + (offline.cards[id] ?? 0), id);
   for (const [id, n] of Object.entries(truth.visits)) if (n) assert.ok(got.visits[id] >= n && got.visits[id] <= n + (offline.visits[id] ?? 0), id);
 });
+
+test('reported bug: the laptop fights its wild fighter while the phone spawned another; no second fight follows', () => {
+  const { devices: [laptop, phone], relays } = linked(2, 21);
+  laptop.act(p => wildEncounter(p, menu, { now: T0 + HOUR, rng: laptop.random }));
+  sync(laptop, relays, T0 + HOUR);
+  // The phone opens offline: its stale profile has no wild fighter and the pause is over, so it spawns one.
+  phone.profile = normalizeProfile({ ...phone.profile, encounter: null });
+  phone.act(p => wildEncounter(p, menu, { now: T0 + 2 * HOUR, rng: phone.random }));
+  const phoneWild = phone.profile.encounter;
+  assert.ok(phoneWild && phoneWild.id !== laptop.profile.encounter.id);
+  sync(phone, relays, T0 + 2 * HOUR);
+  // Meanwhile the laptop fights the one it had and wins.
+  const laptopWild = laptop.profile.encounter;
+  laptop.act(p => resolveEncounter(p, laptopWild.id, true, menu, { now: T0 + 3 * HOUR, teamIds: p.team }));
+  settleAll([laptop, phone], relays, T0 + 3 * HOUR + 60_000);
+  for (const d of [laptop, phone]) {
+    assert.equal(d.profile.encounter, null, d.name + ': no second wild fighter right after the fight');
+    assert.equal(d.profile.lastScoutAt, T0 + 3 * HOUR, 'the pause runs from the fight');
+  }
+  assertExact([laptop, phone]);
+});
+
+test('after a fight, a wild fighter spawned during the pause by an unaware device goes; one lured by a visit stays', () => {
+  const { devices: [a, b], relays } = linked(2, 22);
+  const fight = T0 + 5 * HOUR;
+  a.act(p => wildEncounter(p, menu, { now: T0 + 4 * HOUR, rng: a.random }));
+  const e = a.profile.encounter;
+  a.act(p => resolveEncounter(p, e.id, false, menu, { now: fight, teamIds: p.team }));
+  // b has not heard of the fight and spawns one a minute later by itself.
+  b.profile = normalizeProfile({ ...b.profile, encounter: null, lastScoutAt: null });
+  b.act(p => wildEncounter(p, menu, { now: fight + 60_000, rng: b.random }));
+  assert.ok(b.profile.encounter && !b.profile.encounter.visit);
+  settleAll([a, b], relays, fight + 120_000);
+  assert.equal(a.profile.encounter, null);
+  assert.equal(b.profile.encounter, null, 'two fights in a row are not offered');
+  // A restaurant visit right after the fight lures a wild fighter on purpose: it stays everywhere.
+  const r = b.visit(venues[44], fight + 3 * 60_000);
+  assert.ok(r.spawned?.visit, 'a visit marks its wild fighter');
+  settleAll([a, b], relays, fight + 4 * 60_000);
+  assert.equal(a.profile.encounter?.id, r.spawned.id);
+  assert.equal(b.profile.encounter?.id, r.spawned.id);
+  assertExact([a, b]);
+});
+
+test('two wild fighters waiting at once: the one that came first stays on every device', () => {
+  const { devices: [a, b], relays } = linked(2, 23);
+  a.act(p => wildEncounter(p, menu, { now: T0 + HOUR, rng: a.random }));
+  b.profile = normalizeProfile({ ...b.profile, encounter: null });
+  b.act(p => wildEncounter(p, menu, { now: T0 + 2 * HOUR, rng: b.random }));
+  const first = a.profile.encounter;
+  settleAll([b, a], relays, T0 + 3 * HOUR);
+  assert.equal(a.profile.encounter.id, first.id);
+  assert.equal(b.profile.encounter.id, first.id);
+  assert.ok(a.profile.retired[b.profile.encounter.id] === undefined);
+});
