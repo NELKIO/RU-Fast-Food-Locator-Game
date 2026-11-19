@@ -334,14 +334,14 @@ test('broken or hostile documents never throw and never change the local counter
     { v: 1, devices: { goodid12: { xp: -50, wins: 'x', cards: { 'bk-whopper': ['a', -3], prototype: [1, 1] }, visits: { '__proto__': 3 } } } },
     { v: 1, team: ['bk-angus-parmigiano'], teamAt: 8.64e15 + 1, encounter: { id: '__proto__', enemyId: 'x', kind: 'recruit', startedAt: -1 } },
     { v: 1, retired: 'all', visitsAt: { 'bk-1': 'yesterday' }, daily: { day: 'never', pointIds: 5 } },
-    { v: 1, devices: Object.fromEntries(Array.from({ length: 500 }, (_, i) => ['flood' + String(i).padStart(4, '0'), {}])) },
+    { v: 1, devices: Object.fromEntries(Array.from({ length: 3000 }, (_, i) => ['flood' + String(i).padStart(4, '0'), {}])) },
   ];
   let p = a.profile;
   for (const doc of junk) {
     assert.doesNotThrow(() => { p = mergeProfile(p, [doc], { now: time.now }); }, JSON.stringify(doc)?.slice(0, 80));
   }
   assert.equal(stableJson(counters(p)), before.replace(/x/g, 'x'));
-  assert.ok(Object.keys(p.sync.devices).length <= 24);
+  assert.ok(Object.keys(p.sync.devices).length <= 256);
   assert.equal(Object.getPrototypeOf(p.collection), Object.prototype);
   assert.equal(({}).xp, undefined, 'no prototype pollution');
   // A document from a newer version is still read for what this version knows.
@@ -373,4 +373,27 @@ test('the shared document survives a text round trip unchanged', () => {
   const doc = docOf(a.profile);
   assert.equal(stableJson(cleanDoc(JSON.parse(JSON.stringify(doc)))), stableJson(cleanDoc(doc)));
   assert.ok(JSON.stringify(doc).length < 40_000);
+});
+
+test('many devices: a hundred linked browsers sum up exactly, and the ledger keeps its own entry past the limit', () => {
+  const id = 'bk-whopper';
+  let shared = [];
+  // A hundred devices, e.g. years of cleared browsers, each adds one copy and 3 XP.
+  for (let i = 0; i < 100; i++) {
+    const device = 'dev' + String(i).padStart(5, '0');
+    const own = normalizeProfile({ ...freshProfile(), xp: 3, collection: { [id]: { copies: 1, xp: 0 } }, team: [id], sync: { device, devices: {} } });
+    const merged = mergeProfile(own, shared, { now: START + i });
+    shared = [docOf(merged)];
+  }
+  const last = mergeProfile(normalizeProfile({ ...freshProfile(), sync: { device: 'reader0001', devices: {} } }), shared, { now: START + 200 });
+  assert.equal(last.xp, 300);
+  assert.equal(last.collection[id].copies, 100);
+  assert.equal(Object.keys(last.sync.devices).length, 101, 'a hundred devices plus the one reading');
+  // Past the limit every device keeps the same sorted entries, and always its own one.
+  const crowd = Object.fromEntries(Array.from({ length: 300 }, (_, i) => ['crowd' + String(i).padStart(5, '0'), { xp: 1, wins: 0, losses: 0, draws: 0, cards: {}, visits: {} }]));
+  const late = normalizeProfile({ ...freshProfile(), xp: 7, sync: { device: 'zzzzzzzzlast', devices: crowd } });
+  assert.equal(Object.keys(late.sync.devices).length, 256);
+  const merged = mergeProfile(late, [], { now: START });
+  assert.ok(merged.sync.devices.zzzzzzzzlast, 'own entry survives');
+  assert.ok(Object.keys(merged.sync.devices).length <= 257);
 });
