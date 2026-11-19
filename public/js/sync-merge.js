@@ -10,12 +10,12 @@
 // Fields that are not counters merge by their meaning:
 //   collection, visits     union; visit time is the latest one
 //   team                   the most recent change wins (its time travels with it)
-//   wild fighter           the newest one that no device has retired yet
+//   wild fighter           the first one still waiting that appeared after the latest fight
 //   lastScoutAt, sequence  the latest / largest
 //   daily route            the later day; on the same day the visited points are united
 //   battleIds              stay on the device that played the match
 import {
-  CARD_XP_CAP, MAX_TEAM_SIZE, cleanContribution, encounterTime, keepNewestRetired, normalizeProfile,
+  CARD_XP_CAP, MAX_TEAM_SIZE, WILD_COOLDOWN_MS, cleanContribution, encounterTime, keepNewestRetired, normalizeProfile,
 } from './game.js';
 
 export const DOC_VERSION = 1;
@@ -190,8 +190,17 @@ export function mergeProfile(local, docs = [], {now = Date.now(), device} = {}) 
   if (merged.lastScoutAt < 0) merged.lastScoutAt = null;
   merged.encounterSequence = Math.max(base.encounterSequence, ...clean.map(doc => doc.encounterSequence));
   const retired = new Set([...Object.keys(base.retired), ...clean.flatMap(doc => doc.retired)]);
-  const candidates = [base.encounter, ...clean.map(doc => doc.encounter)].filter(e => e && !retired.has(e.id));
-  candidates.sort((a, b) => b.startedAt - a.startedAt || encounterTime(b.id) - encounterTime(a.id) || (a.id < b.id ? 1 : -1));
+  // After a fight on any device the next wild fighter comes only after the pause, so one that
+  // appeared before that fight, or by itself during the pause on a device that did not know about
+  // the fight yet, is stale. A fighter lured by a restaurant visit is a reward and stays. Of two
+  // that are both waiting, the one that came first stays (a player may already be fighting it);
+  // the other is a duplicate of a device that had not synced yet.
+  const fought = merged.lastScoutAt ?? -Infinity;
+  const stale = e => e.startedAt < fought || (!e.visit && e.startedAt < fought + WILD_COOLDOWN_MS);
+  const all = [base.encounter, ...clean.map(doc => doc.encounter)].filter(e => e && !retired.has(e.id));
+  for (const e of all.filter(stale)) retired.add(e.id);
+  const candidates = all.filter(e => !stale(e));
+  candidates.sort((a, b) => a.startedAt - b.startedAt || encounterTime(a.id) - encounterTime(b.id) || (a.id < b.id ? -1 : 1));
   merged.encounter = candidates[0] ? {...candidates[0]} : null;
   // An encounter that lost the merge is gone for good, so no device brings it back later.
   for (const loser of candidates.slice(1)) if (loser.id !== merged.encounter.id) retired.add(loser.id);

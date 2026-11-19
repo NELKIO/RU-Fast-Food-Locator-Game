@@ -711,7 +711,11 @@ function wildWait() {
 }
 // A new wild fighter shows up by itself once the pause after the last one is over.
 let wildPending = false;
+// A linked device first hears from the others: otherwise it would spawn its own wild fighter
+// before learning that another device has one waiting or has just fought.
+let syncSettled = false;
 async function ensureWild() {
+  if (profile.sync?.key && !syncSettled) return;
   if (wildPending || !menu.length || currentWild() || wildWait() > 0 || !profile.team.length) return;
   wildPending = true;
   try {
@@ -1021,7 +1025,18 @@ function profileDialog() {
 listen('profile-btn', profileDialog);
 
 // Device sync lives in the profile, out of the way of the game.
-const sync = createSync({ store, onStatus: () => refreshSyncDialog() });
+let wildFightActive = false;
+const sync = createSync({
+  store,
+  paused: () => wildFightActive,
+  onStatus: (status) => {
+    refreshSyncDialog();
+    if (!syncSettled && status.state !== 'syncing') {
+      syncSettled = true;
+      ensureWild();
+    }
+  },
+});
 let syncDialogRun = -1,
   syncKeyShown = false;
 function syncLink(key) {
@@ -1206,6 +1221,9 @@ function switchTab(next, options = {}) {
       read: arenaData,
       initialMode: options.initialMode || 'lobby',
       onBack: () => switchTab('radar'),
+      onFightChange: (active) => {
+        wildFightActive = active;
+      },
       onStateChange: (active) => {
         onlineActive = active;
       },
