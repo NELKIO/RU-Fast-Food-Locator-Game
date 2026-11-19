@@ -1,0 +1,64 @@
+games 2209 draws 2 unsolved 1
+
+== common (21) perfect-play in-tier score | bot in-tier | wins/losses/split in tier | speed
+bk-fries                     0.80 0.71 15/3/2   v8  beats: cheese-sauce shrimps shrimp-roll sundae cola-04 pie caesar-roll chocolate-cake macarons drumsticks chefburger-junior ice-cream-cone hawaiian oven-potatoes cheesecake
+rostics-bites                0.80 0.69 16/4/0   v9  beats: fries shrimps shrimp-roll cola-04 nuggets pie chocolate-cake macarons strips drumsticks chefburger-junior fries ice-cream-cone hawaiian oven-potatoes cheesecake
+rostics-strips               0.78 0.68 15/4/1   v8  beats: fries shrimps shrimp-roll sundae cola-04 nuggets pie caesar-roll chocolate-cake macarons chefburger-junior hawaiian cheese oven-potatoes cheesecake
+rostics-fries                0.78 0.61 14/3/3   v8  beats: cheese-sauce shrimps shrimp-roll cola-04 pie caesar-roll chocolate-cake macarons drumsticks chefburger-junior ice-cream-cone hawaiian oven-potatoes cheesecake
+vkusno-nuggets               0.65 0.65 12/6/2   v8  beats: shrimps shrimp-roll cola-04 pie chocolate-cake macarons drumsticks chefburger-junior ice-cream-cone hawaiian cheese oven-potatoes
+vkusno-macarons              0.63 0.15 11/6/3   v7  beats: cheese-sauce shrimp-roll sundae pie caesar-roll chocolate-cake drumsticks ice-cream-cone cheese oven-potatoes cheesecake
+rostics-chefburger-junior    0.63 0.72 11/6/3   v7  beats: cheese-sauce shrimp-roll pie caesar-roll chocolate-cake drumsticks ice-cream-cone hawaiian cheese oven-potatoes cheesecake
+bk-cheese-sauce              0.55 0.51 11/9/0   v5  beats: shrimp-roll sundae nuggets caesar-roll chocolate-cake strips bites hawaiian cheese oven-potatoes cheesecake
+vkusno-caesar-roll           0.55 0.65 10/8/2   v6  beats: shrimps shrimp-roll sundae cola-04 nuggets chocolate-cake bites hawaiian cheese cheesecake
+dodo-cheese                  0.55 0.64 11/9/0   v5  beats: fries shrimps shrimp-roll sundae cola-04 pie chocolate-cake bites fries hawaiian oven-potatoes
+bk-shrimps                   0.47 0.45 8/9/3    v7  beats: cheese-sauce shrimp-roll sundae chocolate-cake drumsticks ice-cream-cone hawaiian cheesecake
+bk-cola-04                   0.47 0.23 8/9/3    v7  beats: cheese-sauce shrimp-roll pie chocolate-cake drumsticks ice-cream-cone oven-potatoes cheesecake
+rostics-drumsticks           0.47 0.46 8/9/3    v6  beats: cheese-sauce sundae caesar-roll strips ice-cream-cone hawaiian cheese cheesecake
+bk-sundae                    0.45 0.47 9/11/0   v4  beats: shrimp-roll cola-04 nuggets chocolate-cake bites chefburger-junior fries hawaiian oven-potatoes
+vkusno-pie                   0.45 0.60 7/9/4    v6  beats: cheese-sauce shrimps sundae chocolate-cake ice-cream-cone hawaiian cheesecake
+dodo-hawaiian                0.30 0.42 6/14/0   v4  beats: cola-04 chocolate-cake macarons ice-cream-cone oven-potatoes cheesecake
+dodo-cheesecake              0.30 0.44 6/14/0   v2  beats: shrimp-roll sundae nuggets chocolate-cake ice-cream-cone cheese
+dodo-oven-potatoes           0.28 0.47 4/13/3   v6  beats: shrimps chocolate-cake ice-cream-cone cheesecake
+bk-shrimp-roll               0.25 0.44 4/14/2   v6  beats: chocolate-cake ice-cream-cone hawaiian oven-potatoes
+rostics-ice-cream-cone       0.25 0.29 5/15/0   v5  beats: cheese-sauce sundae caesar-roll strips cheese
+vkusno-chocolate-cake        0.10 0.23 2/18/0   v3  beats: drumsticks ice-cream-cone
+
+== rare (12) perfect-play in-tier score | bot in-tier | wins/losses/split in tier | speed
+vkusno-chicken-hit           0.82 0.84 9/2/0    v7  beats: chicken-parmesan onion-rings cheese-medallions cola-05 big-special basket carbonara margherita bbq
+rostics-twister              0.82 0.78 8/1/2    v6  beats: chicken-parmesan cola-05 big-special chicken-hit double-cheeseburger basket carbonara bbq
+bk-onion-rings               0.68 0.69 7/3/1    v6  beats: chicken-parmesan cheese-medallions cola-05 big-special double-cheeseburger basket bbq
+bk-cheese-medallions         0.64 0.64 6/3/2    v6  beats: cola-05 big-special double-cheeseburger carbonara margherita bbq
+bk-chicken-parmesan          0.59 0.44 6/4/1    v6  beats: cola-05 big-special double-cheeseburger basket carbonara margherita
+dodo-margherita              0.55 0.49 6/5/0    v5  beats: onion-rings cola-05 double-cheeseburger twister basket carbonara
+dodo-bbq                     0.41 0.50 4/6/1    v5  beats: chicken-parmesan big-special basket margherita
+vkusno-double-cheeseburger   0.36 0.22 3/6/2    v5  beats: big-special chicken-hit carbonara
+bk-cola-05                   0.32 0.24 3/7/1    v5  beats: big-special basket bbq
+vkusno-big-special           0.27 0.52 3/8/0    v4  beats: basket carbonara margherita
+rostics-basket               0.27 0.28 3/8/0    v3  beats: cheese-medallions double-cheeseburger carbonara
+dodo-carbonara               0.27 0.37 3/8/0    v4  beats: onion-rings cola-05 bbq
+
+== epic (10) perfect-play in-tier score | bot in-tier | wins/losses/split in tier | speed
+rostics-wings                0.94 0.72 8/0/1    v7  beats: whopper double-whopper cola-08 grand chicken-premier boxmaster four-cheeses dodster
+dodo-four-cheeses            0.67 0.75 6/3/0    v3  beats: whopper grand chicken-premier boxmaster diablo dodster
+dodo-diablo                  0.61 0.62 5/3/1    v7  beats: double-whopper cola-08 grand chicken-premier boxmaster
+dodo-dodster                 0.56 0.30 5/4/0    v6  beats: double-whopper grand chicken-premier boxmaster diablo
+vkusno-chicken-premier       0.44 0.40 4/5/0    v6  beats: whopper double-whopper cola-08 boxmaster
+rostics-boxmaster            0.44 0.41 4/5/0    v4  beats: whopper double-whopper cola-08 grand
+bk-double-whopper            0.39 0.57 3/5/1    v3  beats: whopper cola-08 four-cheeses
+bk-whopper                   0.33 0.52 3/6/0    v4  beats: grand diablo dodster
+bk-cola-08                   0.33 0.32 3/6/0    v3  beats: whopper four-cheeses dodster
+vkusno-grand                 0.28 0.38 2/6/1    v3  beats: cola-08 chicken-premier
+
+== legendary (4) perfect-play in-tier score | bot in-tier | wins/losses/split in tier | speed
+bk-angus-parmigiano          0.67 0.55 2/1/0    v4  beats: big-hit pepperoni
+dodo-pepperoni               0.67 0.72 2/1/0    v6  beats: big-hit chefburger
+vkusno-big-hit               0.33 0.46 1/2/0    v4  beats: chefburger
+rostics-chefburger           0.33 0.26 1/2/0    v5  beats: angus-parmigiano
+
+== cross tier (row tier vs column tier), perfect | bot
+common     0.50|0.50  0.00|0.00  0.00|0.00  0.00|0.00
+rare       1.00|1.00  0.50|0.50  0.01|0.14  0.00|0.00
+epic       1.00|1.00  0.99|0.86  0.50|0.50  0.00|0.01
+legendary  1.00|1.00  1.00|1.00  1.00|0.99  0.50|0.50
+
+upsets (lower tier wins both orders): 1 dodo-carbonara>bk-cola-08
