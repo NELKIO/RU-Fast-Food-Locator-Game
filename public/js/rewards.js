@@ -54,7 +54,7 @@ export function rewardMarkup(result, wildName = '') {
     <div class="find-body">
       <div class="find-outcome">${icon('collection', 17)}<strong>${outcome}</strong></div>
       <dl class="find-stats" aria-label="Характеристики бойца">
-        ${stat('Атака', card.attack)}${stat('Здоровье', health)}${stat('Уровень', card.level)}
+        ${stat('Атака', card.attack)}${stat('Здоровье', health)}${stat('Скорость', card.speed ?? 5)}${stat('Уровень', card.level)}
       </dl>
       ${skill ? `<p class="find-effect"><strong>«${esc(skill.name)}»</strong> ${esc(describeSkill(skill, card.attack))}</p>` : ''}
       <p class="find-xp">${icon(result.routeCompleted ? 'route' : 'spark', 16)}<span><strong>+${esc(result.playerXp)} опыта</strong> ${xp}</span></p>

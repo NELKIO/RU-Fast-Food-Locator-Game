@@ -76,6 +76,7 @@ test('every dish on the menu is a hand-made fighter, one legend per chain and co
   for (const [id, fighter] of Object.entries(FIGHTERS)) {
     assert.ok(fighter.basic && fighter.skill.name, id);
     assert.ok(fighter.skill.cost >= 1 && fighter.skill.cost <= 2, id);
+    assert.ok(Number.isInteger(fighter.speed) && fighter.speed >= 1 && fighter.speed <= 9, id + ' speed');
     unique(fighter.skill.name);
     assert.match(describeSkill(fighter.skill, fighter.attack), /^[А-ЯЁ0-9].+\.$/u, id);
     if (fighter.ultimate) {
@@ -88,6 +89,9 @@ test('every dish on the menu is a hand-made fighter, one legend per chain and co
       assert.match(describeTrait(fighter.trait), /^[А-ЯЁ].+\.$/u, id);
     }
   }
+  // Burn reads as a duration with the right plural, not «после каждого из 3 хода».
+  assert.equal(describeSkill({ power: 1, burn: { dmg: 2, turns: 3 } }, 4), '5 урона, поджигает на 3 хода соперника: −2 HP за ход.');
+  assert.match(describeSkill({ power: 0, burn: { dmg: 1, turns: 5 } }, 4), /на 5 ходов соперника/);
 });
 
 test('rarer fighters have more: a talent from rare up, a super move from epic up, a double talent for legends', async () => {

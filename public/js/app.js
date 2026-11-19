@@ -582,6 +582,8 @@ function cardStats(card) {
     '</strong><small>Атака</small></div><div><strong>' +
     esc(card.maxHp || card.hp) +
     '</strong><small>Здоровье</small></div><div><strong>' +
+    esc(card.speed ?? 5) +
+    '</strong><small>Скорость</small></div><div><strong>' +
     esc(card.level) +
     '</strong><small>Уровень</small></div></div>'
   );

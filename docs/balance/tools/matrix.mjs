@@ -8,7 +8,7 @@ const res = {};
 let k = 0;
 for (const a of ids) for (const b of ids) {
   if (k++ % +total !== +shard) continue;
-  // r: side 0 = a moves first; tempo energy goes to b.
+  // r: a moves first and b gets the tempo energy. bot: a's points against b, speed decides who opens.
   res[a + ' ' + b] = { r: solve(FIGHTERS[a], FIGHTERS[b], 0), bot: botScore(FIGHTERS[a], FIGHTERS[b], 60) };
 }
 writeFileSync(out, JSON.stringify(res));

@@ -1,5 +1,5 @@
 import { brands, esc, formatWait, icon, rarityNames } from './ui.js';
-import { applyMove, battleStats, botMove, currentFighter, legalMoves, MAX_ENERGY, startBattle } from './duel-engine.js';
+import { applyMove, battleStats, botMove, currentFighter, legalMoves, MAX_ENERGY, opener, startBattle } from './duel-engine.js';
 import { describeSkill, describeTrait } from './fighters.js';
 import { DuelRoom, newRoomCode, parseRoomCode, RECONNECT_MS } from './duel-room.js';
 import { connectDuel } from './duel-transport.js';
@@ -33,14 +33,20 @@ function pips(filled, total, label) {
 }
 
 const rules = `<details class="duel-rules"><summary>Как идёт бой</summary>
-  <p>Ходите по очереди. Удар и защита дают +1 энергии, максимум ${MAX_ENERGY}. Энергия тратится на фирменный приём — у каждого бойца он свой.</p>
+  <p>Первым ходит тот, чей боец быстрее. При равной скорости в бою с диким бойцом начинаешь ты, а в дуэли решает код комнаты; второй в дуэли получает +1 энергии. Когда на арену выходит новый боец после нокаута, первым снова ходит самый быстрый, даже если он только что ходил.</p>
+  <p>Дальше ходите по очереди. Удар и защита дают +1 энергии, максимум ${MAX_ENERGY}. Энергия тратится на фирменный приём — у каждого бойца он свой.</p>
   <p>Чем реже боец, тем больше он умеет: у редкого есть талант, который работает сам, у эпического и легендарного — ещё и суперприём за ${MAX_ENERGY} энергии. Талант легенды делает сразу две вещи.</p>
   <p>Защита вдвое ослабляет следующий удар, если он не «сквозь защиту». Выбитого бойца сразу заменяет следующий из команды. Замена по своей воле стоит хода.</p>
   <p>Через 48 ходов побеждает команда, у которой осталось больше здоровья. В дуэли с другом у всех базовые характеристики, а команды выравниваются по меньшей.</p></details>`;
 
 // The narrator: one short line about what just happened, from the event the engine produced.
-function story(event, name) {
-  if (!event) return 'Бей, чтобы копить энергию, и трать её на фирменный приём.';
+function story(event, name, state) {
+  if (!event) {
+    const [a, b] = [0, 1].map(side => currentFighter(state, side));
+    const lead = currentFighter(state, state.turn);
+    if (a.speed === b.speed) return `Скорость равна, первым ходит ${name(lead.id)}. Бей, чтобы копить энергию, и трать её на приёмы.`;
+    return `${name(lead.id)} быстрее (скорость ${lead.speed} против ${Math.min(a.speed, b.speed)}) и ходит первым.`;
+  }
   const who = name(event.fighter), target = name(event.target);
   const parts = [];
   if (event.command.startsWith('switch:')) parts.push(`${who} уходит. На арену выходит ${target}.`);
@@ -66,6 +72,8 @@ function story(event, name) {
   if (event.burned) parts.push(`${who} обжигается: −${event.burned}.`);
   for (const id of event.ko) parts.push(`${name(id)} выбит!`);
   event.entered.forEach((id, side) => { if (id && !event.command.startsWith('switch:')) parts.push(`Выходит ${name(id)}.`); });
+  // After a knockout the faster fighter on the arena moves first, even twice in a row.
+  if (event.ko.length && state.winner === null && state.turn === event.side) parts.push(`${name(currentFighter(state, event.side).id)} быстрее и ходит снова.`);
   return parts.join(' ');
 }
 
@@ -148,8 +156,9 @@ export function mountDuels(container, options) {
     if (!wild || !selected.length) { draw(); return; }
     const enemy = wild.opponent(selected.map(id => catalog.get(id)));
     if (!enemy) { draw(); return; }
-    // The player opens a wild fight, and the wild fighter gets no tempo energy for it.
-    local = startBattle([selected.map(id => battleStats(catalog.get(id))), [battleStats(enemy)]], 0, { tempo: false });
+    // The faster lead fighter opens; on equal speed the player does. Nobody gets tempo energy.
+    const teams = [selected.map(id => battleStats(catalog.get(id))), [battleStats(enemy)]];
+    local = startBattle(teams, opener(teams, 0), { tempo: false });
     localMatchId = newRoomCode() + newRoomCode();
     wildId = wild.id;
     rewardState = 'idle';
@@ -158,6 +167,15 @@ export function mountDuels(container, options) {
     mode = 'wild';
     draw();
     window.scrollTo({ top: 0, behavior: 'instant' });
+    queueBot();
+  }
+
+  // The wild fighter moves whenever the turn is its own: after the player, at the start when it
+  // is faster, and again when it is faster than a fighter that just came in.
+  function queueBot() {
+    if (!local || local.winner !== null || local.turn !== 1) return;
+    clearTimeout(thinking);
+    thinking = setTimeout(botTurn, reduced() ? 300 : Math.max(950, fxUntil - performance.now() + 350));
   }
 
   function botTurn() {
@@ -165,6 +183,7 @@ export function mountDuels(container, options) {
     if (hold.some(index => index !== null) || busy()) { thinking = setTimeout(botTurn, Math.max(120, fxUntil - performance.now() + 250)); return; }
     local = applyMove(local, 1, botMove(local));
     draw();
+    queueBot();
   }
 
   function play(command) {
@@ -177,10 +196,7 @@ export function mountDuels(container, options) {
     if (!next) return;
     local = next;
     draw();
-    if (local.winner === null) {
-      clearTimeout(thinking);
-      thinking = setTimeout(botTurn, reduced() ? 300 : Math.max(950, fxUntil - performance.now() + 350));
-    }
+    queueBot();
   }
 
   function openRoom(role, code) {
@@ -236,7 +252,7 @@ export function mountDuels(container, options) {
       return `<button type="button" class="duel-pick ${number >= 0 ? 'is-selected' : ''}" data-duel-action="pick:${esc(id)}"
         aria-pressed="${number >= 0}" ${locked || (number < 0 && selected.length === 3) ? 'disabled' : ''}>
         ${artwork(card)}<span class="duel-pick-title"><strong>${esc(card.name)}</strong>
-        <small>${icon('heart', 11)} ${stats.hp} · ${icon('battle', 11)} ${stats.attack} · ${esc(stats.skill.name)}</small></span>
+        <small>${icon('heart', 11)} ${stats.hp} · ${icon('battle', 11)} ${stats.attack} · ${icon('speed', 11)} ${stats.speed} · ${esc(stats.skill.name)}</small></span>
         <span class="duel-slot">${number < 0 ? '+' : number + 1}</span></button>`;
     }).join('');
     return `<section class="duel-team"><h3>Твоя команда <small>${selected.length} из 3 · выходят по номерам</small></h3>
@@ -259,7 +275,7 @@ export function mountDuels(container, options) {
         <span class="duel-label">Дикий боец · ${esc(brands[enemy.brand]?.name ?? '')}</span>
         <h3 id="duel-wild-title">${esc(enemy.name)}</h3>
         <p class="duel-wild-stats"><span class="rarity ${esc(enemy.rarity)}">${esc(rarityNames[enemy.rarity] ?? '')}</span>
-          <span>${icon('heart', 13)} ${enemy.maxHp}</span><span>${icon('battle', 13)} ${enemy.attack}</span></p>
+          <span>${icon('heart', 13)} ${enemy.maxHp}</span><span>${icon('battle', 13)} ${enemy.attack}</span><span title="Скорость">${icon('speed', 13)} ${enemy.speed ?? 5}</span></p>
         <p class="duel-wild-skill"><strong>«${esc(enemy.skill.name)}»</strong> ${esc(describeSkill(enemy.skill, enemy.attack))}</p>
         ${enemy.ultimate ? `<p class="duel-wild-skill"><strong>Суперприём «${esc(enemy.ultimate.name)}»</strong> ${esc(describeSkill(enemy.ultimate, enemy.attack))}</p>` : ''}
         ${enemy.trait ? `<p class="duel-wild-skill"><strong>Талант «${esc(enemy.trait.name)}»</strong> ${esc(describeTrait(enemy.trait))}</p>` : ''}
@@ -426,7 +442,7 @@ export function mountDuels(container, options) {
         <h2 class="${final ? 'duel-outcome is-' + (state.winner === side ? 'win' : state.winner === 'draw' ? 'draw' : 'loss') : ''}">${esc(title)}</h2></div>
       ${room && currentPath ? '<small class="duel-note" data-connection="' + currentPath + '">' + (currentPath === 'direct' ? 'Напрямую' : 'Через ретранслятор') + '</small>' : ''}</header>
       <div class="duel-stage${turnClass}">${fighterPanel(state, 1 - side, false)}
-        <p class="duel-log" role="status" aria-live="polite">${esc(story(state.last, name))}</p>
+        <p class="duel-log" role="status" aria-live="polite">${esc(story(state.last, name, state))}</p>
         ${fighterPanel(state, side, true)}</div>
       ${!connected ? '<p class="duel-alert">Ходы на паузе. Ждём повторного подключения до ' + (RECONNECT_MS / 1000) + ' секунд.</p>' : ''}
       ${final ? `<div class="duel-result">${resultText(state, side)}

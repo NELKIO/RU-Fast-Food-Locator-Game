@@ -680,6 +680,108 @@ const SHAPES = {
     ctx.arc(s * 0.08, -s * 1.02, s * 0.2, 0, TAU);
     ctx.fill();
   },
+  // A red boxing glove, pointing along +x (the cuff trails behind).
+  glove(ctx, s) {
+    const g = ctx.createLinearGradient(0, -s, 0, s);
+    g.addColorStop(0, '#ff5a5f');
+    g.addColorStop(1, '#b3121c');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(s * 0.2, -s * 0.05, s * 0.95, s * 0.8, 0, 0, TAU);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(-s * 0.15, s * 0.5, s * 0.5, s * 0.3, -0.35, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#f4f1ea';
+    roundRect(ctx, -s * 1.2, -s * 0.6, s * 0.55, s * 1.2, s * 0.16);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.4)';
+    ctx.beginPath();
+    ctx.ellipse(s * 0.45, -s * 0.42, s * 0.42, s * 0.16, -0.25, 0, TAU);
+    ctx.fill();
+  },
+  // A glowing grill grate, seen from above.
+  grill(ctx, s) {
+    ctx.lineCap = 'round';
+    for (const [color, width] of [['#2b2523', 0.17], ['#ff8a2a', 0.07]]) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = s * width;
+      for (let i = -3; i <= 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(-s * 1.15, i * s * 0.3);
+        ctx.lineTo(s * 1.15, i * s * 0.3);
+        ctx.stroke();
+      }
+    }
+    ctx.strokeStyle = '#2b2523';
+    ctx.lineWidth = s * 0.14;
+    roundRect(ctx, -s * 1.3, -s * 1.08, s * 2.6, s * 2.16, s * 0.22);
+    ctx.stroke();
+  },
+  // A tall chef's hat.
+  toque(ctx, s) {
+    ctx.fillStyle = '#ffffff';
+    for (const [x, y, r] of [[-0.55, -0.35, 0.55], [0.55, -0.35, 0.55], [0, -0.75, 0.62]]) {
+      ctx.beginPath();
+      ctx.arc(x * s, y * s, r * s, 0, TAU);
+      ctx.fill();
+    }
+    roundRect(ctx, -s * 0.8, -s * 0.4, s * 1.6, s * 1.05, s * 0.12);
+    ctx.fill();
+    ctx.fillStyle = '#e4e8ee';
+    roundRect(ctx, -s * 0.85, s * 0.45, s * 1.7, s * 0.4, s * 0.1);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(160,170,185,.6)';
+    ctx.lineWidth = s * 0.07;
+    for (const x of [-0.35, 0.35]) {
+      ctx.beginPath();
+      ctx.moveTo(x * s, -s * 0.2);
+      ctx.lineTo(x * s, s * 0.4);
+      ctx.stroke();
+    }
+  },
+  snowflake(ctx, s, c) {
+    ctx.strokeStyle = c;
+    ctx.lineWidth = Math.max(1, s * 0.16);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * TAU, x = Math.cos(a), y = Math.sin(a);
+      ctx.moveTo(0, 0);
+      ctx.lineTo(x * s, y * s);
+      for (const side of [-1, 1]) {
+        const b = a + side * 0.6;
+        ctx.moveTo(x * s * 0.55, y * s * 0.55);
+        ctx.lineTo(x * s * 0.55 + Math.cos(b) * s * 0.32, y * s * 0.55 + Math.sin(b) * s * 0.32);
+      }
+    }
+    ctx.stroke();
+  },
+  // The comic "angry vein" mark for a fighter in a rage.
+  anger(ctx, s, c) {
+    ctx.strokeStyle = c;
+    ctx.lineWidth = s * 0.3;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 4; i++) {
+      ctx.save();
+      ctx.rotate((i / 4) * TAU + Math.PI / 4);
+      ctx.beginPath();
+      ctx.moveTo(s * 0.25, -s * 0.35);
+      ctx.quadraticCurveTo(s * 0.5, 0, s * 0.25, s * 0.35);
+      ctx.stroke();
+      ctx.restore();
+    }
+  },
+  // A thin thorn, pointing along +x.
+  thorn(ctx, s, c) {
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(s * 1.3, 0);
+    ctx.quadraticCurveTo(-s * 0.2, -s * 0.2, -s * 0.8, -s * 0.38);
+    ctx.lineTo(-s * 0.8, s * 0.38);
+    ctx.quadraticCurveTo(-s * 0.2, s * 0.2, s * 1.3, 0);
+    ctx.fill();
+  },
   note(ctx, s, c) {
     ctx.fillStyle = c;
     ctx.beginPath();
@@ -706,7 +808,7 @@ function drawShape(name, ctx, size, color, p) {
 // Food shapes have their own natural colors; everything else is white unless a recipe says so.
 const NATURAL = new Set(['seed', 'cube', 'fry', 'cheese', 'leaf', 'nugget', 'macaron', 'cup', 'cake', 'cone',
   'wedge', 'onion', 'pepperoni', 'slice', 'patty', 'bun', 'strip', 'wing', 'drumstick', 'shrimp', 'cherry', 'pie',
-  'roll', 'medallion', 'crown', 'basket', 'potato', 'pizza', 'chili']);
+  'roll', 'medallion', 'crown', 'basket', 'potato', 'pizza', 'chili', 'glove', 'grill', 'toque']);
 function paint(shape, colors) {
   if (colors) return pick(colors);
   return NATURAL.has(shape) ? undefined : '#fff';
@@ -776,7 +878,15 @@ export function createFx({ anchor, shakeTarget }) {
   // ------------------------------------------------------------------ step types
   const STEPS = {
     burst(s) {
-      spray(where(s.at ?? 'tgt', s.jitter ?? 6, s.alias), s);
+      const p = where(s.at ?? 'tgt', s.jitter ?? 6, s.alias);
+      p.y += (s.dy ?? 0) * p.r;
+      let o = s;
+      // `along` sprays in the direction of the blow, so debris flies out through the back.
+      if (s.along) {
+        const a = where('src', 0, s.alias), b = where('tgt', 0, s.alias);
+        o = { ...s, angle: Math.atan2(b.y - a.y, b.x - a.x) };
+      }
+      spray(p, o);
     },
     // Particles appear on a ring and rush into the point: gathering power.
     charge(s) {
@@ -903,8 +1013,9 @@ export function createFx({ anchor, shakeTarget }) {
           ctx.strokeStyle = s.color ?? '#fff';
           ctx.lineWidth = (s.width ?? 6) * (1 - k * 0.7);
           ctx.beginPath();
-          if (s.shape === 'hex') for (let i = 0; i <= 6; i++) ctx.lineTo(p.x + Math.cos(i / 6 * TAU) * r, p.y + Math.sin(i / 6 * TAU) * r);
-          else ctx.arc(p.x, p.y, r, 0, TAU);
+          const y = p.y + (s.dy ?? 0) * p.r, flat = s.flat ?? 1;
+          if (s.shape === 'hex') for (let i = 0; i <= 6; i++) ctx.lineTo(p.x + Math.cos(i / 6 * TAU) * r, y + Math.sin(i / 6 * TAU) * r * flat);
+          else ctx.ellipse(p.x, y, r, r * flat, 0, 0, TAU);
           ctx.stroke();
         },
       });
@@ -943,7 +1054,7 @@ export function createFx({ anchor, shakeTarget }) {
       for (let i = 0; i < count; i++) {
         later(rand(0, dur), () => {
           const p = where(s.at ?? 'tgt', 0, s.alias);
-          const fall = s.height ?? p.r * 3.2;
+          const fall = s.top ? s.top * p.r : s.height ?? p.r * 3.2;
           const x = p.x + rand(-p.r * (s.width ?? 1.1), p.r * (s.width ?? 1.1));
           const t = (s.fall ?? 420) / 1000;
           particle({
@@ -1071,19 +1182,144 @@ export function createFx({ anchor, shakeTarget }) {
       for (let i = 0; i < count; i++) {
         const phase = (i / count) * TAU, shape = pick(s.shape ?? 'dot'), color = paint(shape, s.colors);
         const seed = Math.random() * 10, size = val(s.size ?? 8);
+        // `stack` spreads the items upwards into a helix; `funnel` widens the upper turns.
+        const lvl = count > 1 ? i / (count - 1) : 0;
         things.push({
           age: 0, life: dur, draw(k) {
             const p = where(s.at ?? 'tgt', 0, s.alias);
-            const r = p.r * ((s.from ?? 1.6) + ((s.to ?? 0.6) - (s.from ?? 1.6)) * ease.inOut(k));
+            const r = p.r * ((s.from ?? 1.6) + ((s.to ?? 0.6) - (s.from ?? 1.6)) * ease.inOut(k)) * (1 + (s.funnel ?? 0) * lvl);
             const a = phase + (s.turns ?? 1.2) * TAU * k;
             ctx.globalAlpha = k < 0.15 ? k / 0.15 : k > 0.85 ? (1 - k) / 0.15 : 1;
-            ctx.translate(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r * (s.flat ?? 0.55));
+            ctx.translate(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r * (s.flat ?? 0.55) + ((s.dy ?? 0) - (s.lift ?? 0) * k - (s.stack ?? 0) * lvl) * p.r);
             ctx.rotate(a * 2);
             ctx.globalCompositeOperation = GLOWS.has(shape) && !light() ? 'lighter' : 'source-over';
             drawShape(shape, ctx, size, color, { seed, vx: 0, vy: 0 });
           },
         });
       }
+    },
+    // A big object dropping from the sky onto an anchor: its shadow grows, it lands with a squash.
+    slam(s) {
+      const fall = s.fall ?? 420, hold = s.hold ?? 220, out = 240;
+      const seed = Math.random() * 10;
+      let landed = false;
+      things.push({
+        age: 0, life: fall + hold + out, draw() {
+          const p = where(s.at ?? 'tgt', 0, s.alias);
+          const t = this.age, u = Math.min(1, t / fall);
+          const size = p.r * (s.size ?? 0.7);
+          const fade = t > fall + hold ? Math.max(0, 1 - (t - fall - hold) / out) : 1;
+          if (!landed && u >= 1) {
+            landed = true;
+            for (const step of [].concat(s.onHit ?? [])) later(step.t ?? 0, () => run({ ...step, at: step.at ?? s.at ?? 'tgt', alias: s.alias }));
+          }
+          const ground = p.y + p.r * (s.ground ?? 0.6), x = p.x + (s.dx ?? 0) * p.r;
+          ctx.save();
+          ctx.globalAlpha = 0.4 * Math.min(1, u * 1.5) * fade;
+          ctx.fillStyle = 'rgba(0,0,0,.65)';
+          ctx.beginPath();
+          ctx.ellipse(x, ground, size * (0.4 + 0.8 * u), size * 0.22 * (0.4 + 0.8 * u), 0, 0, TAU);
+          ctx.fill();
+          ctx.restore();
+          const y = p.y + (s.dy ?? 0) * p.r - (1 - ease.in(u)) * p.r * (s.height ?? 3.4);
+          const squash = t > fall && t < fall + 160 ? Math.sin(((t - fall) / 160) * Math.PI) * 0.22 : 0;
+          ctx.globalAlpha = Math.min(1, u * 4) * fade;
+          ctx.translate(x, y + squash * size * 0.5);
+          ctx.rotate((s.tilt ?? 0) + (s.spin ?? 0) * u);
+          ctx.scale(1 + squash, 1 - squash);
+          if (s.halo) {
+            ctx.save();
+            ctx.globalCompositeOperation = light() ? 'source-over' : 'lighter';
+            ctx.globalAlpha *= 0.55;
+            SHAPES.dot(ctx, size * 2.3, s.halo);
+            ctx.restore();
+          }
+          drawShape(s.shape, ctx, size, paint(s.shape, s.colors), { seed, vx: 0, vy: 0 });
+        },
+      });
+    },
+    // A cone of stage light from the top of the screen onto an anchor.
+    spot(s) {
+      const dur = s.dur ?? 900;
+      things.push({
+        age: 0, life: dur, draw(k) {
+          const p = where(s.at ?? 'src', 0, s.alias);
+          const a = k < 0.2 ? k / 0.2 : k > 0.75 ? (1 - k) / 0.25 : 1;
+          const sway = Math.sin(k * Math.PI * 2) * (s.sway ?? 0.25) * p.r;
+          const topX = p.x + (s.dx ?? 0) * p.r + sway, topY = Math.min(0, p.y - p.r * 7);
+          const foot = p.y + p.r * 0.8, w = p.r * (s.width ?? 1.2);
+          const g = ctx.createLinearGradient(0, topY, 0, foot);
+          g.addColorStop(0, 'rgba(255,255,255,0)');
+          g.addColorStop(1, s.color ?? '#fff6d6');
+          ctx.globalCompositeOperation = light() ? 'source-over' : 'lighter';
+          ctx.globalAlpha = a * (s.alpha ?? (light() ? 0.25 : 0.32));
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.moveTo(topX - p.r * 0.12, topY);
+          ctx.lineTo(topX + p.r * 0.12, topY);
+          ctx.lineTo(p.x + w, foot);
+          ctx.lineTo(p.x - w, foot);
+          ctx.closePath();
+          ctx.fill();
+          ctx.globalAlpha = a * 0.5;
+          ctx.translate(p.x, foot);
+          ctx.scale(1, 0.28);
+          SHAPES.dot(ctx, w * 1.15, s.color ?? '#fff6d6');
+        },
+      });
+    },
+    // The screen darkens around the fight while a super move plays. Drawn under the particles.
+    dim(s) {
+      const dur = s.dur ?? 1200;
+      things.push({
+        age: 0, life: dur, back: true, draw(k) {
+          const a = k < 0.15 ? k / 0.15 : k > 0.75 ? (1 - k) / 0.25 : 1;
+          const g = ctx.createRadialGradient(width / 2, height / 2, Math.min(width, height) * 0.15, width / 2, height / 2, Math.max(width, height) * 0.75);
+          g.addColorStop(0, 'rgba(0,0,0,0)');
+          g.addColorStop(1, s.color ?? '#000');
+          ctx.globalAlpha = a * (s.alpha ?? 0.5) * (light() ? 0.45 : 1);
+          ctx.fillStyle = g;
+          ctx.fillRect(0, 0, width, height);
+          ctx.globalAlpha = a * (s.alpha ?? 0.5) * (light() ? 0.12 : 0.35);
+          ctx.fillStyle = s.color ?? '#000';
+          ctx.fillRect(0, 0, width, height);
+        },
+      });
+    },
+    // A column of fire or light erupting from under an anchor.
+    pillar(s) {
+      const dur = s.dur ?? 700;
+      const [core, edge] = s.colors ?? ['#fff3a8', '#ff7a1a'];
+      things.push({
+        age: 0, life: dur, draw(k) {
+          const p = where(s.at ?? 'tgt', 0, s.alias);
+          const grow = ease.out(Math.min(1, k / 0.22));
+          const fade = k > 0.55 ? (1 - k) / 0.45 : 1;
+          const x = p.x + (s.dx ?? 0) * p.r, base = p.y + p.r * (s.ground ?? 0.75);
+          const h = p.r * (s.height ?? 3.6) * grow, w = p.r * (s.width ?? 0.6);
+          const g = ctx.createLinearGradient(x - w, 0, x + w, 0);
+          g.addColorStop(0, 'rgba(255,255,255,0)');
+          g.addColorStop(0.28, edge);
+          g.addColorStop(0.5, core);
+          g.addColorStop(0.72, edge);
+          g.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.globalCompositeOperation = light() ? 'source-over' : 'lighter';
+          ctx.fillStyle = g;
+          // Stacked slices fade towards the top, so the column has no hard edge.
+          const slices = 9;
+          for (let i = 0; i < slices; i++) {
+            const y0 = base - (h * i) / slices, y1 = base - (h * (i + 1)) / slices;
+            const wobble = 1 + 0.12 * Math.sin(this.age / 45 + i * 1.7);
+            const ww = w * (1 - (i / slices) * 0.45) * wobble;
+            ctx.globalAlpha = fade * (s.alpha ?? 0.85) * (1 - i / slices) ** 1.3;
+            ctx.fillRect(x - ww, y1, ww * 2, y0 - y1 + 1);
+          }
+          ctx.globalAlpha = fade * 0.7;
+          ctx.translate(x, base);
+          ctx.scale(1, 0.3);
+          SHAPES.dot(ctx, w * 2.2, edge);
+        },
+      });
     },
     // A jagged crackling line between two anchors (fizz, stretching cheese, lightning).
     bolt(s) {
@@ -1123,6 +1359,12 @@ export function createFx({ anchor, shakeTarget }) {
     },
   };
 
+  function paintThing(t) {
+    ctx.save();
+    t.draw(t.age / t.life);
+    ctx.restore();
+  }
+
   function later(ms, fn) {
     queue.push({ at: clock + ms, fn });
   }
@@ -1158,6 +1400,18 @@ export function createFx({ anchor, shakeTarget }) {
     ctx.clearRect(0, 0, width, height);
     const s = dt / 1000;
     const isLight = light();
+    things = things.filter((t) => {
+      t.age += dt;
+      if (t.age < 0) return true;
+      if (t.age >= t.life) {
+        t.done?.();
+        return false;
+      }
+      t.update?.(dt);
+      return true;
+    });
+    // Backdrops (the super-move dimming) go under everything else.
+    for (const t of things) if (t.back && t.age >= 0) paintThing(t);
     particles = particles.filter((p) => {
       p.age += dt;
       if (p.age >= p.life) return false;
@@ -1183,19 +1437,7 @@ export function createFx({ anchor, shakeTarget }) {
       ctx.restore();
       return true;
     });
-    things = things.filter((t) => {
-      t.age += dt;
-      if (t.age < 0) return true;
-      if (t.age >= t.life) {
-        t.done?.();
-        return false;
-      }
-      t.update?.(dt);
-      ctx.save();
-      t.draw(t.age / t.life);
-      ctx.restore();
-      return true;
-    });
+    for (const t of things) if (!t.back && t.age >= 0) paintThing(t);
     if (particles.length || things.length || queue.length) frame = requestAnimationFrame(tick);
     else {
       frame = 0;
@@ -1223,6 +1465,8 @@ export function createFx({ anchor, shakeTarget }) {
   };
 }
 
+const LIFETIME = { pillar: 700, spot: 900, dim: 1200, bubble: 900, stamp: 800, orbit: 800 };
+
 // How long a recipe runs, and when its main blow lands. Pure, so the arena can plan the turn.
 export function fxTiming(steps) {
   let impact = null, end = 0;
@@ -1233,16 +1477,18 @@ export function fxTiming(steps) {
       case 'projectile': dur = (s.travel ?? 420) + ((s.count ?? 1) - 1) * (s.gap ?? 70) + 450; break;
       case 'beam': dur = (s.dur ?? 520) + 500; break;
       case 'rain': dur = (s.dur ?? 420) + (s.fall ?? 420) * 1.15 + (s.splash ? 500 : 0); break;
-      case 'rise': dur = (s.dur ?? 700) + 900; break;
+      case 'rise': dur = (s.dur ?? 700) + (Array.isArray(s.life) ? s.life[1] : s.life ?? 900); break;
       case 'slash': dur = (s.count ?? 3) * (s.gap ?? 70) + (s.dur ?? 300); break;
       case 'burst': dur = Array.isArray(s.life) ? s.life[1] : s.life ?? 720; break;
       case 'shake': dur = s.dur ?? 320; break;
-      default: dur = s.dur ?? 500;
+      case 'slam': dur = (s.fall ?? 420) + (s.hold ?? 220) + 240; break;
+      default: dur = s.dur ?? LIFETIME[s.type] ?? 500;
     }
     end = Math.max(end, t + dur);
     if (s.hit && impact === null) {
       impact = t + (s.type === 'projectile' ? (s.travel ?? 420) + (s.hitLast ? ((s.count ?? 1) - 1) * (s.gap ?? 70) : 0)
-        : s.type === 'rain' ? (s.fall ?? 420) + (s.dur ?? 420) * 0.4 : s.type === 'beam' ? Math.min(260, s.dur ?? 520) : 0);
+        : s.type === 'rain' ? (s.fall ?? 420) + (s.dur ?? 420) * 0.4 : s.type === 'beam' ? Math.min(260, s.dur ?? 520)
+        : s.type === 'slam' ? (s.fall ?? 420) : 0);
     }
   }
   return { impact: impact ?? Math.min(300, end), end: Math.min(end, 2600) };

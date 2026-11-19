@@ -2,6 +2,7 @@ export const MAX_TURNS = 48;
 export const MAX_TEAM = 3;
 export const MAX_ENERGY = 3;
 export const START_ENERGY = 1;
+export const SPEED = { min: 1, max: 9, base: 5 };
 const MAX_BUFF = 4;
 const MAX_WEAKEN = 3;
 const SKILL_KEYS = ['name', 'cost', 'power', 'pierce', 'burn', 'heal', 'drain', 'shield', 'buff', 'weaken', 'sap', 'team', 'execute', 'recoil', 'cleanse', 'shatter'];
@@ -25,6 +26,10 @@ function cleanSkill(skill) {
   return out;
 }
 
+function cleanSpeed(speed) {
+  return Number.isSafeInteger(speed) ? Math.min(SPEED.max, Math.max(SPEED.min, speed)) : SPEED.base;
+}
+
 function cleanTrait(trait) {
   const out = {};
   for (const key of TRAIT_KEYS) if (trait?.[key] !== undefined) out[key] = trait[key];
@@ -36,6 +41,7 @@ export function battleStats(card, competitive = false) {
     id: card.id,
     hp: competitive ? (card.baseHp ?? card.maxHp ?? card.hp) : (card.maxHp ?? card.hp),
     attack: competitive ? (card.baseAttack ?? card.attack) : card.attack,
+    speed: cleanSpeed(card.speed),
     skill: cleanSkill(card.skill),
   };
   if (card.ultimate) stats.ultimate = cleanSkill(card.ultimate);
@@ -49,10 +55,17 @@ function newFighter(card) {
   }
   const trait = cleanTrait(card.trait);
   return {
-    id: card.id, hp: card.hp, maxHp: card.hp, attack: card.attack, baseAttack: card.attack,
+    id: card.id, hp: card.hp, maxHp: card.hp, attack: card.attack, baseAttack: card.attack, speed: cleanSpeed(card.speed),
     energy: Math.min(MAX_ENERGY, START_ENERGY + (trait.quick ?? 0)), guarding: false, shield: 0, burn: null,
     skill: cleanSkill(card.skill), ultimate: card.ultimate ? cleanSkill(card.ultimate) : null, trait, saved: false,
   };
+}
+
+// Who opens: the faster lead fighter. Equal speed falls back to `tie` (the player in wild fights,
+// the room code in duels).
+export function opener(teams, tie = 0) {
+  const [a, b] = teams.map(team => cleanSpeed(team[0]?.speed));
+  return a > b ? 0 : b > a ? 1 : tie;
 }
 
 // `tempo` gives the side that moves second one extra energy; duels between players use it.
@@ -248,6 +261,11 @@ export function applyMove(previous, side, command) {
     event.burned = loss;
     fighter.burn = fighter.burn.turns > 1 ? { ...fighter.burn, turns: fighter.burn.turns - 1 } : null;
     settleKnockout(state, side);
+  }
+  // A fresh fighter after a knockout starts a new exchange: the faster of the two moves first.
+  if (state.winner === null && event.ko.length) {
+    const [a, b] = [currentFighter(state, 0).speed, currentFighter(state, 1).speed];
+    if (a !== b) state.turn = a > b ? 0 : 1;
   }
   if (state.moves === MAX_TURNS && state.winner === null) state.winner = timedWinner(state.teams);
   return state;

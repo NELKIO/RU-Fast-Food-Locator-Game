@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyMove, battleStats, botMove, legalMoves, MAX_ENERGY, START_ENERGY, startBattle, validTeam } from '../public/js/duel-engine.js';
+import { applyMove, battleStats, botMove, legalMoves, MAX_ENERGY, opener, SPEED, START_ENERGY, startBattle, validTeam } from '../public/js/duel-engine.js';
 import { DuelRoom, newRoomCode, parseRoomCode, RECONNECT_MS, SILENT_MS } from '../public/js/duel-room.js';
 import { SIGNAL_RELAYS } from '../public/js/duel-transport.js';
 import { makeCodec } from '../public/js/duel-relay.js';
@@ -193,8 +193,8 @@ test('competition uses base stats, single-player retains levels; invalid team se
   const skill = { name: 'Укус', cost: 9, power: 2, label: 'ignored' };
   const card = { ...catalog[0], maxHp: 28, attack: 9, skill };
   const clean = { name: 'Укус', cost: MAX_ENERGY, power: 2 };
-  assert.deepEqual(battleStats(card, true), { id: 'burger', hp: 18, attack: 5, skill: clean });
-  assert.deepEqual(battleStats(card), { id: 'burger', hp: 28, attack: 9, skill: clean });
+  assert.deepEqual(battleStats(card, true), { id: 'burger', hp: 18, attack: 5, speed: 5, skill: clean });
+  assert.deepEqual(battleStats(card), { id: 'burger', hp: 28, attack: 9, speed: 5, skill: clean });
   assert.deepEqual(battleStats(catalog[1]).skill, { name: 'Фирменный приём', cost: 2 });
   const index = new Map(catalog.map(item => [item.id, item]));
   for (const ids of [[], ['ghost'], ['cola', 'cola'], ['cola', 'fries', 'burger', 'ghost'], null]) {
@@ -355,4 +355,57 @@ test('the last mover keeps a finished result when the acknowledgment never arriv
   assert.deepEqual([host.finished, host.reason, host.settledAlone], [true, null, true]);
   host.cancel('left');
   assert.equal(host.reason, null, 'a settled match cannot be cancelled afterwards');
+});
+
+test('speed decides who opens, equal speed falls back to the tie rule, and odd values are clamped', () => {
+  const quick = { id: 'quick', hp: 10, attack: 3, speed: 8 }, slow = { id: 'slow', hp: 10, attack: 3, speed: 2 };
+  assert.equal(opener([[quick], [slow]]), 0);
+  assert.equal(opener([[slow], [quick]]), 0 + 1);
+  assert.equal(opener([[{ ...slow, speed: 8 }], [quick]], 1), 1);
+  assert.equal(opener([[{ id: 'x', hp: 5, attack: 1 }], [{ id: 'y', hp: 5, attack: 1 }]], 0), 0, 'missing speed is the base speed on both sides');
+  assert.equal(battleStats({ id: 'x', hp: 5, attack: 1 }).speed, SPEED.base);
+  assert.equal(battleStats({ id: 'x', hp: 5, attack: 1, speed: 99 }).speed, SPEED.max);
+  assert.equal(battleStats({ id: 'x', hp: 5, attack: 1, speed: 0 }).speed, SPEED.min);
+  assert.equal(battleStats({ id: 'x', hp: 5, attack: 1, speed: 2.5 }).speed, SPEED.base);
+});
+
+test('after a knockout the faster fighter on the arena moves first, even twice in a row', () => {
+  const teams = (reserveSpeed) => [
+    [{ id: 'hammer', hp: 30, attack: 9, speed: 6 }],
+    [{ id: 'glass', hp: 5, attack: 2, speed: 9 }, { id: 'reserve', hp: 30, attack: 2, speed: reserveSpeed }],
+  ];
+  let fight = startBattle(teams(3), 0, { tempo: false });
+  fight = applyMove(fight, 0, 'hit');
+  assert.deepEqual(fight.last.ko, ['glass']);
+  assert.equal(fight.turn, 0, 'the slower newcomer waits: the hammer strikes again');
+  assert.ok(applyMove(fight, 0, 'hit'));
+  assert.equal(applyMove(fight, 1, 'hit'), null);
+  fight = applyMove(startBattle(teams(8), 0, { tempo: false }), 0, 'hit');
+  assert.equal(fight.turn, 1, 'a faster newcomer moves at once');
+  fight = applyMove(startBattle(teams(6), 0, { tempo: false }), 0, 'hit');
+  assert.equal(fight.turn, 1, 'equal speed keeps the usual order');
+});
+
+test('a duel peer that moves twice after a knockout is followed even when the first packet is lost', () => {
+  const cards = [
+    { id: 'hammer', hp: 30, attack: 9, speed: 7 }, { id: 'anvil', hp: 30, attack: 2, speed: 7 },
+    { id: 'glass', hp: 5, attack: 2, speed: 1 }, { id: 'reserve', hp: 30, attack: 2, speed: 2 },
+  ].map(card => ({ ...card, baseHp: card.hp, baseAttack: card.attack }));
+  const queue = [];
+  const make = role => new DuelRoom({
+    role, cards, code: 'AAAAA2222A', now: () => 1_000, makeId: () => 'match-speed', onChange() {},
+    send: (to, packet) => queue.push({ to, packet: structuredClone(packet) })
+  });
+  const host = make('host'), guest = make('guest');
+  const deliver = () => { while (queue.length) { const { to, packet } = queue.shift(); (to === 'h' ? host : guest).receive(to === 'h' ? 'g' : 'h', packet); } };
+  host.contact('g'); guest.contact('h'); deliver();
+  host.ready(['hammer', 'anvil']); guest.ready(['glass', 'reserve']); deliver();
+  assert.equal(host.state.turn, host.side, 'the faster host opens');
+  assert.equal(host.move('hit'), true);
+  queue.length = 0;
+  assert.equal(host.move('hit'), true, 'the host moves again after the knockout');
+  deliver();
+  assert.deepEqual(guest.history, ['hit', 'hit']);
+  assert.deepEqual(guest.state, host.state);
+  assert.equal(guest.state.turn, guest.side);
 });

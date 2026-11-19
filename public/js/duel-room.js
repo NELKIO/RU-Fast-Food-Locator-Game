@@ -1,4 +1,4 @@
-import { applyMove, battleStats, MAX_TURNS, startBattle, validTeam } from './duel-engine.js';
+import { applyMove, battleStats, MAX_TEAM, MAX_TURNS, opener, startBattle, validTeam } from './duel-engine.js';
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 // Version 2: fighters carry signature skills, so version-1 clients must not join.
@@ -109,7 +109,8 @@ export class DuelRoom {
   setup(teams) {
     const size = Math.min(...teams.map(team => team.length));
     const stats = teams.map(team => team.slice(0, size).map(id => battleStats(this.catalog.get(id), true)));
-    const first = ALPHABET.indexOf(this.code.at(-1)) % 2;
+    // The faster lead fighter opens; on equal speed the room code decides.
+    const first = opener(stats, ALPHABET.indexOf(this.code.at(-1)) % 2);
     return { signature: JSON.stringify(stats), state: startBattle(stats, first) };
   }
 
@@ -210,9 +211,11 @@ export class DuelRoom {
       if (data.history[index] !== this.history[index]) return;
     }
     const extra = data.history.length - this.history.length;
-    if (extra > 1) return;
-    if (extra === 1) {
-      const command = data.history.at(-1);
+    // A faster fighter moves again after a knockout, so the peer can be a few moves ahead (one
+    // per knockout plus one). Every one of them must be the peer's own turn.
+    if (extra > MAX_TEAM + 1) return;
+    for (const command of data.history.slice(this.history.length)) {
+      if (this.state.turn === this.side) return;
       const next = applyMove(this.state, 1 - this.side, command);
       if (!next) return;
       this.state = next;
