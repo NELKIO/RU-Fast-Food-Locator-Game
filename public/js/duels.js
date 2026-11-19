@@ -3,6 +3,8 @@ import { applyMove, battleStats, botMove, currentFighter, legalMoves, MAX_ENERGY
 import { describeSkill } from './fighters.js';
 import { DuelRoom, newRoomCode, parseRoomCode, RECONNECT_MS } from './duel-room.js';
 import { connectDuel } from './duel-transport.js';
+import { createFx } from './battle-fx.js';
+import { movePlan } from './fx-moves.js';
 
 const LABELS = { wild: 'Дикий боец', online: 'Сетевая дуэль' };
 const plural = new Intl.PluralRules('ru');
@@ -88,7 +90,7 @@ export function mountDuels(container, options) {
   sync();
   let mode = initialMode === 'online' ? 'online' : 'lobby';
   let local = null, localMatchId = null, wildId = null, room = null, transport = null, controller = null;
-  let thinking = null, pulse = null, waitingHint = null, holdTimer = null;
+  let thinking = null, pulse = null, waitingHint = null, holdTimer = null, fxTimer = null, fx = null, fxUntil = 0;
   let disposed = false, rewardState = 'idle', rewardInfo = null, quitPrompt = false, slow = false;
   let inviteVisible = false, copyStatus = '', connectionError = '', feedback = '', currentPath = '';
   let guardedNav = false, draftCode = '', lastHtml = '', lastDrawn = null, hold = [null, null], entering = [false, false];
@@ -119,6 +121,9 @@ export function mountDuels(container, options) {
     stopNetwork();
     clearTimeout(thinking);
     clearTimeout(holdTimer);
+    clearTimeout(fxTimer);
+    fx?.clear();
+    fxUntil = 0;
     local = localMatchId = wildId = rewardInfo = lastDrawn = null;
     hold = [null, null];
     mode = next;
@@ -153,7 +158,7 @@ export function mountDuels(container, options) {
 
   function botTurn() {
     if (disposed || !local || local.winner !== null || local.turn !== 1) return;
-    if (hold.some(index => index !== null)) { thinking = setTimeout(botTurn, 250); return; }
+    if (hold.some(index => index !== null) || busy()) { thinking = setTimeout(botTurn, Math.max(120, fxUntil - performance.now() + 250)); return; }
     local = applyMove(local, 1, botMove(local));
     draw();
   }
@@ -170,7 +175,7 @@ export function mountDuels(container, options) {
     draw();
     if (local.winner === null) {
       clearTimeout(thinking);
-      thinking = setTimeout(botTurn, reduced() ? 300 : 950);
+      thinking = setTimeout(botTurn, reduced() ? 300 : Math.max(950, fxUntil - performance.now() + 350));
     }
   }
 
@@ -398,7 +403,7 @@ export function mountDuels(container, options) {
     const settled = state.winner !== null && (!room || room.finished);
     const final = settled && ['saved', 'failed'].includes(rewardState);
     const connected = !room || room.lostAt === null;
-    const enabled = connected && state.winner === null && state.turn === side && !quitPrompt && !hold.some(i => i !== null);
+    const enabled = connected && state.winner === null && state.turn === side && !quitPrompt && !hold.some(i => i !== null) && !busy();
     const status = !connected ? 'Восстанавливаем связь…' : settled && !final ? 'Сохраняем результат…' : state.winner !== null && !final ? 'Подтверждаем результат…'
       : final ? 'Бой окончен' : state.turn === side ? 'Твой ход' : room ? 'Ход соперника' : 'Соперник думает…';
     const outcome = state.winner === 'draw' ? 'Ничья' : state.winner === side ? 'Победа!' : 'Поражение';
@@ -421,11 +426,41 @@ export function mountDuels(container, options) {
           '<div class="duel-footer">' + button('ask-quit', 'Выйти из боя', { quiet: true }) + '</div>')}`;
   }
 
-  // Effects play on the freshly drawn panels: the actor lunges, the target shakes, numbers float up.
-  function animate(state, side) {
+  const busy = () => fxUntil > performance.now();
+  const panel = who => page.querySelector(`.duel-fighter[data-side="${who}"]`);
+
+  // The effects layer is created on the first fight and lives until the arena is closed.
+  function effects() {
+    fx ??= createFx({
+      anchor: who => {
+        const rect = panel(who)?.querySelector('.duel-portrait')?.getBoundingClientRect();
+        return rect && { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, r: Math.min(rect.width, rect.height) / 2 };
+      },
+      shakeTarget: () => page.querySelector('.duel-stage'),
+    });
+    return fx;
+  }
+
+  // Works out the animation for the latest event before the screen is drawn, so the controls
+  // stay locked and the bot waits until the move has finished playing.
+  function planFor(state, side) {
+    const event = state.last;
+    if (!event || reduced()) return null;
+    const actor = event.side === side ? 'me' : 'foe';
+    const card = catalog.get(event.fighter);
+    const fighter = state.teams[event.side].find(f => f.id === event.fighter);
+    const plan = movePlan(event, { brand: card?.brand, energyFor: fighter?.skill });
+    plan.alias = { src: actor, tgt: actor === 'me' ? 'foe' : 'me' };
+    fxUntil = performance.now() + plan.end;
+    clearTimeout(fxTimer);
+    fxTimer = setTimeout(draw, plan.end + 20);
+    return plan;
+  }
+
+  // The actor lunges, the canvas plays the move, and the target flinches when the blow lands.
+  function animate(state, side, plan) {
     const event = state.last;
     const motion = !reduced();
-    const panel = who => page.querySelector(`.duel-fighter[data-side="${who}"]`);
     const pop = (who, text, kind, delay = 0) => {
       const host = panel(who)?.querySelector('.duel-portrait');
       if (!host) return;
@@ -436,11 +471,12 @@ export function mountDuels(container, options) {
       host.append(el);
       setTimeout(() => el.remove(), 1300 + delay);
     };
-    const mark = (who, cls) => {
+    const mark = (who, cls, delay = 0) => {
       const el = panel(who);
       if (!el) return;
       el.classList.remove(cls);
       void el.offsetWidth;
+      el.style.setProperty('--act-delay', delay + 'ms');
       el.classList.add(cls);
     };
     if (!event) {
@@ -448,23 +484,26 @@ export function mountDuels(container, options) {
       return;
     }
     const actor = event.side === side ? 'me' : 'foe', other = actor === 'me' ? 'foe' : 'me';
+    const hit = plan?.impact ?? 160, after = hit + 260;
+    if (plan) effects().play(plan.steps, plan.alias);
     if (event.command.startsWith('switch:')) mark(actor, 'act-enter');
-    else if (event.command === 'guard') { mark(actor, 'act-guard'); pop(actor, 'Защита', 'info'); }
+    else if (event.command === 'guard') { mark(actor, 'act-guard'); pop(actor, 'Защита', 'info', 120); }
     else {
-      mark(actor, actor === 'me' ? 'act-lunge-up' : 'act-lunge-down');
-      if (event.damage || event.blocked || event.absorbed) mark(other, 'act-hit');
-      if (event.damage) pop(other, '−' + event.damage, 'damage', 160);
-      else if (event.absorbed) pop(other, 'Щит', 'info', 160);
-      if (event.blocked) pop(other, 'Блок', 'info', 420);
-      if (event.heal) pop(actor, '+' + event.heal, 'heal', 260);
-      if (event.recoil) pop(actor, '−' + event.recoil, 'damage', 420);
-      if (event.effects.includes('burn')) pop(other, 'Горит', 'burn', 420);
-      if (event.effects.includes('sap')) pop(other, 'Энергия 0', 'info', 420);
-      if (event.effects.includes('weaken')) pop(other, 'Атака ↓', 'info', 560);
-      if (event.effects.includes('buff')) pop(actor, 'Атака ↑', 'heal', 560);
-      if (event.effects.includes('shield')) pop(actor, 'Щит', 'heal', 420);
+      mark(actor, actor === 'me' ? 'act-lunge-up' : 'act-lunge-down', plan?.lungeAt ?? 0);
+      if (event.damage || event.blocked || event.absorbed) mark(other, 'act-hit', hit);
+      if (event.damage) pop(other, '−' + event.damage, 'damage', hit);
+      else if (event.absorbed) pop(other, 'Щит', 'info', hit);
+      if (event.blocked) pop(other, 'Блок', 'info', hit + 260);
+      if (event.heal) pop(actor, '+' + event.heal, 'heal', after);
+      if (event.recoil) pop(actor, '−' + event.recoil, 'damage', after);
+      if (event.effects.includes('burn')) pop(other, 'Горит', 'burn', after);
+      if (event.effects.includes('sap')) pop(other, 'Энергия 0', 'info', after);
+      if (event.effects.includes('weaken')) pop(other, 'Атака ↓', 'info', after + 140);
+      if (event.effects.includes('buff')) pop(actor, 'Атака ↑', 'heal', after + 140);
+      if (event.effects.includes('shield')) pop(actor, 'Щит', 'heal', after);
+      if (event.effects.includes('cleanse')) pop(actor, 'Потушен', 'heal', after + 140);
     }
-    if (event.burned) pop(actor, '−' + event.burned, 'burn', 600);
+    if (event.burned) pop(actor, '−' + event.burned, 'burn', after + 340);
     if (event.skill && motion) {
       const callout = document.createElement('div');
       callout.className = 'duel-callout is-' + actor;
@@ -474,9 +513,12 @@ export function mountDuels(container, options) {
     }
   }
 
-  // HP bars slide from the value the player last saw.
-  function slideBars() {
+  // HP bars slide from the value the player last saw, once the blow of the move has landed.
+  function slideBars(state, side, plan) {
+    const actor = state.last && (state.last.side === side ? 'me' : 'foe');
     for (const el of page.querySelectorAll('.duel-fighter')) {
+      const delay = !plan ? 120 : el.dataset.side === actor ? plan.impact + 260 : plan.impact;
+      el.style.setProperty('--hp-delay', delay + 'ms');
       const bar = el.querySelector('.duel-hp span');
       const key = el.dataset.side + ':' + el.dataset.fighter;
       const to = bar.style.width;
@@ -487,6 +529,7 @@ export function mountDuels(container, options) {
       bar.style.width = from;
       void bar.offsetWidth;
       bar.style.transition = '';
+      bar.style.transitionDelay = delay + 'ms';
       bar.style.width = to;
     }
   }
@@ -498,6 +541,7 @@ export function mountDuels(container, options) {
     const key = room?.matchId ?? localMatchId;
     const side = room?.side ?? 0;
     const fresh = Boolean(state) && (!lastDrawn || lastDrawn.key !== key || lastDrawn.moves !== state.moves);
+    const plan = state && fresh ? planFor(state, side) : null;
     if (fresh && lastDrawn?.key === key && state.moves === lastDrawn.moves + 1) {
       // A knocked-out fighter stays on screen for a moment before the next one comes in.
       for (const s of [0, 1]) {
@@ -510,7 +554,7 @@ export function mountDuels(container, options) {
           entering = hold.map(i => i !== null);
           hold = [null, null];
           draw();
-        }, reduced() ? 200 : 900);
+        }, reduced() ? 200 : Math.max(900, (plan?.end ?? 0) + 250));
       }
     }
     if (state) lastDrawn = { key, moves: state.moves, active: [...state.active] };
@@ -529,9 +573,9 @@ export function mountDuels(container, options) {
       if (detailsOpen && page.querySelector('details')) page.querySelector('details').open = true;
       if (action) [...page.querySelectorAll('[data-duel-action]')].find(el =>
         el.dataset.duelAction === action && !el.disabled)?.focus({ preventScroll: true });
-      if (state) slideBars();
+      if (state) slideBars(state, side, plan);
     }
-    if (state && fresh) animate(state, side);
+    if (state && fresh) animate(state, side, plan);
     if (state && entering.some(Boolean) && !reduced()) {
       entering.forEach((on, s) => {
         if (on) page.querySelector(`.duel-fighter[data-side="${s === side ? 'me' : 'foe'}"]`)?.classList.add('act-enter');
@@ -599,6 +643,8 @@ export function mountDuels(container, options) {
     room?.cancel('left');
     clearTimeout(thinking);
     clearTimeout(holdTimer);
+    clearTimeout(fxTimer);
+    fx?.destroy();
     stopNetwork();
     page.remove();
   };

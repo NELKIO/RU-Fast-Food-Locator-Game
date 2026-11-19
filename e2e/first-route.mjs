@@ -140,8 +140,12 @@ try {
   assert.ok(
     (await p.locator('.venue-copy strong').allTextContents()).every((v) => v === 'Бургер Кинг'),
   );
+  // A second tap on the selected venue makes it the target, without scrolling to the button.
   await p.locator('[data-point="bk-31"]').click();
-  await p.getByRole('button', { name: 'Выбрать цель' }).click();
+  await p.locator('#toast:not([hidden])', { hasText: 'Нажми ещё раз' }).waitFor();
+  assert.equal(await p.getByRole('button', { name: 'Выбрать цель' }).count(), 1);
+  await p.locator('[data-point="bk-31"]').click();
+  await p.locator('#toast:not([hidden])', { hasText: /^Цель: Бургер Кинг/ }).waitFor();
   await p.waitForFunction(
     () =>
       document.querySelector('.route-stat')?.textContent.includes('км') ||
@@ -175,7 +179,7 @@ try {
   await p.locator('#dialog-body .find-wild').waitFor();
   await p.locator('#dialog-body img').first().evaluate((img) => img.decode());
   await capture(p, 'mobile-reward');
-  log('Target switch and return, poor GPS rejected, arrival, chain reward and a wild fighter nearby');
+  log('Double-tap targeting, target switch and return, poor GPS rejected, arrival, chain reward and a wild fighter nearby');
   await toArena.click();
   await checkWidth(p);
   await p.getByRole('heading', { name: 'Дикий боец', exact: true }).waitFor();
@@ -270,7 +274,30 @@ try {
   await capture(d, 'desktop-chooser');
   await choice.click();
   await d.locator('.venue-row[data-point="' + venueId + '"][aria-pressed="true"]').waitFor();
-  log('Venues in one building share a pin and a chooser');
+  // A double tap on a single pin picks it and makes it the target instead of zooming the map.
+  await d.keyboard.press('Escape');
+  const zoom = await d.evaluate(() => document.querySelector('.leaflet-map-pane').style.transform);
+  const single = d.locator('.venue-pin:not(.grouped)').first();
+  const singleTitle = await single.getAttribute('title');
+  await single.dblclick();
+  await d.locator('#toast:not([hidden])', { hasText: 'Цель: ' + singleTitle }).waitFor();
+  assert.equal(await d.evaluate(() => document.querySelector('.leaflet-map-pane').style.transform), zoom, 'double tap does not zoom');
+  log('Venues in one building share a pin and a chooser; a double tap on a pin sets the target');
+  // The arena tab always brings back the arena lobby, even from the friend duel screen.
+  await d.locator('.main-nav [data-nav="arena"]').click();
+  await d.getByRole('button', { name: 'Дуэль с другом' }).click();
+  await d.getByRole('heading', { name: 'Дуэль с другом' }).waitFor();
+  await d.locator('.main-nav [data-nav="arena"]').click();
+  await d.getByRole('heading', { name: 'Арена', exact: true }).waitFor();
+  // A full-motion wild fight: effects play on a canvas, the controls wait for them, nothing breaks.
+  await d.getByRole('button', { name: 'Сразиться' }).click();
+  await d.locator('[data-duel-action="move:hit"]:enabled').click();
+  await d.locator('.duel-fx').waitFor({ state: 'attached' });
+  assert.ok(await d.locator('[data-duel-action="move:hit"]').isDisabled(), 'controls wait for the animation');
+  await battle(d);
+  await d.locator('.main-nav [data-nav="radar"]').click();
+  assert.equal(await d.locator('.duel-fx').count(), 0, 'the effects layer leaves with the arena');
+  log('Arena tab returns to the lobby, and a full-motion wild fight runs clean');
   await d.locator('#map-size').click();
   assert.equal(await d.locator('#map-size').getAttribute('aria-pressed'), 'true');
   await d.keyboard.press('Escape');

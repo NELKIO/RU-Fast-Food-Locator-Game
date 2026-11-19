@@ -49,14 +49,21 @@ test('each collectible has its own local image and a link to a restaurant menu',
   }
 });
 
-test('every dish on the menu is a hand-made fighter, eight per chain with the same rarity spread', async () => {
+test('every dish on the menu is a hand-made fighter, one legend per chain and commons the most frequent', async () => {
   const { FIGHTERS, RARITIES, RENAMED, describeSkill } = await import('../public/js/fighters.js');
   const menu = readCatalog('menu');
   assert.deepEqual(menu.map(item => item.id).sort(), Object.keys(FIGHTERS).sort());
   for (const brand of brands) {
     const tiers = menu.filter(item => item.brand === brand).map(item => FIGHTERS[item.id].rarity);
-    assert.deepEqual(RARITIES.map(r => tiers.filter(t => t === r).length), [3, 2, 2, 1], brand);
+    const [common, rare, epic, legendary] = RARITIES.map(r => tiers.filter(t => t === r).length);
+    assert.equal(legendary, 1, brand);
+    assert.ok(epic >= 2 && rare >= 2 && common >= rare && tiers.length >= 10, brand);
   }
+  assert.equal(FIGHTERS['dodo-pepperoni'].rarity, 'legendary');
+  assert.equal(FIGHTERS['dodo-four-cheeses'].rarity, 'epic');
+  // The bigger the cup, the rarer the fighter.
+  assert.deepEqual(['bk-cola-04', 'bk-cola-05', 'bk-cola-08'].map(id => RARITIES.indexOf(FIGHTERS[id].rarity)), [0, 1, 2]);
+  for (const id of ['bk-cheese-medallions', 'dodo-bbq']) assert.ok(FIGHTERS[id], id);
   assert.ok(menu.some(item => item.id === 'bk-angus-parmigiano' && /Ангус Пармеджано/.test(item.name)));
   for (const [old, next] of Object.entries(RENAMED)) {
     assert.ok(!FIGHTERS[old] && FIGHTERS[next], old);
