@@ -269,6 +269,12 @@ try {
   await owner.getByRole('button', { name: 'Создать комнату' }).click();
   const inviteCode = await owner.locator('[data-room-code]').getAttribute('data-room-code');
   await visitor.goto(origin + '/#duel=' + inviteCode);
+  // On a phone the start button sits right under the invite code, above the long team list.
+  const [readyTop, teamTop] = await owner.evaluate(() => [
+    document.querySelector('.duel-ready [data-duel-action="ready"]').getBoundingClientRect().top,
+    document.querySelector('.duel-team').getBoundingClientRect().top,
+  ]);
+  assert.ok(readyTop < teamTop, 'the ready button comes before the team list on a phone');
   await Promise.all([owner, visitor].map(page => page.getByRole('button', { name: 'Подтвердить команду' }).click()));
   await Promise.all([owner, visitor].map(page => page.getByRole('heading', { name: 'Сетевая дуэль' }).waitFor({ timeout: 45_000 })));
   await playToEnd([owner, visitor]);

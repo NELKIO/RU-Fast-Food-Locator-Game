@@ -915,7 +915,6 @@ function showCard(id, { readOnly = false } = {}) {
       '</div><h2>' +
       esc(card.name) +
       '</h2>' +
-      (entry ? '<p>В коллекции, ' + entry.copies + ' экз.</p>' : '') +
       cardStats(card) +
       skillBox(card) +
       (entry
