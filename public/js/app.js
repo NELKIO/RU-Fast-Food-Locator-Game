@@ -914,13 +914,8 @@ function showCard(id, { readOnly = false } = {}) {
       rarityTag(card) +
       '</div><h2>' +
       esc(card.name) +
-      '</h2><p>' +
-      esc(card.role) +
-      ' · ' +
-      (entry
-        ? 'В коллекции, ' + entry.copies + ' экз.'
-        : 'Выпадает в рулетке этой сети с шансом ' + chanceText(id) + ' за визит, а ещё может прийти диким бойцом.') +
-      '</p>' +
+      '</h2>' +
+      (entry ? '<p>В коллекции, ' + entry.copies + ' экз.</p>' : '') +
       cardStats(card) +
       skillBox(card) +
       (entry
