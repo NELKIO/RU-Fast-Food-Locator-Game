@@ -8,7 +8,8 @@
     "test": "node --test tests/*.test.mjs && python3 -B -m unittest discover -s tests -p 'data*.py'",
     "test:browser": "node e2e/first-route.mjs",
     "test:duels": "node tests/duel-browser.mjs",
-    "test:themes": "node e2e/themes.mjs"
+    "test:themes": "node e2e/themes.mjs",
+    "test:sync": "node tests/sync-browser.mjs"
   },
   "devDependencies": {
     "playwright-core": "1.62.1"

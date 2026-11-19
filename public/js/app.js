@@ -22,6 +22,7 @@ import {
 import { describeSkill, describeTrait } from './fighters.js';
 import { mountDuels } from './duels.js';
 import { reelMarkup, rewardMarkup } from './rewards.js';
+import { createSync, formatSyncKey, newSyncKey, parseSyncKey } from './sync.js';
 
 const $ = (id) => document.getElementById(id);
 const store = createProfileStore();
@@ -1008,10 +1009,148 @@ function profileDialog() {
             .join('') +
           '</ul>'
         : '') +
+      '<section class="sync-entry"><h3>Синхронизация устройств</h3><p>' +
+      esc(profile.sync?.key ? syncStatusText() : 'Общий прогресс на телефоне и компьютере.') +
+      '</p><button class="outline-btn" data-sync-open>' +
+      icon('route', 16) +
+      (profile.sync?.key ? 'Настроить' : 'Связать устройства') +
+      '</button></section>' +
       '<button class="outline-btn" data-open="collection">Открыть коллекцию</button>',
   );
 }
 listen('profile-btn', profileDialog);
+
+// Device sync lives in the profile, out of the way of the game.
+const sync = createSync({ store, onStatus: () => refreshSyncDialog() });
+let syncDialogRun = -1,
+  syncKeyShown = false;
+function syncLink(key) {
+  const url = new URL(location.href);
+  url.search = '';
+  url.hash = 'sync=' + key;
+  return url.href;
+}
+function syncStatusText() {
+  const status = sync.status;
+  if (status.state === 'syncing') return 'Синхронизация…';
+  if (status.state === 'offline') return 'Нет связи с узлами. Прогресс сохранён здесь и уйдёт при следующей связи.';
+  if (status.state === 'outdated') return 'На другом устройстве новая версия игры. Обнови страницу.';
+  if (status.state === 'error') return 'Не удалось синхронизировать. Попробуем ещё раз позже.';
+  if (status.state === 'ok' && status.at) {
+    const minutes = Math.floor((Date.now() - status.at) / 60_000);
+    return 'Синхронизировано · ' + (minutes < 1 ? 'только что' : minutes + ' мин назад');
+  }
+  return 'Устройство связано. Синхронизация скоро начнётся.';
+}
+function syncDialog(view = 'main') {
+  const key = profile.sync?.key;
+  let body;
+  if (view === 'unlink') {
+    body =
+      '<h2>Отвязать это устройство?</h2><p>Весь прогресс останется здесь, но перестанет обновляться вместе с другими устройствами. Привязать обратно можно тем же ключом, ничего не задвоится.</p>' +
+      '<div class="dialog-actions"><button class="primary" data-sync-unlink-yes>Отвязать</button><button class="outline-btn" data-sync-open>Отмена</button></div>';
+  } else if (view.startsWith('confirm:')) {
+    const pending = view.slice(8);
+    body =
+      '<h2>Связать это устройство?</h2><p>Прогресс этого устройства и прогресс по ключу сложатся: бойцы, копии, опыт, победы и посещения. Ничего не пропадёт, а дальше всё будет обновляться само.</p>' +
+      '<div class="dialog-actions"><button class="primary" data-sync-confirm="' +
+      esc(pending) +
+      '">Связать</button><button class="outline-btn" data-close>Отмена</button></div>';
+  } else if (!key) {
+    body =
+      '<h2>Связать устройства</h2><p>Играй на телефоне и компьютере с общим прогрессом. Прогресс обоих устройств сложится, ничего не пропадёт.</p>' +
+      '<ol class="about-list"><li>Создай ключ на одном устройстве.</li><li>Открой ссылку с ключом на другом или введи ключ ниже.</li></ol>' +
+      '<div class="dialog-actions"><button class="primary" data-sync-create>' +
+      icon('plus', 16) +
+      'Создать ключ</button></div>' +
+      '<form class="sync-join" data-sync-form><label for="sync-key">Уже есть ключ</label><div><input id="sync-key" name="key" placeholder="XXXX-XXXX-XXXX-…" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="400" required><button class="outline-btn" type="submit">Связать</button></div><p class="sync-error" role="status"></p></form>' +
+      '<p class="sync-note">Без регистрации. Прогресс хранится зашифрованным на публичных узлах Nostr, прочитать его может только тот, у кого есть ключ.</p>';
+  } else {
+    const shown = syncKeyShown ? formatSyncKey(key) : formatSyncKey(key).replace(/[A-Z2-9]/g, '•');
+    body =
+      '<h2>Устройства связаны</h2><p class="sync-status" data-sync-status role="status">' +
+      esc(syncStatusText()) +
+      '</p><p>Ключ для другого устройства</p><output class="sync-key" data-sync-key>' +
+      esc(shown) +
+      '</output><div class="dialog-actions"><button class="primary" data-sync-copy>' +
+      icon('route', 16) +
+      'Скопировать ссылку</button>' +
+      (navigator.share && matchMedia('(pointer: coarse)').matches ? '<button class="outline-btn" data-sync-share>Отправить</button>' : '') +
+      '<button class="outline-btn" data-sync-reveal>' +
+      (syncKeyShown ? 'Скрыть ключ' : 'Показать ключ') +
+      '</button></div><div class="dialog-actions"><button class="outline-btn" data-sync-now>Синхронизировать сейчас</button><button class="outline-btn" data-sync-unlink>Отвязать устройство</button></div>' +
+      '<p class="sync-note">Ключ — это доступ к твоему прогрессу. Отправляй его только себе.</p>';
+  }
+  syncDialogRun = openDialog('Синхронизация устройств', '<div class="micro section-kicker">' + icon('star', 14) + ' Профиль</div>' + body);
+}
+function refreshSyncDialog() {
+  if (syncDialogRun !== dialogRun || !$('dialog').open) return;
+  const line = $('dialog-body').querySelector('[data-sync-status]');
+  if (line) line.textContent = syncStatusText();
+}
+async function linkDevice(key) {
+  syncDialog('main');
+  const line = document.createElement('p');
+  line.className = 'sync-status';
+  line.textContent = 'Связываем и объединяем прогресс…';
+  $('dialog-body').querySelector('h2')?.after(line);
+  const result = await sync.link(key);
+  // A new device that had nothing gets its starter only if the shared progress is empty too.
+  if (!Object.keys(store.read().collection).length) {
+    const starter = await store.update((p) => grantStarter(p, menu));
+    if (starter.ok) showToast('Твой первый боец — ' + starter.card.name);
+  }
+  syncKeyShown = false;
+  syncDialog('main');
+  if (result.ok) showToast(result.status?.state === 'ok' ? 'Устройства связаны, прогресс объединён.' : 'Устройство связано. Прогресс объединится, когда появится связь.');
+}
+$('dialog-body').addEventListener('submit', (e) => {
+  if (!e.target.matches('[data-sync-form]')) return;
+  e.preventDefault();
+  const key = parseSyncKey(e.target.elements.key.value);
+  if (key) syncDialog('confirm:' + key);
+  else {
+    e.target.querySelector('.sync-error').textContent = 'Нужен ключ из 32 символов или ссылка с ним.';
+    e.target.elements.key.focus();
+  }
+});
+$('dialog-body').addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.hasAttribute('data-sync-open')) {
+    syncKeyShown = false;
+    syncDialog('main');
+  } else if (b.hasAttribute('data-sync-create')) {
+    await linkDevice(newSyncKey());
+    syncKeyShown = true;
+    syncDialog('main');
+  } else if (b.dataset.syncConfirm) linkDevice(b.dataset.syncConfirm);
+  else if (b.hasAttribute('data-sync-reveal')) {
+    syncKeyShown = !syncKeyShown;
+    syncDialog('main');
+  } else if (b.hasAttribute('data-sync-copy')) {
+    const link = syncLink(profile.sync?.key ?? store.read().sync?.key);
+    try {
+      await navigator.clipboard.writeText(link);
+      showToast('Ссылка скопирована. Открой её на другом устройстве.');
+    } catch {
+      syncKeyShown = true;
+      syncDialog('main');
+      showToast('Скопируй ключ вручную.');
+    }
+  } else if (b.hasAttribute('data-sync-share')) {
+    const link = syncLink(profile.sync?.key ?? store.read().sync?.key);
+    navigator.share({ title: 'Фудрадар — мой прогресс', text: 'Открой на другом устройстве, чтобы связать прогресс.', url: link }).catch(() => {});
+  } else if (b.hasAttribute('data-sync-now')) {
+    sync.syncNow();
+    refreshSyncDialog();
+  } else if (b.hasAttribute('data-sync-unlink')) syncDialog('unlink');
+  else if (b.hasAttribute('data-sync-unlink-yes')) {
+    await sync.unlink();
+    syncDialog('main');
+    showToast('Устройство отвязано. Прогресс остался здесь.');
+  }
+});
 listen('about', () => {
   openDialog(
     'Об игре',
@@ -1171,14 +1310,30 @@ async function init() {
   renderBrands();
   renderRadar();
   renderQuests();
-  const starter = await store.update((p) => grantStarter(p, menu));
+  // A link with a sync key: the device joins the shared progress instead of starting over.
+  const linkHash = /(?:^|#|&)sync=/i.test(location.hash);
+  const invitedKey = linkHash ? parseSyncKey(location.hash) : null;
+  if (linkHash) history.replaceState(history.state, '', location.pathname + location.search);
+  const starter = invitedKey && !Object.keys(store.read().collection).length
+    ? { ok: false }
+    : await store.update((p) => grantStarter(p, menu));
   await ensureWild();
   if (/^#duel=/i.test(location.hash)) switchTab('arena', { initialMode: 'online' });
   else if (starter.ok) welcome(starter.card);
+  sync.start();
+  if (invitedKey) {
+    if (store.read().sync?.key === invitedKey) showToast('Это устройство уже связано этим ключом.');
+    else syncDialog('confirm:' + invitedKey);
+  }
   askGps();
   window.addEventListener('hashchange', () => {
     if (/^#duel=/i.test(location.hash) && !onlineActive)
       switchTab('arena', { initialMode: 'online' });
+    const key = /(?:^|#|&)sync=/i.test(location.hash) ? parseSyncKey(location.hash) : null;
+    if (key) {
+      history.replaceState(history.state, '', location.pathname + location.search);
+      if (store.read().sync?.key !== key) syncDialog('confirm:' + key);
+    }
   });
   function refreshTime() {
     if (document.hidden || tab !== 'radar') return;
@@ -1199,6 +1354,7 @@ async function init() {
       if (left <= 0) due = true;
     }
     if (due) ensureWild();
+    refreshSyncDialog();
   }, 1000);
   document.addEventListener('visibilitychange', refreshTime);
   window.addEventListener('pageshow', () => {
