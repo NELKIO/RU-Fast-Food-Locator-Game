@@ -305,3 +305,28 @@ test('a fresh profile without a ledger and a stored profile from before this fea
   assert.equal(p.sync.devices[p.sync.device].xp, 120);
   sync.stop();
 });
+
+test('while a wild fight is in progress the sync waits and merges right after it', async () => {
+  const net = relayNet();
+  const a = await device(net, 15);
+  let fighting = true;
+  const store = memoryStore();
+  await store.update(p => grantStarter(p, menu, { rng: rng(16) }));
+  const b = createSync({ store, relays: net.urls, Socket: net.Socket, debounceMs: 5, intervalMs: 1e9, paused: () => fighting });
+  const key = newSyncKey();
+  await a.sync.link(key);
+  await play(a, 2);
+  await a.sync.syncNow();
+  await store.update(p => ({ ok: true, profile: { ...p, sync: undefined } }));
+  const before = counters(store.read());
+  b.link(key);
+  await settle(); await settle();
+  assert.equal(counters(store.read()), before, 'nothing merged mid-fight');
+  fighting = false;
+  for (let i = 0; i < 100 && store.read().xp === JSON.parse(before).xp; i++) await settle();
+  await b.syncNow();
+  assert.ok(store.read().xp > JSON.parse(before).xp, 'merged once the fight is over');
+  await a.sync.syncNow();
+  assert.equal(counters(store.read()), counters(a.store.read()));
+  a.sync.stop(); b.stop();
+});

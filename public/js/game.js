@@ -170,6 +170,8 @@ export function normalizeProfile(value) {
     profile.encounter = {
       id: validId(encounter.id), enemyId: current(validId(encounter.enemyId)), kind: 'recruit',
       startedAt: timestamp(encounter.startedAt),
+      // Lured by a restaurant visit (not by the pause running out).
+      ...(encounter.visit === true && {visit: true}),
     };
   }
   profile.encounterSequence = count(value.encounterSequence);
@@ -384,7 +386,7 @@ function giveCard(saved, item) {
 }
 
 // Wild fighters prefer dishes the player has not found yet.
-function spawnWild(saved, items, now, rng, brand = null) {
+function spawnWild(saved, items, now, rng, brand = null, visit = false) {
   const pool = brand ? items.filter(item => item.brand === brand) : items;
   if (!pool.length) return null;
   const unseen = pool.filter(item => !Object.hasOwn(saved.collection, item.id));
@@ -393,7 +395,7 @@ function spawnWild(saved, items, now, rng, brand = null) {
   saved.encounterSequence += 1;
   saved.encounter = {
     id: `${now.toString(36)}-${saved.encounterSequence.toString(36)}`,
-    enemyId: String(enemy.id), kind: 'recruit', startedAt: now,
+    enemyId: String(enemy.id), kind: 'recruit', startedAt: now, ...(visit && {visit: true}),
   };
   return saved.encounter;
 }
@@ -438,7 +440,7 @@ export function claimVisit(profile, point, fix, menu, {now = Date.now(), rng = M
   if (!hasCurrentEncounter(saved, items)) {
     retire(saved, saved.encounter);
     saved.encounter = null;
-    spawned = spawnWild(saved, items, now, rng, point.brand);
+    spawned = spawnWild(saved, items, now, rng, point.brand, true);
   }
   return {
     ...status, ...reward, reason: 'claimed', profile: saved, firstVisit: visits === 0,

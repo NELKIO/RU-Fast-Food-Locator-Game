@@ -169,7 +169,7 @@ export async function publishEvent(event, { relays = SYNC_RELAYS, Socket = globa
 // The controller the app uses. It pulls, merges into the local profile in one store update,
 // and publishes only when the relays do not already hold the merged document.
 export function createSync({ store, relays = SYNC_RELAYS, Socket = globalThis.WebSocket, clock = () => Date.now(),
-  onStatus = () => {}, debounceMs = 2500, intervalMs = 90_000 } = {}) {
+  onStatus = () => {}, debounceMs = 2500, intervalMs = 90_000, paused = () => false } = {}) {
   let status = { state: 'off', at: null, relays: 0, error: null };
   let running = null, timer = null, ticker = null, account = null, accountKey = null, written = null;
   let latestCreated = 0;
@@ -185,6 +185,8 @@ export function createSync({ store, relays = SYNC_RELAYS, Socket = globalThis.We
   async function run() {
     const k = key();
     if (!k) { set({ state: 'off' }); return status; }
+    // A fight in progress keeps its wild fighter: the merge waits until the result is saved.
+    if (paused()) { schedule(3000); return status; }
     set({ state: 'syncing', error: null });
     try {
       const acc = await accountFor(k);
