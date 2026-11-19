@@ -28,6 +28,7 @@ const icons = {
     '<path d="m13 3 1.9 5.2 5.3 2-5.3 2.1-1.9 5.2-2.1-5.2-5.2-2.1 5.2-2L13 3Zm-8 12 .9 2.3 2.1.8-2.1.9L5 21l-.9-2-2.1-.9 2.1-.8z"/>',
   plus: '<path d="M12 5v14m-7-7h14"/>',
   minus: '<path d="M5 12h14"/>',
+  sort: '<path d="M7 4v16m0 0-3-3m3 3 3-3M17 20V4m0 0-3 3m3-3 3 3"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
   sound: '<path d="M4 9h4l4-4v14l-4-4H4zM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
   muted: '<path d="M4 9h4l4-4v14l-4-4H4zM16 9l5 6m0-6-5 6"/>',
@@ -82,6 +83,16 @@ export function formatWait(ms) {
   const h = Math.floor(total / 60),
     m = total % 60;
   return h ? h + ' ч' + (m ? ' ' + m + ' мин' : '') : m + ' мин';
+}
+// A live countdown: minutes and seconds under an hour, hours and minutes above. The app ticks
+// every [data-countdown] element once a second, so the page never needs a reload.
+export function formatCountdown(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  if (total >= 3600) return formatWait(ms);
+  return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
+}
+export function countdown(ms) {
+  return '<time data-countdown="' + Math.round(Date.now() + ms) + '">' + formatCountdown(ms) + '</time>';
 }
 export const rarityNames = {
   common: 'Обычная',

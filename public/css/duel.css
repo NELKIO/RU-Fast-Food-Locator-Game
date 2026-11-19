@@ -95,18 +95,32 @@
 .duel-friend .duel-btn { flex: none; }
 
 .duel-roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 7px; }
-.duel-pick { display: flex; align-items: center; gap: 9px; min-height: 60px; padding: 7px 9px 7px 7px; border-radius: 12px; text-align: left; }
+.duel-pick { display: flex; align-items: center; gap: 6px; min-height: 60px; padding: 0 7px 0 0; border-radius: 12px; text-align: left; cursor: default; }
+.duel-pick-info {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; align-self: stretch; padding: 7px 0 7px 7px;
+  font: inherit; color: inherit; text-align: left; background: none; border: 0; border-radius: 12px; cursor: pointer;
+}
 .duel-pick.is-selected { border-color: var(--duel-accent); background: color-mix(in srgb, var(--duel-accent) 7%, var(--duel-panel)); }
 .duel-pick-title { display: grid; gap: 3px; min-width: 0; }
 .duel-pick-title strong { font-size: .9rem; line-height: 1.15; }
 .duel-pick-title small { font-size: .74rem; color: var(--duel-muted); display: flex; align-items: center; flex-wrap: wrap; gap: 3px; }
 .duel-slot {
-  margin-left: auto; flex: 0 0 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
-  font-size: .82rem; font-weight: 700; border: 1px solid var(--duel-line); color: var(--duel-muted);
+  margin-left: auto; flex: 0 0 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; padding: 0;
+  font: inherit; font-size: .9rem; font-weight: 700; border: 1px solid var(--duel-line); color: var(--duel-muted);
+  background: transparent; cursor: pointer;
 }
+.duel-slot:disabled { opacity: .45; cursor: default; }
 .is-selected .duel-slot { background: var(--duel-accent); border-color: var(--duel-accent); color: var(--duel-ink); animation: duel-pop-in .25s ease-out; }
-.duel-art { flex: none; display: grid; place-items: center; overflow: visible; color: var(--team-color); }
-.duel-art img { display: block; width: 100%; height: 100%; object-fit: contain; }
+/* One definite cell, so the photo's 100% height is really the frame's height (an auto row let tall
+   photos grow to their natural proportions and spill far out of the card). */
+.duel-art { flex: none; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; overflow: visible; color: var(--team-color); }
+.duel-art img { display: block; width: 100%; height: 100%; min-height: 0; object-fit: contain; }
+/* In battle tall dishes (Ростмастер, cola cups) still break out of the frame, but only upwards and by
+   about a fifth; wide burgers keep their centred place. */
+/* The wild card's text column is tall, so tall dishes get room to stand out there too. */
+.duel-wild > .duel-art img { height: 165%; }
+.duel-portrait .duel-art { position: absolute; inset: 0; width: auto; height: auto; }
+.duel-portrait .duel-art img { position: absolute; left: 0; bottom: 0; width: 100%; height: 124%; object-position: 50% 70%; }
 .duel-pick .duel-art { width: 46px; height: 42px; }
 
 /* Battle */
@@ -142,7 +156,6 @@
   background: radial-gradient(ellipse at 50% 70%, color-mix(in srgb, var(--team-color) 20%, transparent), transparent 70%);
   border-radius: 12px;
 }
-.duel-portrait .duel-art { width: 100%; height: 100%; }
 .duel-info { grid-area: info; display: grid; gap: 5px; min-width: 0; }
 .duel-name-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .duel-owner { font-size: .7rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--side); }

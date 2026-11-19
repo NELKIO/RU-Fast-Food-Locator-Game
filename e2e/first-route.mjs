@@ -224,8 +224,17 @@ try {
   await p.locator('[data-deck-remove]').click();
   await p.locator('#toast:not([hidden])', { hasText: 'хотя бы один' }).waitFor();
   assert.deepEqual((await saved(p)).team, afterBattle.team.slice(0, 1));
+  // Sorting: by name the cards go alphabetically, and the choice survives a redraw.
+  await p.getByRole('button', { name: 'Все находки', exact: true }).click();
+  await p.locator('[data-sort]').selectOption('name');
+  const names = await p.locator('.menu-card strong').allTextContents();
+  assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b, 'ru')));
+  await p.locator('[data-sort]').selectOption('rarity');
+  assert.match(await p.locator('.menu-card .rarity').first().textContent(), /Легендарн/);
+  assert.equal((await p.evaluate(() => JSON.parse(localStorage.getItem('foodradar.preferences.v1')))).sort, 'rarity');
+  await p.getByRole('button', { name: 'У меня', exact: true }).click();
   await p.locator('.menu-card').first().click();
-  assert.ok(await p.getByRole('link', { name: 'В официальном меню' }).isVisible());
+  assert.equal(await p.getByRole('link', { name: 'В официальном меню' }).count(), 0);
   assert.equal(await p.getByRole('button', { name: 'Тренировка' }).count(), 0);
   await p.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await p.reload();
@@ -318,6 +327,13 @@ try {
   await d.getByRole('heading', { name: 'Дуэль с другом' }).waitFor();
   await d.locator('.main-nav [data-nav="arena"]').click();
   await d.getByRole('heading', { name: 'Арена', exact: true }).waitFor();
+  // A tap on a team fighter opens its card for reading; the round slot is what changes the team.
+  const firstPick = d.locator('.duel-pick-info').first();
+  const pickName = (await firstPick.locator('strong').textContent()).trim();
+  await firstPick.click();
+  await d.locator('#dialog[open] h2', { hasText: pickName }).waitFor();
+  assert.equal(await d.locator('#dialog [data-team]').count(), 0, 'the arena card is read-only');
+  await d.getByRole('button', { name: 'Закрыть', exact: true }).click();
   // A full-motion wild fight: effects play on a canvas, the controls wait for them, nothing breaks.
   await d.getByRole('button', { name: 'Сразиться' }).click();
   await d.locator('[data-duel-action="move:hit"]:enabled').click();

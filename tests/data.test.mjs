@@ -112,3 +112,34 @@ test('rarer fighters have more: a talent from rare up, a super move from epic up
     assert.ok(avg('common', k) < avg('rare', k) && avg('rare', k) < avg('epic', k) && avg('epic', k) < avg('legendary', k), k);
   }
 });
+
+test('every dish can drop from its chain roulette; the four legendaries drop with 2% per visit', async () => {
+  const { dropChance } = await import('../public/js/game.js');
+  const menu = readCatalog('menu');
+  for (const brand of brands) {
+    const items = menu.filter(item => item.brand === brand);
+    const sum = items.reduce((total, item) => total + dropChance(menu, item.id), 0);
+    assert.ok(Math.abs(sum - 1) < 1e-9, brand);
+    for (const item of items) assert.ok(dropChance(menu, item.id) > 0, item.id);
+  }
+  assert.equal(dropChance(menu, 'bk-angus-parmigiano'), 0.02);
+  assert.equal(dropChance(menu, 'missing'), 0);
+});
+
+test('a super move is never weaker on paper than the cheaper signature move', async () => {
+  const { FIGHTERS } = await import('../public/js/fighters.js');
+  // Damage dealt over the fight: hit, burn over its turns and the bonus on a hurt target.
+  const dealt = (f, s) => (Number.isFinite(s.power) ? f.attack + s.power : 0) + (s.burn ? s.burn.dmg * s.burn.turns : 0) + (s.execute ?? 0);
+  for (const [id, f] of Object.entries(FIGHTERS)) {
+    if (!f.ultimate) continue;
+    assert.ok(dealt(f, f.ultimate) >= dealt(f, f.skill), `${id}: ${dealt(f, f.ultimate)} < ${dealt(f, f.skill)}`);
+  }
+});
+
+test('the live countdown shows minutes and seconds under an hour', async () => {
+  const { formatCountdown } = await import('../public/js/ui.js');
+  assert.equal(formatCountdown(14 * 60_000 + 5_000), '14:05');
+  assert.equal(formatCountdown(999), '0:01');
+  assert.equal(formatCountdown(-5), '0:00');
+  assert.equal(formatCountdown(90 * 60_000), '1 ч 30 мин');
+});

@@ -279,8 +279,14 @@ try {
   assert.deepEqual(profiles.map(p => p.battles.wins).sort(), [0, 1]);
   assert.deepEqual(profiles.map(p => p.battles.losses).sort(), [0, 1]);
   assert.deepEqual(profiles.map(p => p.xp).sort((a,b) => a-b), [4, 24]);
+  // The invite opens the room once: after the match a reload brings back the lobby, not the room.
+  assert.equal(await visitor.evaluate(() => location.hash), '');
+  await visitor.reload();
+  await visitor.locator('#radar-view').waitFor({ state: 'visible' });
+  assert.equal(await visitor.locator('[data-room-code]').count(), 0);
+  assert.equal(await visitor.locator('#arena-view').isVisible(), false);
   assert.deepEqual(errors, []);
-  console.log('PASS production index / real menu / #duel deep link / identical match id / exactly one settlement in each saved profile');
+  console.log('PASS production index / real menu / #duel deep link / identical match id / exactly one settlement in each saved profile / reload after the match leaves the room');
 } finally {
   await browser?.close();
   await new Promise(resolve => server.close(resolve));

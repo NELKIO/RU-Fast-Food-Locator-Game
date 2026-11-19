@@ -471,6 +471,7 @@ button:disabled, .duel-page button:disabled {
   opacity: 1;
 }
 .duel-page button:disabled :is(.duel-glyph, .duel-slot, small) { color: var(--dim); }
+.duel-page .duel-slot:disabled { opacity: .4; background: transparent; }
 .duel-page .duel-primary:disabled { color: var(--dim); background: var(--well); border-color: var(--line); }
 .primary:disabled { color: var(--dim); background: var(--well); border-color: var(--line); }
 :root:is([data-theme='black'],[data-theme='white']) .route-box.has-target {
