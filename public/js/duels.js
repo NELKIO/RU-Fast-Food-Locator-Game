@@ -261,7 +261,7 @@ export function mountDuels(container, options) {
       return `<div class="duel-pick ${number >= 0 ? 'is-selected' : ''}">
         <button type="button" class="duel-pick-info" data-duel-action="card:${esc(id)}" aria-label="Карточка бойца: ${esc(card.name)}">
         ${artwork(card)}<span class="duel-pick-title"><strong>${esc(card.name)}</strong>
-        <small>${icon('heart', 11)} ${stats.hp} · ${icon('battle', 11)} ${stats.attack} · ${icon('speed', 11)} ${stats.speed} · ${esc(stats.skill.name)}</small></span></button>
+        <small><span>${icon('heart', 11)}&nbsp;${stats.hp}</span> · <span>${icon('battle', 11)}&nbsp;${stats.attack}</span> · <span>${icon('speed', 11)}&nbsp;${stats.speed}</span> · <span>${esc(stats.skill.name)}</span></small></span></button>
         <button type="button" class="duel-slot" data-duel-action="pick:${esc(id)}" aria-pressed="${number >= 0}" aria-label="${esc(label)}"
           ${locked || (number < 0 && selected.length === 3) ? 'disabled' : ''}>${number < 0 ? '+' : number + 1}</button></div>`;
     }).join('');
@@ -334,9 +334,34 @@ export function mountDuels(container, options) {
         ${copyStatus ? '<p class="duel-note" role="status">' + esc(copyStatus) + '</p>' : ''}
         ${connectionError && !room.peer ? '<p class="duel-alert" role="status">' + esc(connectionError) + '</p>' : ''}
         ${slow && !room.peer ? '<p class="duel-note">Проверь, что друг открыл тот же код. Если соединение долго не появляется, попробуй другую сеть.</p>' : ''}
-      </div>${teamPicker(!!room.team, true)}
-      <div class="duel-buttons">${button('ready', room.team ? 'Команда готова' : 'Подтвердить команду', { primary: true, disabled: !!room.team || !selected.length, icon: 'check' })}
+      </div>${readyPanel()}${teamPicker(!!room.team, true)}
+      <div class="duel-buttons"><span class="duel-ready-late">${readyButton()}</span>
       ${button('lobby', 'Закрыть комнату', { quiet: true })}</div>${rules}`;
+  }
+
+  function readyButton() {
+    return button('ready', room.team ? 'Команда готова' : 'Подтвердить команду', { primary: true, disabled: !!room.team || !selected.length, icon: 'check' });
+  }
+
+  // On a phone the team list is long, so the start button lives right under the invite code, next
+  // to the line-up it confirms: three slots fill as fighters are tapped below. The computer keeps
+  // the button under the list, where it is already in view.
+  function readyPanel() {
+    const slots = [0, 1, 2].map(i => {
+      const card = catalog.get(selected[i]);
+      return card
+        ? `<span class="duel-ready-slot is-filled" style="--team-color:${color(card.brand)}" title="${esc(card.name)}">${artwork(card)}<b>${i + 1}</b></span>`
+        : `<span class="duel-ready-slot"><b>${i + 1}</b></span>`;
+    }).join('');
+    const hint = room.team
+      ? (room.peerTeam ? 'Обе команды готовы — начинаем!' : 'Команда подтверждена. Ждём соперника…')
+      : selected.length === 3 ? 'Команда собрана. Подтверди — и в бой!'
+      : selected.length
+        ? `Выбрано ${selected.length} из 3. Можно начинать или добавить ещё ниже.`
+        : 'Выбери бойцов ниже: от одного до трёх.';
+    return `<section class="duel-ready${room.team ? ' is-done' : selected.length ? ' is-set' : ''}" aria-label="Готовность к бою">
+      <div class="duel-ready-row"><div class="duel-ready-slots">${slots}</div><p>${esc(hint)}</p></div>
+      ${readyButton()}</section>`;
   }
 
   function ended() {

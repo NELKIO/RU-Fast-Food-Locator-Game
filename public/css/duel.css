@@ -288,6 +288,40 @@
 @keyframes duel-glow { 50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--duel-accent) 22%, transparent); } }
 @keyframes duel-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
 
+/* The ready panel: phones only. On wider screens the button stays under the team list. */
+.duel-ready { display: none; }
+.duel-pick-title small > span { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+@media (max-width: 700px) {
+  .duel-ready-late { display: none; }
+  .duel-ready {
+    display: grid; gap: 12px; padding: 14px; border-radius: 16px;
+    border: 1px solid var(--duel-line); background: var(--duel-panel);
+    animation: duel-rise .3s ease-out;
+  }
+  .duel-ready.is-set { border-color: color-mix(in srgb, var(--duel-accent) 55%, var(--duel-line)); }
+  .duel-ready-row { display: flex; align-items: center; gap: 12px; }
+  .duel-ready-row p { flex: 1; font-size: .86rem; line-height: 1.35; color: var(--duel-muted); }
+  .duel-ready-slots { display: flex; gap: 7px; flex: none; }
+  .duel-ready-slot {
+    position: relative; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+    border: 1.5px dashed var(--duel-line); background: var(--duel-panel);
+  }
+  .duel-ready-slot.is-filled {
+    border: 2px solid var(--duel-accent);
+    background: radial-gradient(circle at 50% 65%, color-mix(in srgb, var(--team-color) 30%, var(--duel-panel)), var(--duel-panel) 70%);
+    animation: duel-pop-in .25s ease-out;
+  }
+  .duel-ready-slot .duel-art { width: 34px; height: 34px; }
+  .duel-ready-slot b {
+    position: absolute; right: -3px; bottom: -3px; min-width: 17px; height: 17px; border-radius: 9px; display: grid; place-items: center;
+    font-size: .66rem; color: var(--duel-muted); background: var(--duel-panel); border: 1px solid var(--duel-line);
+  }
+  .duel-ready-slot:not(.is-filled) b { position: static; border: 0; background: none; font-size: .8rem; }
+  .duel-ready-slot.is-filled b { color: var(--duel-ink); background: var(--duel-accent); border-color: var(--duel-accent); }
+  .duel-ready > .duel-btn { width: 100%; min-height: 52px; font-size: 1.02rem; }
+  .duel-ready.is-set:not(.is-done) > .duel-btn { animation: duel-glow 2.2s ease-in-out infinite; }
+  .duel-ready.is-done .duel-ready-row p { color: var(--duel-accent); }
+}
 @media (max-width: 480px) {
   .duel-page { gap: 11px; }
   .duel-wild { grid-template-columns: 84px minmax(0, 1fr); }
