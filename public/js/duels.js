@@ -335,17 +335,15 @@ export function mountDuels(container, options) {
         ${connectionError && !room.peer ? '<p class="duel-alert" role="status">' + esc(connectionError) + '</p>' : ''}
         ${slow && !room.peer ? '<p class="duel-note">Проверь, что друг открыл тот же код. Если соединение долго не появляется, попробуй другую сеть.</p>' : ''}
       </div>${readyPanel()}${teamPicker(!!room.team, true)}
-      <div class="duel-buttons"><span class="duel-ready-late">${readyButton()}</span>
-      ${button('lobby', 'Закрыть комнату', { quiet: true })}</div>${rules}`;
+      <div class="duel-buttons">${button('lobby', 'Закрыть комнату', { quiet: true })}</div>${rules}`;
   }
 
   function readyButton() {
     return button('ready', room.team ? 'Команда готова' : 'Подтвердить команду', { primary: true, disabled: !!room.team || !selected.length, icon: 'check' });
   }
 
-  // On a phone the team list is long, so the start button lives right under the invite code, next
-  // to the line-up it confirms: three slots fill as fighters are tapped below. The computer keeps
-  // the button under the list, where it is already in view.
+  // The start button lives right under the invite code, next to the line-up it confirms: three
+  // slots fill as fighters are picked below, so nobody has to hunt for it under a long list.
   function readyPanel() {
     const slots = [0, 1, 2].map(i => {
       const card = catalog.get(selected[i]);
