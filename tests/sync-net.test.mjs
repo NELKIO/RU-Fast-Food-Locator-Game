@@ -126,6 +126,18 @@ test('a large profile compresses well under the relay size limits', async () => 
   assert.equal(Object.keys((await openDoc(account, event)).devices).length, 4);
 });
 
+test('a ledger full of 256 devices still fits the relay size limits', async () => {
+  const account = await accountOf(newSyncKey());
+  const devices = Object.fromEntries(Array.from({ length: 256 }, (_, d) => ['dev' + String(d).padStart(6, '0'), {
+    xp: 40 + d, wins: d % 7, losses: d % 5, draws: 0,
+    cards: { [menu[d % menu.length].id]: [1, 10], [menu[(d * 7) % menu.length].id]: [2, 30] },
+    visits: { ['bk-' + d]: 1, ['dodo-' + (d * 3)]: 2 },
+  }]));
+  const event = await sealDoc(account, { v: 1, devices }, 1_800_000_000);
+  assert.ok(event.content.length < 60_000, `${event.content.length} characters`);
+  assert.equal(Object.keys((await openDoc(account, event)).devices).length, 256);
+});
+
 test('two devices with their own progress link and end up with one shared profile', async () => {
   const net = relayNet();
   const laptop = await device(net, 1), phone = await device(net, 2);

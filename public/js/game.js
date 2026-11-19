@@ -87,7 +87,8 @@ function retire(saved, encounter) {
 // syncs never count anything twice. The account key never leaves the device.
 const SYNC_DEVICE = /^[a-z0-9]{8,32}$/;
 const SYNC_KEY = /^[A-Z2-9]{32}$/;
-export const SYNC_LIMITS = Object.freeze({devices: 24, cards: 400, visits: 6000});
+// 256 devices: every cleared browser counts as a new one, so the ledger must outlast years of play.
+export const SYNC_LIMITS = Object.freeze({devices: 256, cards: 400, visits: 6000});
 
 export function cleanContribution(value) {
   const entry = {xp: 0, wins: 0, losses: 0, draws: 0, cards: {}, visits: {}};
@@ -114,9 +115,10 @@ function cleanSync(value) {
       Object.hasOwn(Object.prototype, value.device)) return null;
   const devices = {};
   if (record(value.devices)) {
-    for (const [id, entry] of Object.entries(value.devices).slice(0, SYNC_LIMITS.devices)) {
-      if (SYNC_DEVICE.test(id) && !Object.hasOwn(Object.prototype, id)) devices[id] = cleanContribution(entry);
-    }
+    // Beyond the limit every device keeps the same entries (sorted ids), and always its own one.
+    const ids = Object.keys(value.devices).filter(id => SYNC_DEVICE.test(id) && !Object.hasOwn(Object.prototype, id)).sort();
+    const kept = ids.includes(value.device) ? [value.device, ...ids.filter(id => id !== value.device)] : ids;
+    for (const id of kept.slice(0, SYNC_LIMITS.devices)) devices[id] = cleanContribution(value.devices[id]);
   }
   return {
     device: value.device,
