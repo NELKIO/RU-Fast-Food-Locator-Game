@@ -1,0 +1,22 @@
+# Round 1: 20 tuner runs from roster-draft.mjs, 1500 iterations, EVEN_W=1.2, T0=0.02, 24 bot games per pair, 2e5 state budget.
+# seed | iterations | J (lower is better) | minutes | objective terms
+12 | 1500 | 1.164 | 93 | {"J":1.164,"spread":0.461,"even":0.431,"counters":0.041,"bot":0.167,"cross":0.063,"draws":0,"top":0,"unsolved":0}
+9 | 1500 | 1.189 | 99 | {"J":1.189,"spread":0.28,"even":0.536,"counters":0.161,"bot":0.141,"cross":0.052,"draws":0.001,"top":0.019,"unsolved":0}
+8 | 1500 | 1.249 | 104 | {"J":1.249,"spread":0.351,"even":0.484,"counters":0.135,"bot":0.209,"cross":0.07,"draws":0,"top":0,"unsolved":0}
+11 | 1401 | 1.277 | 101 | {"J":1.277,"spread":0.285,"even":0.561,"counters":0.207,"bot":0.14,"cross":0.082,"draws":0.001,"top":0.002,"unsolved":0}
+19 | 1500 | 1.300 | 89 | {"J":1.3,"spread":0.331,"even":0.57,"counters":0.197,"bot":0.109,"cross":0.072,"draws":0,"top":0.02,"unsolved":0}
+6 | 1500 | 1.300 | 96 | {"J":1.3,"spread":0.371,"even":0.506,"counters":0.206,"bot":0.133,"cross":0.074,"draws":0.001,"top":0.009,"unsolved":0}
+5 | 1500 | 1.321 | 79 | {"J":1.321,"spread":0.38,"even":0.524,"counters":0.195,"bot":0.138,"cross":0.075,"draws":0,"top":0.009,"unsolved":0}
+10 | 1500 | 1.395 | 108 | {"J":1.395,"spread":0.393,"even":0.571,"counters":0.202,"bot":0.17,"cross":0.046,"draws":0.001,"top":0.011,"unsolved":0}
+20 | 1500 | 1.442 | 94 | {"J":1.442,"spread":0.437,"even":0.537,"counters":0.144,"bot":0.243,"cross":0.073,"draws":0,"top":0.009,"unsolved":0}
+3 | 1500 | 1.472 | 102 | {"J":1.472,"spread":0.577,"even":0.475,"counters":0.166,"bot":0.185,"cross":0.062,"draws":0.002,"top":0.005,"unsolved":0}
+16 | 1500 | 1.498 | 103 | {"J":1.498,"spread":0.467,"even":0.499,"counters":0.191,"bot":0.172,"cross":0.048,"draws":0.002,"top":0.118,"unsolved":0}
+15 | 1201 | 1.563 | 109 | {"J":1.563,"spread":0.577,"even":0.473,"counters":0.159,"bot":0.238,"cross":0.057,"draws":0,"top":0.058,"unsolved":0}
+2 | 1401 | 1.563 | 100 | {"J":1.563,"spread":0.886,"even":0.376,"counters":0.097,"bot":0.138,"cross":0.065,"draws":0.001,"top":0,"unsolved":0}
+4 | 1500 | 1.608 | 105 | {"J":1.608,"spread":0.423,"even":0.543,"counters":0.195,"bot":0.164,"cross":0.053,"draws":0.001,"top":0.228,"unsolved":0}
+18 | 1500 | 1.688 | 94 | {"J":1.688,"spread":0.666,"even":0.441,"counters":0.163,"bot":0.257,"cross":0.041,"draws":0.001,"top":0.12,"unsolved":0}
+14 | 1401 | 1.721 | 86 | {"J":1.721,"spread":0.4,"even":0.476,"counters":0.072,"bot":0.201,"cross":0.057,"draws":0.001,"top":0.514,"unsolved":0}
+13 | 1500 | 1.807 | 106 | {"J":1.807,"spread":1.027,"even":0.377,"counters":0.122,"bot":0.202,"cross":0.078,"draws":0.001,"top":0,"unsolved":0}
+17 | 1500 | 1.896 | 87 | {"J":1.896,"spread":1.136,"even":0.374,"counters":0.129,"bot":0.181,"cross":0.064,"draws":0.002,"top":0.011,"unsolved":0}
+1 | 1500 | 1.963 | 95 | {"J":1.963,"spread":0.543,"even":0.502,"counters":0.141,"bot":0.226,"cross":0.037,"draws":0.002,"top":0.512,"unsolved":0}
+7 | 1500 | 2.153 | 105 | {"J":2.153,"spread":0.591,"even":0.516,"counters":0.203,"bot":0.265,"cross":0.052,"draws":0,"top":0.525,"unsolved":0}

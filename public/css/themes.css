@@ -366,7 +366,7 @@ h1, .brand-word, .nearby h2, .duel-heading h2, .duel-box h2, .dialog-surface h2 
 .venue-row[aria-pressed='true'] .venue-distance { color: var(--accent-type); }
 .venue-row:hover:not([aria-pressed='true']) { background: var(--raised); }
 .route-box { border-color: var(--line); }
-.has-target .route-box .section-kicker, .route-feature-name { color: var(--accent-type); }
+.route-box.has-target .section-kicker, .route-feature-name { color: var(--accent-type); }
 .route-feature {
   width: 100%;
   display: grid;
@@ -388,7 +388,6 @@ h1, .brand-word, .nearby h2, .duel-heading h2, .duel-box h2, .dialog-surface h2 
 .route-feature-name { font-size: 14px; line-height: 1.2; overflow-wrap: anywhere; }
 .route-feature > svg { width: 15px; height: 15px; color: var(--accent-type); }
 .nearby { max-height: 552px; }
-.nearby.has-target .venue-list { min-height: 85px; }
 .quest-icon {
   border-color: var(--active-line);
   color: var(--accent-type);
@@ -474,7 +473,7 @@ button:disabled, .duel-page button:disabled {
 .duel-page button:disabled :is(.duel-glyph, .duel-slot, small) { color: var(--dim); }
 .duel-page .duel-primary:disabled { color: var(--dim); background: var(--well); border-color: var(--line); }
 .primary:disabled { color: var(--dim); background: var(--well); border-color: var(--line); }
-:root:is([data-theme='black'],[data-theme='white']) .has-target {
+:root:is([data-theme='black'],[data-theme='white']) .route-box.has-target {
   border-color: var(--active-line);
 }
 :root:is([data-theme='black'],[data-theme='white']) .has-target .route-stat {
@@ -517,7 +516,6 @@ button:disabled, .duel-page button:disabled {
   #radar-view.is-tracking .page-head p { grid-column: 1/-1; }
   #radar-view.is-tracking .page-head::after { display: none; }
   .nearby { max-height: none; }
-  .nearby.has-target .venue-list { min-height: 0; }
   .route-feature { grid-template-columns: 49px minmax(0,1fr) 15px; gap: 8px; margin-bottom: 6px; }
   .route-feature img { height: 34px; }
   .route-feature-name { font-size: 13px; }
@@ -596,3 +594,84 @@ button:disabled, .duel-page button:disabled {
 .pin-chooser button > span:last-child { display: grid; gap: 1px; min-width: 0; }
 .pin-chooser b { font-size: 13px; }
 .pin-chooser small { font-size: 11px; color: var(--muted); }
+
+/* Deck at the top of the collection */
+.deck { padding: 14px 16px 16px; margin-top: 18px; }
+.deck-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin-bottom: 10px; }
+.deck-head h2 { font-size: 18px; letter-spacing: -.03em; }
+.deck-head small { color: var(--muted); font-size: 12px; }
+.deck-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.deck-slot { position: relative; min-width: 0; min-height: 146px; border-radius: 12px; }
+.deck-card {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 3px;
+  padding: 12px 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--deck-color) 60%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--deck-color) 10%, var(--panel));
+  color: inherit;
+  text-align: center;
+}
+.deck-card img { width: 100%; height: 80px; object-fit: contain; filter: drop-shadow(0 4px 4px var(--art-shadow, #0004)); }
+.deck-card strong { font-size: 13px; line-height: 1.2; overflow-wrap: anywhere; }
+.deck-card small { font-size: 11px; color: var(--muted); }
+.deck-num { position: absolute; top: 8px; left: 9px; font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--muted); }
+.deck-slot.is-empty { display: grid; place-items: center; align-content: center; gap: 6px; padding: 10px; border: 1px dashed var(--line); color: var(--dim); text-align: center; }
+.deck-slot.is-empty small { font-size: 11px; }
+.deck-remove, .deck-add {
+  position: absolute;
+  z-index: 2;
+  top: 6px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--muted);
+}
+.deck-remove:hover { color: var(--text); border-color: var(--strong-line); }
+.menu-cell { position: relative; display: grid; min-width: 0; }
+.deck-add { top: 9px; right: 9px; color: var(--accent-type); border-color: var(--active-line); }
+.deck-add:hover { background: var(--selection); }
+@media (max-width: 700px) {
+  .deck { padding: 12px; }
+  .deck-slots { gap: 7px; }
+  .deck-slot { min-height: 128px; }
+  .deck-card img { height: 62px; }
+  .deck-card strong { font-size: 12px; }
+  .deck-add { top: 6px; right: 6px; }
+}
+
+/* Target block sits right under the map */
+.radar-grid {
+  grid-template-areas: 'map near' 'route near';
+  grid-template-rows: minmax(440px, 1fr) auto;
+  row-gap: 12px;
+}
+.map-card { grid-area: map; }
+.nearby { grid-area: near; }
+.route-box.panel { grid-area: route; margin: 0; padding: 16px 18px; border-top: 1px solid var(--line); }
+.route-box:empty { display: none; }
+.route-row { display: flex; align-items: center; gap: 8px; margin: 5px 0 9px; }
+.route-row .route-feature { flex: 1; min-width: 0; margin: 0; }
+.route-row .route-cancel { flex: none; width: 42px; align-self: stretch; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); }
+.route-row .route-cancel:only-child { margin-left: auto; height: 42px; }
+.route-row .route-cancel:hover { color: var(--text); border-color: var(--strong-line); }
+@media (min-width: 701px) {
+  /* The list fills the column next to the map and target instead of stretching it. */
+  .nearby { max-height: none; contain: size; }
+}
+@media (max-width: 700px) {
+  .radar-grid { row-gap: 11px; }
+  .route-box.panel { padding: 12px 13px; }
+}
+@media (min-width: 701px) {
+  .nearby .venue-list { max-height: none; min-height: 0; }
+}
