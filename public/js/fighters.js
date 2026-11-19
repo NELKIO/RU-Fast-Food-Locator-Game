@@ -48,8 +48,10 @@ export const FIGHTERS = {
   },
   'bk-whopper': {
     rarity: 'epic', role: 'allround', hp: 27, attack: 5, speed: 4, basic: 'Удар с гриля',
-    skill: { name: 'Пламя гриля', cost: 1, power: 1, burn: { dmg: 2, turns: 4 } },
-    ultimate: { name: 'Королевский гриль', cost: 3, power: 1, burn: { dmg: 3, turns: 2 } },
+    skill: { name: 'Пламя гриля', cost: 1, power: 1, burn: { dmg: 2, turns: 3 } },
+    // Hand-tuned after round 3: the face of Burger King leads the epics, but Ростмастер and
+    // Четыре сыра still beat him. The super move is now clearly stronger than the 1-energy one.
+    ultimate: { name: 'Королевский гриль', cost: 3, power: 6, burn: { dmg: 3, turns: 3 } },
     trait: { name: 'Закалка огнём', fireproof: true },
   },
   'bk-double-whopper': {
@@ -126,7 +128,7 @@ export const FIGHTERS = {
   'vkusno-chicken-premier': {
     rarity: 'epic', role: 'striker', hp: 23, attack: 5, speed: 9, basic: 'Хрустящий удар',
     skill: { name: 'Премьерная панировка', cost: 1, power: 1, shield: 3 },
-    ultimate: { name: 'Премьерный выход', cost: 3, power: 6, pierce: true },
+    ultimate: { name: 'Премьерный выход', cost: 3, power: 7, pierce: true },
     trait: { name: 'Быстрая подача', quick: 1 },
   },
   'vkusno-big-special': {
@@ -181,7 +183,7 @@ export const FIGHTERS = {
   'rostics-wings': {
     rarity: 'epic', role: 'striker', hp: 23, attack: 5, speed: 8, basic: 'Острый взмах',
     skill: { name: 'Перечный шторм', cost: 2, power: -1, burn: { dmg: 4, turns: 4 } },
-    ultimate: { name: 'Огненный смерч', cost: 3, power: 5, pierce: true, burn: { dmg: 2, turns: 4 } },
+    ultimate: { name: 'Огненный смерч', cost: 3, power: 5, pierce: true, burn: { dmg: 4, turns: 4 } },
     trait: { name: 'Острые перья', thorns: 1 },
   },
   'rostics-twister': {
@@ -223,7 +225,7 @@ export const FIGHTERS = {
   'dodo-pepperoni': {
     rarity: 'legendary', role: 'striker', hp: 25, attack: 8, speed: 6, basic: 'Острый ломтик',
     skill: { name: 'Острые кружки', cost: 1, power: 1, burn: { dmg: 4, turns: 4 } },
-    ultimate: { name: 'Пепперони-шторм', cost: 3, power: 5, burn: { dmg: 2, turns: 2 } },
+    ultimate: { name: 'Пепперони-шторм', cost: 3, power: 5, burn: { dmg: 4, turns: 4 } },
     trait: { name: 'Жар печи', rage: 1, fireproof: true },
   },
   'dodo-four-cheeses': {

@@ -283,6 +283,18 @@ function visitReward(menu, brand, rng) {
   return null;
 }
 
+// The chance that one roulette spin at a venue of the dish's chain gives exactly this dish.
+export function dropChance(menu, id) {
+  const items = menuItems(menu);
+  const item = items.find(entry => String(entry.id) === String(id));
+  if (!item) return 0;
+  const sizes = RARITIES.map(() => 0);
+  for (const entry of items) if (entry.brand === item.brand) sizes[RARITIES.indexOf(cardFor(entry).rarity)] += 1;
+  const total = sizes.reduce((sum, n, i) => sum + (n ? LOOT_WEIGHTS[i] : 0), 0);
+  const tier = RARITIES.indexOf(cardFor(item).rarity);
+  return total ? LOOT_WEIGHTS[tier] / total / sizes[tier] : 0;
+}
+
 function giveCard(saved, item) {
   const id = String(item.id);
   const entry = saved.collection[id];

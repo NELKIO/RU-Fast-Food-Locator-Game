@@ -1,4 +1,4 @@
-import { brands, icon, brandMark, esc, rarityNames, formatDistance, formatWait } from './ui.js';
+import { brands, icon, brandMark, esc, rarityNames, formatDistance, formatWait, formatCountdown, countdown } from './ui.js';
 import { makeMap, MOSCOW } from './map.js';
 import { applyAppearance, normalizeTheme, themeOptions, themes } from './themes.js';
 import {
@@ -12,6 +12,7 @@ import {
   todayRoute,
   wildEncounter,
   wildFighter,
+  dropChance,
   grantStarter,
   resolveEncounter,
   recordBattle,
@@ -37,6 +38,30 @@ function savePref(key, value) {
     const current = JSON.parse(localStorage.getItem(prefsKey)) || {};
     localStorage.setItem(prefsKey, JSON.stringify({ ...current, [key]: value }));
   } catch {}
+}
+// Collection orders. Ties fall back to rarity, then level, then the menu order.
+const RARITY_RANK = { legendary: 4, epic: 3, rare: 2, common: 1 };
+const SORTS = {
+  menu: { label: 'По сетям', key: () => 0 },
+  rarity: { label: 'По редкости', key: (c) => RARITY_RANK[c.rarity] ?? 0 },
+  level: { label: 'По уровню', key: (c, owned) => (owned ? c.level * 1e6 + (c.xp ?? 0) : -1) },
+  power: { label: 'По силе', key: (c) => c.maxHp * c.attack },
+  hp: { label: 'По здоровью', key: (c) => c.maxHp },
+  attack: { label: 'По атаке', key: (c) => c.attack },
+  speed: { label: 'По скорости', key: (c) => c.speed ?? 5 },
+  name: { label: 'По названию', key: () => 0 },
+};
+function sortCards(cards, sort, isOwned) {
+  const order = new Map(cards.map((c, i) => [c.id, i]));
+  const key = SORTS[sort]?.key ?? SORTS.menu.key;
+  return [...cards].sort((a, b) => {
+    if (sort === 'name') return a.name.localeCompare(b.name, 'ru');
+    return (
+      key(b, isOwned(b)) - key(a, isOwned(a)) ||
+      (sort === 'menu' ? 0 : (RARITY_RANK[b.rarity] ?? 0) - (RARITY_RANK[a.rarity] ?? 0) || b.level - a.level) ||
+      order.get(a.id) - order.get(b.id)
+    );
+  });
 }
 const lastMarkup = new WeakMap();
 function html(node, markup) {
@@ -82,6 +107,7 @@ let selected = null,
   requesting = false;
 let nearby = [],
   collectionFilter = 'all',
+  collectionSort = Object.hasOwn(SORTS, prefs.sort) ? prefs.sort : 'menu',
   duelCleanup = null,
   onlineActive = false;
 let soundContext = null,
@@ -395,7 +421,7 @@ function renderRoute() {
   const feature = item
     ? `<button type="button" class="route-feature" data-featured="${esc(item.id)}" aria-label="Возможная находка: ${esc(item.name)}">
     <img src="${esc(item.image)}" alt="" width="58" height="43">
-    <span class="route-feature-copy"><small>Возможная находка</small><strong class="route-feature-name">${esc(item.name)}</strong></span>
+    <span class="route-feature-copy"><small>Возможная находка · ${esc(chanceText(item.id))}</small><strong class="route-feature-name">${esc(item.name)}</strong></span>
     ${icon('next', 15)}</button>`
     : '';
   const selectedActive = selected.id === target?.id;
@@ -669,7 +695,7 @@ function renderQuests() {
       : '<div class="quest-icon">' +
           icon('compass', 27) +
           '</div><div><h2>Дикий боец</h2><p>' +
-          (wait ? 'Следующий появится через ' + formatWait(wait) + ' или сразу у заведения' : 'Появится после отметки у заведения') +
+          (wait ? 'Следующий появится через ' + countdown(wait) + ' или сразу у заведения' : 'Появится после отметки у заведения') +
           '</p></div>',
   );
 }
@@ -701,12 +727,15 @@ function renderCollection() {
   const view = $('collection-view'),
     cards = strongCards(),
     count = owned().length;
-  const visible = cards.filter(
-    (c) =>
-      collectionFilter === 'all' ||
-      (collectionFilter === 'mine'
-        ? Object.hasOwn(profile.collection, c.id)
-        : profile.team.includes(c.id)),
+  const isOwned = (c) => Object.hasOwn(profile.collection, c.id);
+  const visible = sortCards(
+    cards.filter(
+      (c) =>
+        collectionFilter === 'all' ||
+        (collectionFilter === 'mine' ? isOwned(c) : profile.team.includes(c.id)),
+    ),
+    collectionSort,
+    isOwned,
   );
   const switches = [
     ['all', 'Все находки'],
@@ -819,7 +848,16 @@ function renderCollection() {
           '</button>',
       )
       .join('') +
-    '</div>' +
+    '<label class="catalog-sort">' +
+    icon('sort', 16) +
+    '<select data-sort aria-label="Сортировка коллекции">' +
+    Object.entries(SORTS)
+      .map(
+        ([k, v]) =>
+          '<option value="' + k + '"' + (k === collectionSort ? ' selected' : '') + '>' + v.label + '</option>',
+      )
+      .join('') +
+    '</select></label></div>' +
     (tiles
       ? '<div class="menu-grid">' + tiles + '</div>'
       : '<div class="panel empty"><h3>Здесь появится первый боец</h3><p>Выбери ресторан на радаре и открой рулетку у цели.</p><button class="soft-btn" data-open="radar">К радару ' +
@@ -840,13 +878,20 @@ async function toggleTeam(id) {
     );
   return res.ok;
 }
-function showCard(id) {
+// From the arena the card is only for reading: the team is picked there with the round slot.
+const percent = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 });
+function chanceText(id) {
+  return percent.format(dropChance(menu, id) * 100) + '%';
+}
+function showCard(id, { readOnly = false } = {}) {
   const item = menuById.get(id);
   if (!item) return;
   const card = strongCards().find((c) => c.id === id),
     entry = profile.collection[id],
     inTeam = profile.team.includes(id);
-  const action = entry
+  const action = readOnly
+    ? ''
+    : entry
     ? '<div class="dialog-actions"><button class="' +
       (inTeam ? 'outline-btn' : 'primary') +
       '" data-team="' +
@@ -872,7 +917,9 @@ function showCard(id) {
       '</h2><p>' +
       esc(card.role) +
       ' · ' +
-      (entry ? 'В коллекции, ' + entry.copies + ' экз.' : 'Можно получить в рулетке этой сети.') +
+      (entry
+        ? 'В коллекции, ' + entry.copies + ' экз.'
+        : 'Выпадает в рулетке этой сети с шансом ' + chanceText(id) + ' за визит, а ещё может прийти диким бойцом.') +
       '</p>' +
       cardStats(card) +
       skillBox(card) +
@@ -884,10 +931,7 @@ function showCard(id) {
             : ' · максимальный уровень') +
           '</p>'
         : '') +
-      action +
-      '<p><a href="' +
-      esc(card.source) +
-      '" target="_blank" rel="noopener">В официальном меню</a></p>',
+      action,
   );
 }
 $('collection-view').addEventListener('click', (e) => {
@@ -901,6 +945,13 @@ $('collection-view').addEventListener('click', (e) => {
     renderCollection();
   } else if (card) showCard(card.dataset.card);
   else if (open) switchTab(open.dataset.open);
+});
+$('collection-view').addEventListener('change', (e) => {
+  if (!e.target.matches('[data-sort]') || !Object.hasOwn(SORTS, e.target.value)) return;
+  collectionSort = e.target.value;
+  savePref('sort', collectionSort);
+  renderCollection();
+  $('collection-view').querySelector('[data-sort]')?.focus({ preventScroll: true });
 });
 
 function renderHeader() {
@@ -972,7 +1023,7 @@ listen('about', () => {
     'Об игре',
     '<div class="micro section-kicker">' +
       icon('radar', 14) +
-      ' Фудрадар</div><h2>Как играть</h2><ol class="about-list"><li>Выбери заведение на карте и дойди до него. Расстояние считается по прямой.</li><li>У цели открой рулетку и получи бойца из меню. Та же точка снова наградит через шесть часов.</li><li>После отметки рядом появляется дикий боец. Победи его на арене — и он твой. Ещё на арене можно позвать друга на дуэль по ссылке.</li></ol><p>Профиль хранится в этом браузере. GPS используется для расчётов на устройстве. При просмотре онлайн-карты её провайдер получает запросы фрагментов видимой области.</p><p>Адреса четырёх сетей — All The Places. Карта — OpenStreetMap. Фото блюд — из официальных меню, ссылка есть на карточке.</p><p><a href="https://www.alltheplaces.xyz/" target="_blank" rel="noopener">All The Places</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></p>',
+      ' Фудрадар</div><h2>Как играть</h2><ol class="about-list"><li>Выбери заведение на карте и дойди до него. Расстояние считается по прямой.</li><li>У цели открой рулетку и получи бойца из меню. Та же точка снова наградит через шесть часов.</li><li>После отметки рядом появляется дикий боец. Победи его на арене — и он твой. Ещё на арене можно позвать друга на дуэль по ссылке.</li></ol><p>Профиль хранится в этом браузере. GPS используется для расчётов на устройстве. При просмотре онлайн-карты её провайдер получает запросы фрагментов видимой области.</p><p>Адреса четырёх сетей — All The Places. Карта — OpenStreetMap. Фото блюд — из меню сетей.</p><p><a href="https://www.alltheplaces.xyz/" target="_blank" rel="noopener">All The Places</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></p>',
   );
 });
 
@@ -1026,6 +1077,7 @@ function switchTab(next, options = {}) {
         onlineActive = active;
       },
       onTeamChange: (ids) => store.update((p) => setTeam(p, ids)),
+      onShowCard: (id) => showCard(id, { readOnly: true }),
       award: async (result) => {
         const saved =
           result.mode === 'wild'
@@ -1143,6 +1195,17 @@ async function init() {
     ensureWild();
   }
   window.setInterval(refreshTime, 15000);
+  // Countdowns tick every second; when one runs out the wild fighter arrives without a reload.
+  window.setInterval(() => {
+    if (document.hidden) return;
+    let due = false;
+    for (const el of document.querySelectorAll('[data-countdown]')) {
+      const left = +el.dataset.countdown - Date.now();
+      el.textContent = formatCountdown(left);
+      if (left <= 0) due = true;
+    }
+    if (due) ensureWild();
+  }, 1000);
   document.addEventListener('visibilitychange', refreshTime);
   window.addEventListener('pageshow', () => {
     profile = store.read();

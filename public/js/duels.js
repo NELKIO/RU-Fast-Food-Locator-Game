@@ -1,4 +1,4 @@
-import { brands, esc, formatWait, icon, rarityNames } from './ui.js';
+import { brands, countdown, esc, icon, rarityNames } from './ui.js';
 import { applyMove, battleStats, botMove, currentFighter, legalMoves, MAX_ENERGY, opener, startBattle } from './duel-engine.js';
 import { describeSkill, describeTrait } from './fighters.js';
 import { DuelRoom, newRoomCode, parseRoomCode, RECONNECT_MS } from './duel-room.js';
@@ -88,7 +88,7 @@ function chips(fighter) {
 }
 
 export function mountDuels(container, options) {
-  const { read, initialMode, award, onBack, onStateChange, onTeamChange } = options;
+  const { read, initialMode, award, onBack, onStateChange, onTeamChange, onShowCard } = options;
   let data, catalog, owned;
   let selected = [];
   function sync() {
@@ -128,7 +128,14 @@ export function mountDuels(container, options) {
     navLock(false);
   }
 
+  // An invite link only opens the room once: after the match, or when the player leaves the room,
+  // a reload brings back the arena lobby instead of the finished room.
+  function forgetInvite() {
+    if (/^#duel=/i.test(location.hash)) history.replaceState(history.state, '', location.pathname + location.search);
+  }
+
   function reset(next = 'lobby') {
+    if (next !== 'online') forgetInvite();
     room?.cancel('left');
     stopNetwork();
     clearTimeout(thinking);
@@ -249,22 +256,25 @@ export function mountDuels(container, options) {
       const card = catalog.get(id);
       const number = selected.indexOf(id);
       const stats = battleStats(card, online);
-      return `<button type="button" class="duel-pick ${number >= 0 ? 'is-selected' : ''}" data-duel-action="pick:${esc(id)}"
-        aria-pressed="${number >= 0}" ${locked || (number < 0 && selected.length === 3) ? 'disabled' : ''}>
+      // The fighter itself opens its card; the round slot adds it to the team or takes it out.
+      const label = number < 0 ? `Добавить в команду: ${card.name}` : `Убрать из команды: ${card.name}, выходит ${number + 1}-м`;
+      return `<div class="duel-pick ${number >= 0 ? 'is-selected' : ''}">
+        <button type="button" class="duel-pick-info" data-duel-action="card:${esc(id)}" aria-label="Карточка бойца: ${esc(card.name)}">
         ${artwork(card)}<span class="duel-pick-title"><strong>${esc(card.name)}</strong>
-        <small>${icon('heart', 11)} ${stats.hp} · ${icon('battle', 11)} ${stats.attack} · ${icon('speed', 11)} ${stats.speed} · ${esc(stats.skill.name)}</small></span>
-        <span class="duel-slot">${number < 0 ? '+' : number + 1}</span></button>`;
+        <small>${icon('heart', 11)} ${stats.hp} · ${icon('battle', 11)} ${stats.attack} · ${icon('speed', 11)} ${stats.speed} · ${esc(stats.skill.name)}</small></span></button>
+        <button type="button" class="duel-slot" data-duel-action="pick:${esc(id)}" aria-pressed="${number >= 0}" aria-label="${esc(label)}"
+          ${locked || (number < 0 && selected.length === 3) ? 'disabled' : ''}>${number < 0 ? '+' : number + 1}</button></div>`;
     }).join('');
-    return `<section class="duel-team"><h3>Твоя команда <small>${selected.length} из 3 · выходят по номерам</small></h3>
+    return `<section class="duel-team"><h3>Твоя команда <small>${selected.length} из 3 · выходят по номерам · нажми на бойца, чтобы открыть карточку</small></h3>
       <div class="duel-roster">${items}</div></section>`;
   }
 
   function wildBox() {
     const wild = data.wild;
     if (!wild) {
-      const wait = data.wildWaitMs > 0 ? 'Следующий появится через ' + formatWait(data.wildWaitMs) + '. ' : '';
+      const wait = data.wildWaitMs > 0 ? 'Следующий появится через ' + countdown(data.wildWaitMs) + '. ' : '';
       return `<section class="duel-wild is-empty"><span class="duel-wild-icon">${icon('compass', 24)}</span>
-        <div><h3>Дикого бойца пока нет</h3><p>${esc(wait)}Отметься у любого заведения — и рядом сразу появится новый.</p></div></section>`;
+        <div><h3>Дикого бойца пока нет</h3><p>${wait}Отметься у любого заведения — и рядом сразу появится новый.</p></div></section>`;
     }
     const enemy = wild.opponent(selected.map(id => catalog.get(id)));
     if (!enemy) return '';
@@ -293,9 +303,10 @@ export function mountDuels(container, options) {
 
   function lobby() {
     if (!owned.length) return `<header class="duel-heading"><h2>Арена</h2></header>${empty()}`;
-    return `<header class="duel-heading"><h2>Арена</h2></header>${wildBox()}${teamPicker()}
+    // The friend duel sits right under the wild fighter: with a big collection the team list is long.
+    return `<header class="duel-heading"><h2>Арена</h2></header>${wildBox()}
       <section class="duel-friend"><span>${icon('route', 20)}</span><p><strong>С другом по ссылке</strong><small>Честный бой на базовых характеристиках</small></p>
-        ${button('online', 'Дуэль с другом')}</section>${rules}`;
+        ${button('online', 'Дуэль с другом')}</section>${teamPicker()}${rules}`;
   }
 
   function finder() {
@@ -409,6 +420,7 @@ export function mountDuels(container, options) {
   function settle(state, side) {
     if (rewardState !== 'idle') return;
     rewardState = 'saving';
+    if (mode === 'online') forgetInvite();
     const won = state.winner === side, drawn = state.winner === 'draw';
     const result = mode === 'wild'
       ? { mode: 'wild', encounterId: wildId, won, draw: drawn, teamIds: state.teams[side].map(f => f.id), matchId: localMatchId }
@@ -642,7 +654,8 @@ export function mountDuels(container, options) {
       } else if (selected.length < 3) selected.push(id);
       if (!room) saveTeam();
       draw();
-    } else if (action.startsWith('move:')) play(action.slice(5));
+    } else if (action.startsWith('card:')) onShowCard?.(action.slice(5));
+    else if (action.startsWith('move:')) play(action.slice(5));
     else if (action === 'wild') startWild();
     else if (action === 'online') reset('online');
     else if (action === 'create') openRoom('host', newRoomCode());
@@ -671,6 +684,7 @@ export function mountDuels(container, options) {
 
   const cleanup = () => {
     disposed = true;
+    if (room) forgetInvite();
     room?.cancel('left');
     clearTimeout(thinking);
     clearTimeout(holdTimer);
