@@ -1,6 +1,6 @@
 // node tune.mjs roster(.mjs|.json) seed iterations out.json
 // Simulated annealing over every number of every fighter, speed included (effects stay as designed).
-// Goal (round 3): inside a rarity the fighters form a ladder from weak to strong, so collecting and
+// Goal (rounds 3–4): inside a rarity the fighters form a ladder from weak to strong, so collecting and
 // hunting for the best ones is worth it, yet even the strongest has counters. A higher rarity is
 // usually stronger, but the best of a lower rarity can beat the weakest of the next one.
 // Env: EVEN_W weight of order-decided pairs (default 1.2), T0 start temperature (default 0.02),
@@ -14,9 +14,10 @@ const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7ffffff
 const F = structuredClone(FIGHTERS);
 const ids = Object.keys(F);
 const TIER = { common: { hp: [14, 22], attack: [3, 5] }, rare: { hp: [16, 25], attack: [4, 6] }, epic: { hp: [19, 28], attack: [4, 7] }, legendary: { hp: [23, 30], attack: [5, 8] } };
-const SK = { power: [-1, 6], heal: [1, 8], shield: [2, 9], weaken: [1, 3], buff: [1, 2], execute: [1, 5], team: [2, 6], recoil: [1, 3] };
+const SK = { power: [-1, 6], heal: [1, 8], shield: [2, 9], weaken: [1, 3], buff: [1, 2], execute: [1, 5], team: [2, 6], recoil: [1, 3],
+  sleep: [1, 2], leech: [1, 3], hits: [2, 4], charge: [1, 2] };
 const ULT = { ...SK, power: [0, 9], shield: [3, 10], heal: [2, 9] };
-const TR = { armor: [1, 2], thorns: [1, 2], regen: [1, 2], rage: [1, 3], vamp: [1, 2] };
+const TR = { armor: [1, 2], thorns: [1, 2], regen: [1, 2], rage: [1, 3], vamp: [1, 2], intimidate: [1, 2] };
 // Every number the search may move, as [id, path, lo, hi].
 const knobs = [];
 for (const id of ids) {
@@ -38,7 +39,7 @@ const cache = new Map();
 function fight(a, b) {
   const k = JSON.stringify(F[a]) + '#' + JSON.stringify(F[b]);
   let v = cache.get(k);
-  if (v === undefined) { v = solve(F[a], F[b], 0, true, 2e5); cache.set(k, v); }
+  if (v === undefined) { v = solve(F[a], F[b], 0, true, 2e6); cache.set(k, v); }
   return v;
 }
 function botPair(a, b) {
@@ -59,7 +60,7 @@ const groups = tiers.map(t => ids.filter(i => F[i].rarity === t));
 const TOP = +process.env.TOP || 0.74, BOTTOM = +process.env.BOTTOM || 0.28;
 const ladder = n => Array.from({ length: n }, (_, k) => TOP - (TOP - BOTTOM) * k / (n - 1));
 function objective(detail = false) {
-  const c = { ladder: 0, even: 0, counters: 0, bot: 0, cross: 0, draws: 0, top: 0, unsolved: 0 };
+  const c = { ladder: 0, even: 0, counters: 0, bot: 0, cross: 0, legendCounter: 0, draws: 0, top: 0, unsolved: 0 };
   groups.forEach(G => {
     const need = G.length <= 4 ? 1 : 2;
     let even = 0, pairs = 0, draws = 0, top = 0;
@@ -89,12 +90,19 @@ function objective(detail = false) {
     c.top += 5 * Math.max(0, top - 0.85) ** 2;
   });
   // A rarity above wins most fights, two above nearly all; the overlap leaves room for upsets.
+  // Legendaries beat most epics but not all: every legendary has an epic that beats it outright
+  // (a fighter that hits its weak spot), so even the top tier has a counter worth looking for.
   for (let u = 0; u < 4; u++) for (let v = 0; v < u; v++) {
     let x = 0, y = 0, n = 0;
     for (const a of groups[u]) for (const b of groups[v]) { x += s(a, b); y += bs(a, b); n++; }
     x /= n; y /= n;
-    const d = u - v, lo = [0, 0.72, 0.9, 0.97][d], hi = [0, 0.88, 1, 1][d];
+    const d = u - v, lo = [0, 0.72, 0.9, 0.97][d], hi = [0, u === 3 ? 0.86 : 0.88, 1, 1][d];
     c.cross += 10 * (Math.max(0, lo - x) ** 2 + Math.max(0, x - hi) ** 2) + 4 * Math.max(0, lo - 0.04 - y) ** 2;
+  }
+  c.legendCounter = 0;
+  for (const L of groups[3]) {
+    const beaten = groups[2].filter(e => s(e, L) === 1).length;
+    c.legendCounter += 0.25 * Math.max(0, 1 - beaten) + 0.05 * Math.max(0, beaten - 3);
   }
   const J = Object.values(c).reduce((p, q) => p + q, 0);
   return detail ? { J, ...c } : J;

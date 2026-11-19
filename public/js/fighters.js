@@ -21,9 +21,17 @@
 //   recoil   the fighter takes this much damage itself (never knocks itself out)
 //   cleanse  removes burning from the fighter
 //   shatter  knocks off the target's shield and guard before the blow
+//   hits     splits the blow into that many strikes (guard softens only the first, armour every one)
+//   purge    wipes the target's shield, guard and attack boosts before the blow
+//   freeze   the target misses its next turn (fire thaws it)
+//   sleep    the target sleeps for that many of its turns; a blow that lands wakes it
+//   toxic    heartburn: the target loses 1, 2, 3, 4… HP after each of its turns until it leaves
+//   leech    the target loses that much HP after each of its turns, the fighter facing it gains it
+//   charge   adds that much energy to the fighter
 //
 // Rarity ladder: a common fighter has one move; a rare one adds a talent; an epic one adds a
-// super move (`ultimate`, 3 energy) to that; a legendary one has a talent only legendaries have.
+// super move (`ultimate`, 3 energy) to that; a legendary one has a double talent. Each chain has
+// two legendaries.
 //
 // Talent fields (`trait`), each works by itself, without spending a turn:
 //   armor     every blow that does not pierce is that much weaker (never below 1)
@@ -35,6 +43,8 @@
 //   quick     starts the fight with that much extra energy
 //   vamp      a plain hit that lands restores that much HP
 //   laststand the first blow that would knock the fighter out leaves it on 1 HP (legendary)
+//   pure      sterile: no burn, heartburn, draining, freeze or sleep (one meme fighter only)
+//   intimidate lowers the opposing fighter's attack by that much when this one comes onto the field
 export const RARITIES = ['common', 'rare', 'epic', 'legendary'];
 export const ROLES = { striker: 'Штурмовик', allround: 'Универсал', guard: 'Защитник' };
 
@@ -49,14 +59,12 @@ export const FIGHTERS = {
   'bk-whopper': {
     rarity: 'epic', role: 'allround', hp: 27, attack: 5, speed: 4, basic: 'Удар с гриля',
     skill: { name: 'Пламя гриля', cost: 1, power: 1, burn: { dmg: 2, turns: 3 } },
-    // Hand-tuned after round 3: the face of Burger King leads the epics, but Ростмастер and
-    // Четыре сыра still beat him. The super move is now clearly stronger than the 1-energy one.
     ultimate: { name: 'Королевский гриль', cost: 3, power: 6, burn: { dmg: 3, turns: 3 } },
     trait: { name: 'Закалка огнём', fireproof: true },
   },
   'bk-double-whopper': {
     rarity: 'epic', role: 'striker', hp: 23, attack: 7, speed: 1, basic: 'Двойной удар',
-    skill: { name: 'Две котлеты', cost: 2, power: -1, execute: 1 },
+    skill: { name: 'Две котлеты', cost: 2, power: 1, hits: 2 },
     ultimate: { name: 'Двойной прожар', cost: 3, power: 6, shatter: true },
     trait: { name: 'Голодная ярость', rage: 1 },
   },
@@ -76,7 +84,7 @@ export const FIGHTERS = {
   },
   'bk-cheese-sauce': {
     rarity: 'common', role: 'guard', hp: 19, attack: 4, speed: 3, basic: 'Брызги соуса',
-    skill: { name: 'Липкий сыр', cost: 2, power: 1, weaken: 3, sap: true },
+    skill: { name: 'Липкий сыр', cost: 2, power: 0, leech: 1, weaken: 2 },
   },
   'bk-shrimps': {
     rarity: 'common', role: 'guard', hp: 18, attack: 5, speed: 9, basic: 'Щипок',
@@ -95,11 +103,10 @@ export const FIGHTERS = {
     rarity: 'common', role: 'guard', hp: 22, attack: 3, speed: 6, basic: 'Шоколадные брызги',
     skill: { name: 'Холодный десерт', cost: 2, weaken: 3, heal: 4 },
   },
-  // Стаканы колы: чем больше стакан, тем реже и сильнее боец
   'bk-cola-08': {
     rarity: 'epic', role: 'guard', hp: 25, attack: 5, speed: 1, basic: 'Ледяной всплеск',
     skill: { name: 'Ледяной фонтан', cost: 2, power: 2, weaken: 2, cleanse: true },
-    ultimate: { name: 'Ледниковый период', cost: 3, power: 3, sap: true, shield: 3 },
+    ultimate: { name: 'Ледниковый период', cost: 3, power: 3, freeze: true, shield: 3 },
     trait: { name: 'Холодная голова', steady: true },
   },
   'bk-cola-05': {
@@ -107,9 +114,88 @@ export const FIGHTERS = {
     skill: { name: 'Шипучка', cost: 2, power: 4, sap: true },
     trait: { name: 'Газировка', quick: 1 },
   },
+  // Стаканы колы: чем больше стакан, тем реже и сильнее боец
   'bk-cola-04': {
     rarity: 'common', role: 'guard', hp: 16, attack: 4, speed: 8, basic: 'Брызги колы',
     skill: { name: 'Глоток со льдом', cost: 1, heal: 6, cleanse: true },
+  },
+  'bk-burger-box': {
+    rarity: 'legendary', role: 'allround', hp: 27, attack: 6, speed: 4, basic: 'Удар коробкой',
+    skill: { name: 'Микс 3 вкусов', cost: 2, power: 0, hits: 3 },
+    ultimate: { name: 'Трамвай вкусов', cost: 3, power: 6, hits: 3, team: 3 },
+    trait: { name: 'Три в одном', armor: 1, intimidate: 1 },
+  },
+  'bk-big-king': {
+    rarity: 'epic', role: 'striker', hp: 25, attack: 6, speed: 3, basic: 'Королевский укус',
+    skill: { name: 'Двухэтажный удар', cost: 2, power: 1, hits: 2 },
+    ultimate: { name: 'Королевский обед', cost: 3, power: 4, sleep: 1 },
+    trait: { name: 'Королевский вид', intimidate: 1 },
+  },
+  'bk-wet-wipe': {
+    rarity: 'epic', role: 'guard', hp: 24, attack: 4, speed: 8, basic: 'Шлепок салфеткой',
+    skill: { name: 'Протереть', cost: 1, power: 0, purge: true, cleanse: true },
+    ultimate: { name: 'Освежающая чистота', cost: 3, power: 2, purge: true, heal: 5, cleanse: true },
+    trait: { name: 'Стерильность', pure: true },
+  },
+  'bk-sauce-xxl-chili-cheese': {
+    rarity: 'epic', role: 'guard', hp: 26, attack: 5, speed: 2, basic: 'XXL плюх',
+    skill: { name: 'Двойная порция соуса', cost: 2, power: 0, leech: 2 },
+    ultimate: { name: 'Чили-взрыв', cost: 3, power: 4, toxic: true, shield: 4 },
+    trait: { name: 'Бездонная банка', regen: 1 },
+  },
+  'bk-brownie-ice-cream': {
+    rarity: 'epic', role: 'allround', hp: 24, attack: 5, speed: 5, basic: 'Ложка мороженого',
+    skill: { name: 'Горячее и холодное', cost: 2, power: 1, freeze: true },
+    ultimate: { name: 'Шоколадная лавина', cost: 3, power: 5, heal: 4 },
+    trait: { name: 'Сладкое спокойствие', steady: true },
+  },
+  'bk-fish-burger': {
+    rarity: 'rare', role: 'guard', hp: 22, attack: 5, speed: 4, basic: 'Рыбий хвост',
+    skill: { name: 'Ледяная рыба', cost: 2, power: 0, freeze: true },
+    trait: { name: 'Чешуя', armor: 1 },
+  },
+  'bk-brownie': {
+    rarity: 'rare', role: 'striker', hp: 19, attack: 5, speed: 6, basic: 'Шоколадный тычок',
+    skill: { name: 'Сахарный взрыв', cost: 1, power: 1, charge: 1 },
+    trait: { name: 'Шоколадный азарт', rage: 1 },
+  },
+  'bk-sauce-sweet-sour': {
+    rarity: 'rare', role: 'allround', hp: 20, attack: 5, speed: 5, basic: 'Кисло-сладкий плевок',
+    skill: { name: 'Тягучая сладость', cost: 2, power: -1, leech: 2 },
+    trait: { name: 'Сладкое послевкусие', vamp: 1 },
+  },
+  'bk-sauce-garlic': {
+    rarity: 'rare', role: 'guard', hp: 21, attack: 4, speed: 4, basic: 'Чесночный выдох',
+    skill: { name: 'Чесночный дух', cost: 2, power: 0, toxic: true },
+    trait: { name: 'Отпугивающий запах', thorns: 1 },
+  },
+  'bk-sauce-ketchup': {
+    rarity: 'rare', role: 'striker', hp: 18, attack: 6, speed: 7, basic: 'Капля кетчупа',
+    skill: { name: 'Брызги кетчупа', cost: 2, power: 1, hits: 3 },
+    trait: { name: 'Томатная ярость', rage: 1 },
+  },
+  'bk-sauce-mustard': {
+    rarity: 'rare', role: 'striker', hp: 19, attack: 5, speed: 8, basic: 'Горчичный щелчок',
+    skill: { name: 'Ядрёная горчица', cost: 1, power: 1, pierce: true, weaken: 1 },
+    trait: { name: 'Острый старт', quick: 1 },
+  },
+  'bk-sauce-curry': {
+    rarity: 'rare', role: 'allround', hp: 20, attack: 5, speed: 5, basic: 'Пряный мазок',
+    skill: { name: 'Индийский жар', cost: 2, power: 0, burn: { dmg: 2, turns: 3 } },
+    trait: { name: 'Привычка к специям', fireproof: true },
+  },
+  'bk-sauce-1000-islands': {
+    rarity: 'rare', role: 'guard', hp: 23, attack: 4, speed: 3, basic: 'Островной всплеск',
+    skill: { name: 'Архипелаг', cost: 2, power: 0, team: 2 },
+    trait: { name: 'Тихая гавань', regen: 1 },
+  },
+  'bk-cheeseburger-classic': {
+    rarity: 'common', role: 'allround', hp: 18, attack: 4, speed: 5, basic: 'Сырный шлепок',
+    skill: { name: 'Тянучий сыр', cost: 2, power: 0, leech: 1 },
+  },
+  'bk-whopper-junior': {
+    rarity: 'common', role: 'striker', hp: 16, attack: 5, speed: 6, basic: 'Гриль-тычок',
+    skill: { name: 'Маленький гриль', cost: 1, power: 0, burn: { dmg: 1, turns: 3 } },
   },
 
   // Вкусно — и точка — классика и большие порции
@@ -120,10 +206,10 @@ export const FIGHTERS = {
     trait: { name: 'Тройная броня', armor: 1, thorns: 1 },
   },
   'vkusno-grand': {
-    rarity: 'epic', role: 'allround', hp: 25, attack: 5, speed: 5, basic: 'Гранд-удар',
+    rarity: 'legendary', role: 'allround', hp: 27, attack: 6, speed: 5, basic: 'Гранд-удар',
     skill: { name: 'Двойная котлета', cost: 2, power: 2, buff: 2 },
     ultimate: { name: 'Гранд-финал', cost: 3, power: 4, buff: 1 },
-    trait: { name: 'Сытный укус', vamp: 2 },
+    trait: { name: 'Сытный укус', vamp: 2, intimidate: 1 },
   },
   'vkusno-chicken-premier': {
     rarity: 'epic', role: 'striker', hp: 23, attack: 5, speed: 9, basic: 'Хрустящий удар',
@@ -164,7 +250,17 @@ export const FIGHTERS = {
   },
   'vkusno-macarons': {
     rarity: 'common', role: 'guard', hp: 18, attack: 5, speed: 9, basic: 'Хруст безе',
-    skill: { name: 'Сахарная кома', cost: 1, sap: true, heal: 4 },
+    skill: { name: 'Сахарная кома', cost: 1, sleep: 1 },
+  },
+  'vkusno-seasoning-provence-sour-cream': {
+    rarity: 'epic', role: 'allround', hp: 22, attack: 5, speed: 7, basic: 'Щепотка',
+    skill: { name: 'Прованская посыпка', cost: 1, power: -1, hits: 3, weaken: 1 },
+    ultimate: { name: 'Посыпать всё', cost: 3, power: 3, team: 3, buff: 2 },
+    trait: { name: 'Аромат трав', quick: 1 },
+  },
+  'vkusno-hamburger': {
+    rarity: 'common', role: 'striker', hp: 16, attack: 5, speed: 6, basic: 'Классика',
+    skill: { name: 'Огурчик в лоб', cost: 1, power: 1, pierce: true },
   },
 
   // Rostic’s — острая хрустящая курица
@@ -175,10 +271,10 @@ export const FIGHTERS = {
     trait: { name: 'Рука шефа', regen: 2, steady: true },
   },
   'rostics-boxmaster': {
-    rarity: 'epic', role: 'striker', hp: 21, attack: 7, speed: 4, basic: 'Джеб',
+    rarity: 'legendary', role: 'striker', hp: 26, attack: 7, speed: 4, basic: 'Джеб',
     skill: { name: 'Ростмастер-комбо', cost: 1, power: 3, recoil: 3 },
     ultimate: { name: 'Нокаут', cost: 3, power: 6, execute: 2 },
-    trait: { name: 'Плотная упаковка', armor: 2 },
+    trait: { name: 'Плотная упаковка', armor: 2, rage: 1 },
   },
   'rostics-wings': {
     rarity: 'epic', role: 'striker', hp: 23, attack: 5, speed: 8, basic: 'Острый взмах',
@@ -192,17 +288,18 @@ export const FIGHTERS = {
     trait: { name: 'Острая начинка', thorns: 1 },
   },
   'rostics-basket': {
-    rarity: 'rare', role: 'guard', hp: 24, attack: 4, speed: 2, basic: 'Удар корзиной',
+    rarity: 'epic', role: 'guard', hp: 24, attack: 4, speed: 2, basic: 'Удар корзиной',
     skill: { name: 'На всю компанию', cost: 2, power: 2, team: 2 },
+    ultimate: { name: 'Баскет на всех', cost: 3, power: 3, team: 4 },
     trait: { name: 'Плетёные стенки', armor: 2 },
   },
   'rostics-strips': {
     rarity: 'common', role: 'striker', hp: 15, attack: 5, speed: 7, basic: 'Полоска',
-    skill: { name: 'Тройная полоска', cost: 2, power: 6 },
+    skill: { name: 'Тройная полоска', cost: 2, power: 3, hits: 3 },
   },
   'rostics-bites': {
     rarity: 'common', role: 'allround', hp: 17, attack: 5, speed: 7, basic: 'Укус',
-    skill: { name: 'Горсть байтсов', cost: 2, power: 0, drain: true },
+    skill: { name: 'Горсть байтсов', cost: 2, power: 0, hits: 4, drain: true },
   },
   'rostics-drumsticks': {
     rarity: 'common', role: 'guard', hp: 14, attack: 5, speed: 7, basic: 'Пинок',
@@ -218,7 +315,12 @@ export const FIGHTERS = {
   },
   'rostics-ice-cream-cone': {
     rarity: 'common', role: 'guard', hp: 20, attack: 4, speed: 2, basic: 'Холодок',
-    skill: { name: 'Заморозка', cost: 1, power: 1, sap: true, cleanse: true },
+    skill: { name: 'Заморозка', cost: 1, power: 0, freeze: true },
+  },
+  'rostics-i-roll': {
+    rarity: 'rare', role: 'allround', hp: 17, attack: 4, speed: 7, basic: 'Ролл в дорогу',
+    skill: { name: 'Двойной заворот', cost: 2, power: 1, hits: 2 },
+    trait: { name: 'Быстрый перекус', quick: 1 },
   },
 
   // Додо Пицца — печь и сыр
@@ -237,13 +339,13 @@ export const FIGHTERS = {
   'dodo-diablo': {
     rarity: 'epic', role: 'striker', hp: 22, attack: 6, speed: 7, basic: 'Перчинка',
     skill: { name: 'Адское пламя', cost: 1, power: 3, burn: { dmg: 3, turns: 3 }, recoil: 2 },
-    ultimate: { name: 'Адский жар', cost: 3, power: 7, burn: { dmg: 3, turns: 4 }, recoil: 3 },
+    ultimate: { name: 'Адский жар', cost: 3, power: 6, toxic: true, recoil: 3 },
     trait: { name: 'Огненный нрав', rage: 1 },
   },
   'dodo-dodster': {
     rarity: 'epic', role: 'allround', hp: 23, attack: 5, speed: 8, basic: 'Ролл-удар',
     skill: { name: 'Прямо из печи', cost: 2, power: -1, drain: true },
-    ultimate: { name: 'Двойной додстер', cost: 3, power: 6, drain: true },
+    ultimate: { name: 'Двойной додстер', cost: 3, power: 5, hits: 2, drain: true },
     trait: { name: 'Тёплый ролл', regen: 1 },
   },
   'dodo-carbonara': {
@@ -277,6 +379,25 @@ export const FIGHTERS = {
     rarity: 'common', role: 'allround', hp: 20, attack: 4, speed: 1, basic: 'Нежный удар',
     skill: { name: 'Сладкая пауза', cost: 1, heal: 8 },
   },
+  'dodo-cheesy-chicken': {
+    rarity: 'legendary', role: 'guard', hp: 29, attack: 6, speed: 5, basic: 'Сырная волна',
+    skill: { name: 'Сырные нити', cost: 2, power: 1, leech: 2 },
+    ultimate: { name: 'Сырная лавина', cost: 3, power: 7, shield: 6 },
+    trait: { name: 'Нежное сердце', regen: 1, laststand: true },
+  },
+  'dodo-starter-cheese': {
+    rarity: 'rare', role: 'striker', hp: 20, attack: 5, speed: 6, basic: 'Хрустящий край',
+    skill: { name: 'Конверт с сюрпризом', cost: 2, power: 2, shatter: true },
+    trait: { name: 'Хрустящая корочка', armor: 1 },
+  },
+  'dodo-syrniki': {
+    rarity: 'common', role: 'guard', hp: 19, attack: 4, speed: 3, basic: 'Тёплый сырник',
+    skill: { name: 'Утро со сметаной', cost: 2, sleep: 1, heal: 3 },
+  },
+  'dodo-beak': {
+    rarity: 'common', role: 'striker', hp: 14, attack: 5, speed: 8, basic: 'Тычок клювом',
+    skill: { name: 'Клевок-клевок-клевок', cost: 1, power: -1, hits: 3 },
+  },
 };
 
 // Ids that earlier versions could save in a profile, mapped to their replacements.
@@ -304,6 +425,7 @@ export function describeSkill(skill, attack) {
   if (Number.isFinite(skill.power)) {
     parts.push(count(Math.max(0, attack + skill.power), { one: 'урон', few: 'урона', many: 'урона', other: 'урона' }) + (skill.pierce ? ' сквозь защиту' : ''));
   }
+  if (skill.hits > 1) parts.push('серией из ' + skill.hits + ' ударов');
   if (skill.execute) parts.push('+' + skill.execute + ' по раненому сопернику');
   if (skill.burn) parts.push('поджигает на ' + count(skill.burn.turns, TURNS) + ' соперника: −' + skill.burn.dmg + ' HP за ход');
   if (skill.weaken) parts.push('атака соперника −' + skill.weaken);
@@ -313,8 +435,14 @@ export function describeSkill(skill, attack) {
   if (skill.team) parts.push('лечит всю команду на ' + count(skill.team, HP));
   if (skill.shield) parts.push('щит на ' + skill.shield);
   if (skill.buff) parts.push('своя атака +' + skill.buff);
-  if (skill.cleanse) parts.push('тушит поджог');
+  if (skill.freeze) parts.push('замораживает: соперник пропускает ход');
+  if (skill.sleep) parts.push('усыпляет на ' + count(skill.sleep, TURNS) + ' (удар будит)');
+  if (skill.toxic) parts.push('изжога: соперник теряет 1, 2, 3… HP за ход, пока не уйдёт с арены');
+  if (skill.leech) parts.push('вытягивает ' + count(skill.leech, HP) + ' за ход себе, пока соперник на арене');
+  if (skill.charge) parts.push('своя энергия +' + skill.charge);
+  if (skill.cleanse) parts.push('снимает с себя поджог, изжогу и вытягивание');
   if (skill.shatter) parts.push('сначала сбивает щит и защиту соперника');
+  if (skill.purge) parts.push('сначала стирает с соперника щит, защиту и усиления атаки');
   if (skill.recoil) parts.push('отдача −' + skill.recoil + ' HP себе');
   const text = parts.join(', ');
   return text.charAt(0).toUpperCase() + text.slice(1) + '.';
@@ -333,6 +461,8 @@ export function describeTrait(trait) {
   if (trait.quick) parts.push('начинает бой с лишней энергией: +' + trait.quick);
   if (trait.vamp) parts.push('обычный удар лечит на ' + count(trait.vamp, HP));
   if (trait.laststand) parts.push('один раз за бой переживает смертельный удар с 1 HP');
+  if (trait.pure) parts.push('не поддаётся поджогу, изжоге, вытягиванию, заморозке и сну');
+  if (trait.intimidate) parts.push('при выходе на арену снижает атаку соперника на ' + trait.intimidate);
   const text = parts.join(', ');
   return text.charAt(0).toUpperCase() + text.slice(1) + '.';
 }

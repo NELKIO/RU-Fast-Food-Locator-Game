@@ -54,14 +54,17 @@ function story(event, name, state) {
   else {
     const opening = event.command === 'ultimate' ? `${who}: суперприём «${event.skill}»!` : event.skill ? `${who}: «${event.skill}».` : `${who} бьёт.`;
     parts.push(opening);
-    if (event.damage) parts.push(`${target} −${event.damage} HP${event.executed ? ', добивание' : ''}.`);
+    if (event.damage) parts.push(`${target} −${event.damage} HP${event.hits > 1 ? ` за ${event.hits} удара` : ''}${event.executed ? ', добивание' : ''}.`);
     else if (event.command === 'hit' || event.skill && event.blocked) parts.push(`${target} не получает урона.`);
     if (event.blocked) parts.push('Защита смягчила удар.');
     if (event.absorbed) parts.push(`Щит поглотил ${event.absorbed}.`);
     if (event.heal) parts.push(`+${event.heal} HP.`);
     const effects = {
       burn: `${target} горит.`, weaken: `Атака ${target} падает.`, sap: `${target} теряет энергию.`,
-      buff: `Атака ${who} растёт.`, shield: `${who} под щитом.`, cleanse: 'Огонь потушен.', shatter: 'Защита сбита.'
+      buff: `Атака ${who} растёт.`, shield: `${who} под щитом.`, cleanse: `${who} снова в порядке.`, shatter: 'Защита сбита.',
+      purge: `С ${target} стёрты щит и усиления.`, freeze: `${target} заморожен!`, thaw: `${target} оттаял.`,
+      sleep: `${target} засыпает.`, wake: `${target} просыпается от удара.`, toxic: `У ${target} изжога.`,
+      leech: `${who} вытягивает силы из ${target}.`, charge: `${who} заряжается.`, immune: `На ${target} это не действует.`
     };
     for (const effect of event.effects) if (effects[effect]) parts.push(effects[effect]);
     if (event.recoil) parts.push(`Отдача −${event.recoil}.`);
@@ -70,6 +73,16 @@ function story(event, name, state) {
   }
   if (event.regen) parts.push(`${who} восстанавливается: +${event.regen}.`);
   if (event.burned) parts.push(`${who} обжигается: −${event.burned}.`);
+  if (event.poisoned) parts.push(`${who} мучает изжога: −${event.poisoned}.`);
+  if (event.leeched) parts.push(`Из ${who} вытянуто ${event.leeched}${event.leechHeal ? `, соперник +${event.leechHeal}` : ''}.`);
+  for (const id of event.intimidated) parts.push(`${name(id)} смотрит грозно: атака соперника падает.`);
+  for (const skip of event.skips) {
+    parts.push(skip.kind === 'freeze' ? `${name(skip.id)} заморожен и пропускает ход.` : `${name(skip.id)} спит и пропускает ход.`);
+    if (skip.burned) parts.push(`Ожог −${skip.burned}.`);
+    if (skip.poisoned) parts.push(`Изжога −${skip.poisoned}.`);
+    if (skip.leeched) parts.push(`Вытянуто ${skip.leeched}.`);
+    if (skip.recovered) parts.push(skip.kind === 'freeze' ? `${name(skip.id)} оттаял.` : `${name(skip.id)} просыпается.`);
+  }
   for (const id of event.ko) parts.push(`${name(id)} выбит!`);
   event.entered.forEach((id, side) => { if (id && !event.command.startsWith('switch:')) parts.push(`Выходит ${name(id)}.`); });
   // After a knockout the faster fighter on the arena moves first, even twice in a row.
@@ -82,6 +95,10 @@ function chips(fighter) {
   if (fighter.guarding) out.push(['guard', icon('lock', 12) + 'Защита']);
   if (fighter.shield) out.push(['shield', 'Щит ' + fighter.shield]);
   if (fighter.burn) out.push(['burn', 'Горит −' + fighter.burn.dmg + ' × ' + fighter.burn.turns]);
+  if (fighter.status?.kind === 'freeze') out.push(['freeze', 'Заморожен']);
+  if (fighter.status?.kind === 'sleep') out.push(['sleep', 'Спит' + (fighter.status.turns > 1 ? ' × ' + fighter.status.turns : '')]);
+  if (fighter.toxic) out.push(['toxic', 'Изжога −' + fighter.toxic]);
+  if (fighter.leech) out.push(['leech', 'Вытягивают −' + fighter.leech]);
   const shift = fighter.attack - fighter.baseAttack;
   if (shift) out.push([shift > 0 ? 'buff' : 'weaken', 'Атака ' + (shift > 0 ? '+' : '−') + Math.abs(shift)]);
   return out.map(([kind, text]) => `<span class="duel-chip is-${kind}">${text}</span>`).join('');

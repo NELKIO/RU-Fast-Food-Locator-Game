@@ -5,9 +5,13 @@ export const START_ENERGY = 1;
 export const SPEED = { min: 1, max: 9, base: 5 };
 const MAX_BUFF = 4;
 const MAX_WEAKEN = 3;
-const SKILL_KEYS = ['name', 'cost', 'power', 'pierce', 'burn', 'heal', 'drain', 'shield', 'buff', 'weaken', 'sap', 'team', 'execute', 'recoil', 'cleanse', 'shatter'];
+const SKILL_KEYS = ['name', 'cost', 'power', 'pierce', 'hits', 'burn', 'heal', 'drain', 'shield', 'buff', 'weaken', 'sap', 'team', 'execute', 'recoil',
+  'cleanse', 'shatter', 'purge', 'freeze', 'sleep', 'toxic', 'leech', 'charge'];
 // Talents work on their own, without a move: one per rare, epic and legendary fighter.
-export const TRAIT_KEYS = ['armor', 'thorns', 'regen', 'rage', 'fireproof', 'steady', 'quick', 'vamp', 'laststand'];
+// Immunities stay rare on purpose: with three fighters a team cannot prepare for many of them,
+// so only fireproof (a few fighters) and sterile (one meme fighter) exist.
+export const TRAIT_KEYS = ['armor', 'thorns', 'regen', 'rage', 'fireproof', 'steady', 'quick', 'vamp', 'laststand', 'pure', 'intimidate'];
+const MAX_TOXIC = 4;
 
 export function validTeam(ids, catalog) {
   return Array.isArray(ids) && ids.length >= 1 && ids.length <= MAX_TEAM &&
@@ -58,7 +62,23 @@ function newFighter(card) {
     id: card.id, hp: card.hp, maxHp: card.hp, attack: card.attack, baseAttack: card.attack, speed: cleanSpeed(card.speed),
     energy: Math.min(MAX_ENERGY, START_ENERGY + (trait.quick ?? 0)), guarding: false, shield: 0, burn: null,
     skill: cleanSkill(card.skill), ultimate: card.ultimate ? cleanSkill(card.ultimate) : null, trait, saved: false,
+    // status: frozen or asleep, the fighter misses its turns; rested: it has just come round and
+    // cannot be frozen or put to sleep again before its own next action.
+    status: null, rested: false, toxic: 0, leech: 0,
   };
+}
+
+// Grim look: a fighter that comes onto the field lowers the attack of the one facing it.
+function intimidate(state, side, event) {
+  const fighter = currentFighter(state, side);
+  const target = currentFighter(state, 1 - side);
+  if (!fighter.trait.intimidate || fighter.hp <= 0 || target.hp <= 0 || target.trait.steady) return;
+  const floor = Math.max(1, target.baseAttack - MAX_WEAKEN);
+  const lowered = Math.max(floor, target.attack - fighter.trait.intimidate);
+  if (lowered < target.attack) {
+    target.attack = lowered;
+    if (event) event.intimidated.push(fighter.id);
+  }
 }
 
 // Who opens: the faster lead fighter. Equal speed falls back to `tie` (the player in wild fights,
@@ -76,7 +96,10 @@ export function startBattle(teams, first = 0, {tempo = true} = {}) {
   }
   const sides = teams.map(team => team.map(newFighter));
   if (tempo) sides[1 - first][0].energy = START_ENERGY + 1;
-  return {teams: sides, active: [0, 0], turn: first, moves: 0, winner: null, last: null};
+  const state = {teams: sides, active: [0, 0], turn: first, moves: 0, winner: null, last: null};
+  intimidate(state, first, null);
+  intimidate(state, 1 - first, null);
+  return state;
 }
 
 export function currentFighter(state, side) {
@@ -110,7 +133,8 @@ function heal(fighter, amount) {
 }
 
 // Rage adds to a hurt fighter's blows. Guard halves a blow that does not pierce, armour then
-// trims it (never below 1), and a shield soaks what is left. Any blow clears guard.
+// trims it (never below 1), and a shield soaks what is left. Any blow clears guard, and a blow
+// that lands wakes a sleeping fighter.
 function strike(event, attacker, target, amount, pierce) {
   let damage = Math.max(0, amount);
   if (attacker.trait.rage && attacker.hp * 2 <= attacker.maxHp) {
@@ -124,14 +148,15 @@ function strike(event, attacker, target, amount, pierce) {
   target.guarding = false;
   if (target.trait.armor && !pierce && damage > 0) {
     const trimmed = Math.max(1, damage - target.trait.armor);
-    event.armored = damage - trimmed;
+    event.armored += damage - trimmed;
     damage = trimmed;
   }
+  let soaked = 0;
   if (target.shield > 0 && damage > 0) {
-    const soaked = Math.min(target.shield, damage);
+    soaked = Math.min(target.shield, damage);
     target.shield -= soaked;
     damage -= soaked;
-    event.absorbed = soaked;
+    event.absorbed += soaked;
   }
   let dealt = Math.min(target.hp, damage);
   // Last stand: the first blow that would knock the fighter out leaves it on 1 HP instead.
@@ -141,11 +166,54 @@ function strike(event, attacker, target, amount, pierce) {
     event.saved = true;
   }
   target.hp -= dealt;
-  if (target.trait.thorns && (dealt > 0 || event.absorbed > 0) && attacker.hp > 1) {
-    event.thorns = Math.min(target.trait.thorns, attacker.hp - 1);
-    attacker.hp -= event.thorns;
+  if (target.status?.kind === 'sleep' && (dealt > 0 || soaked > 0)) {
+    target.status = null;
+    target.rested = true;
+    event.effects.push('wake');
+  }
+  if (target.trait.thorns && (dealt > 0 || soaked > 0) && attacker.hp > 1) {
+    const prick = Math.min(target.trait.thorns, attacker.hp - 1);
+    attacker.hp -= prick;
+    event.thorns += prick;
   }
   return dealt;
+}
+
+// Frozen or asleep, a fighter misses its turns. A fighter that has just come round is alert
+// until its own next action, so no one can keep it locked for good.
+function immobilize(event, target, kind, turns) {
+  if (target.hp <= 0 || target.status || target.rested) return;
+  if (target.trait.pure) {
+    event.effects.push('immune');
+    return;
+  }
+  target.status = { kind, turns };
+  event.effects.push(kind);
+}
+
+// Burning, heartburn and draining hurt after the fighter's own turn (or the turn it missed).
+// Draining heals whoever stands on the other side.
+function tick(state, side, fighter, record) {
+  if (fighter.burn && fighter.hp > 0) {
+    const loss = Math.min(fighter.hp, fighter.burn.dmg);
+    fighter.hp -= loss;
+    record.burned += loss;
+    fighter.burn = fighter.burn.turns > 1 ? { ...fighter.burn, turns: fighter.burn.turns - 1 } : null;
+  }
+  if (fighter.toxic && fighter.hp > 0) {
+    const loss = Math.min(fighter.hp, fighter.toxic);
+    fighter.hp -= loss;
+    record.poisoned += loss;
+    fighter.toxic = Math.min(MAX_TOXIC, fighter.toxic + 1);
+  }
+  if (fighter.leech && fighter.hp > 0) {
+    const loss = Math.min(fighter.hp, fighter.leech);
+    fighter.hp -= loss;
+    record.leeched += loss;
+    const drinker = currentFighter(state, 1 - side);
+    if (drinker.hp > 0) record.leechHeal += heal(drinker, loss);
+  }
+  if (fighter.hp <= 0 && currentFighter(state, side) === fighter) settleKnockout(state, side);
 }
 
 // A knocked-out fighter is replaced by the first living reserve; with none left the other side wins.
@@ -157,6 +225,7 @@ function settleKnockout(state, side) {
   else {
     state.active[side] = next;
     state.last.entered[side] = state.teams[side][next].id;
+    intimidate(state, side, state.last);
   }
 }
 
@@ -168,19 +237,52 @@ function useSkill(state, event, fighter, target, skill) {
     target.guarding = false;
     event.effects.push('shatter');
   }
+  // A clean wipe: the target loses its attack boosts, shield and guard before the blow.
+  if (skill.purge && (target.shield > 0 || target.guarding || target.attack > target.baseAttack)) {
+    target.shield = 0;
+    target.guarding = false;
+    target.attack = Math.min(target.attack, target.baseAttack);
+    event.effects.push('purge');
+  }
   if (Number.isFinite(skill.power)) {
     let amount = fighter.attack + skill.power;
     if (skill.execute && target.hp * 2 <= target.maxHp) {
       amount += skill.execute;
       event.executed = true;
     }
-    event.damage = strike(event, fighter, target, amount, skill.pierce);
+    // A flurry splits the blow into separate strikes: guard softens only the first, armour every
+    // one, and a second strike gets through a last stand.
+    const hits = Math.min(4, Math.max(1, skill.hits ?? 1));
+    if (hits === 1) event.damage = strike(event, fighter, target, amount, skill.pierce);
+    else {
+      const each = Math.max(1, Math.round(amount / hits));
+      for (let i = 0; i < hits && target.hp > 0; i++) {
+        event.damage += strike(event, fighter, target, each, skill.pierce);
+        event.hits++;
+      }
+    }
     if (skill.drain) event.heal += heal(fighter, Math.ceil(event.damage / 2));
   }
-  if (skill.burn && target.hp > 0 && !target.trait.fireproof) {
+  // Fire thaws a frozen fighter, whether it catches fire or not.
+  if (skill.burn && target.status?.kind === 'freeze') {
+    target.status = null;
+    target.rested = true;
+    event.effects.push('thaw');
+  }
+  if (skill.burn && target.hp > 0 && !target.trait.fireproof && !target.trait.pure) {
     target.burn = { dmg: skill.burn.dmg, turns: skill.burn.turns };
     event.effects.push('burn');
   }
+  if (skill.toxic && target.hp > 0 && !target.toxic) {
+    if (target.trait.pure) event.effects.push('immune');
+    else { target.toxic = 1; event.effects.push('toxic'); }
+  }
+  if (skill.leech && target.hp > 0) {
+    if (target.trait.pure) event.effects.push('immune');
+    else { target.leech = Math.max(target.leech, skill.leech); event.effects.push('leech'); }
+  }
+  if (skill.freeze) immobilize(event, target, 'freeze', 1);
+  if (skill.sleep) immobilize(event, target, 'sleep', Math.min(2, Math.max(1, skill.sleep)));
   if (skill.weaken && target.hp > 0 && !target.trait.steady) {
     const floor = Math.max(1, target.baseAttack - MAX_WEAKEN);
     const lowered = Math.max(floor, target.attack - skill.weaken);
@@ -206,9 +308,15 @@ function useSkill(state, event, fighter, target, skill) {
     fighter.attack = Math.min(fighter.baseAttack + MAX_BUFF, fighter.attack + skill.buff);
     event.effects.push('buff');
   }
-  if (skill.cleanse && fighter.burn) {
+  if (skill.cleanse && (fighter.burn || fighter.toxic || fighter.leech)) {
     fighter.burn = null;
+    fighter.toxic = 0;
+    fighter.leech = 0;
     event.effects.push('cleanse');
+  }
+  if (skill.charge && fighter.energy < MAX_ENERGY) {
+    fighter.energy = Math.min(MAX_ENERGY, fighter.energy + skill.charge);
+    event.effects.push('charge');
   }
   if (skill.recoil) {
     const taken = Math.min(skill.recoil, fighter.hp - 1);
@@ -223,21 +331,29 @@ export function applyMove(previous, side, command) {
   const other = 1 - side;
   const state = {
     ...previous, turn: other, moves: previous.moves + 1,
-    teams: previous.teams.map(team => team.map(fighter => ({ ...fighter, burn: fighter.burn && { ...fighter.burn } }))),
+    teams: previous.teams.map(team => team.map(fighter => ({
+      ...fighter, burn: fighter.burn && { ...fighter.burn }, status: fighter.status && { ...fighter.status },
+    }))),
     active: [...previous.active],
   };
   const fighter = currentFighter(state, side);
   const target = currentFighter(state, other);
   const event = {
-    side, command, fighter: fighter.id, target: target.id, damage: 0, heal: 0,
-    blocked: false, absorbed: 0, armored: 0, thorns: 0, rage: false, saved: false, regen: 0, executed: false, recoil: 0, burned: 0,
-    skill: null, effects: [], ko: [], entered: [null, null],
+    side, command, fighter: fighter.id, target: target.id, damage: 0, heal: 0, hits: 0,
+    blocked: false, absorbed: 0, armored: 0, thorns: 0, rage: false, saved: false, regen: 0, executed: false, recoil: 0,
+    burned: 0, poisoned: 0, leeched: 0, leechHeal: 0,
+    skill: null, effects: [], ko: [], entered: [null, null], intimidated: [], skips: [],
   };
   state.last = event;
+  fighter.rested = false;
   if (command.startsWith('switch:')) {
+    // Heartburn and draining stay behind with the fighter who leaves.
+    fighter.toxic = 0;
+    fighter.leech = 0;
     state.active[side] = Number(command.slice(7));
     event.target = currentFighter(state, side).id;
     event.entered[side] = event.target;
+    intimidate(state, side, event);
   } else if (command === 'guard') {
     fighter.guarding = true;
     fighter.energy = Math.min(MAX_ENERGY, fighter.energy + 1);
@@ -254,18 +370,30 @@ export function applyMove(previous, side, command) {
     event.regen = heal(fighter, fighter.trait.regen);
     event.heal += event.regen;
   }
-  // Burning hurts after the burning fighter's own action. Switching out pauses it.
-  if (state.winner === null && !command.startsWith('switch:') && fighter.burn && fighter.hp > 0) {
-    const loss = Math.min(fighter.hp, fighter.burn.dmg);
-    fighter.hp -= loss;
-    event.burned = loss;
-    fighter.burn = fighter.burn.turns > 1 ? { ...fighter.burn, turns: fighter.burn.turns - 1 } : null;
-    settleKnockout(state, side);
-  }
+  // Burning, heartburn and draining hurt after the fighter's own action. Switching out pauses them.
+  if (state.winner === null && !command.startsWith('switch:') && fighter.hp > 0) tick(state, side, fighter, event);
   // A fresh fighter after a knockout starts a new exchange: the faster of the two moves first.
-  if (state.winner === null && event.ko.length) {
-    const [a, b] = [currentFighter(state, 0).speed, currentFighter(state, 1).speed];
-    if (a !== b) state.turn = a > b ? 0 : 1;
+  const fresh = () => {
+    if (state.winner === null && event.ko.length) {
+      const [a, b] = [currentFighter(state, 0).speed, currentFighter(state, 1).speed];
+      if (a !== b) state.turn = a > b ? 0 : 1;
+    }
+  };
+  fresh();
+  // A frozen or sleeping fighter misses its turn right away: the engine plays the skip itself, so
+  // both duel peers see the same thing and the player never has to press a dead button.
+  for (let guard = 0; guard < 4 && state.winner === null; guard++) {
+    const idle = currentFighter(state, state.turn);
+    if (!idle.status) break;
+    const skip = { side: state.turn, id: idle.id, kind: idle.status.kind, burned: 0, poisoned: 0, leeched: 0, leechHeal: 0, recovered: false };
+    event.skips.push(skip);
+    idle.status = idle.status.turns > 1 ? { ...idle.status, turns: idle.status.turns - 1 } : null;
+    skip.recovered = !idle.status;
+    idle.rested = true;
+    const knocked = event.ko.length;
+    tick(state, state.turn, idle, skip);
+    state.turn = 1 - state.turn;
+    if (event.ko.length > knocked) fresh();
   }
   if (state.moves === MAX_TURNS && state.winner === null) state.winner = timedWinner(state.teams);
   return state;
@@ -285,6 +413,11 @@ export function botMove(state, random = Math.random) {
   if (hitDamage >= opponent.hp + opponent.shield) return 'hit';
   if (canSkill && !saving) {
     const hurt = fighter.hp * 2 <= fighter.maxHp;
+    // Statuses first: they pay off over several turns.
+    if ((skill.freeze || skill.sleep) && !opponent.status && !opponent.rested) return 'special';
+    if ((skill.toxic && !opponent.toxic) || (skill.leech && !opponent.leech)) return 'special';
+    // A sleeping opponent is not worth waking with a weak blow when the move heals or builds up.
+    if (opponent.status?.kind === 'sleep' && !Number.isFinite(skill.power) && (skill.heal || skill.shield || skill.buff || skill.charge)) return 'special';
     if (Number.isFinite(skill.power)) return 'special';
     if ((skill.heal || skill.team) && (hurt || fighter.energy >= MAX_ENERGY)) return 'special';
     if (skill.shield && fighter.shield === 0) return 'special';

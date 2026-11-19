@@ -180,6 +180,10 @@
 .duel-chip.is-guard, .duel-chip.is-shield, .duel-chip.is-buff { color: var(--duel-accent); }
 .duel-chip.is-burn { color: var(--duel-burn); }
 .duel-chip.is-weaken { color: var(--duel-foe); }
+.duel-chip.is-freeze { color: #8fd6ff; }
+.duel-chip.is-sleep { color: #b9a7ff; }
+.duel-chip.is-toxic { color: #a7e05a; }
+.duel-chip.is-leech { color: #6fd18f; }
 .duel-fighter.is-ko .duel-art { opacity: .28; filter: grayscale(1); transform: translateY(8px) rotate(-7deg) scale(.9); animation: duel-ko .6s ease-in var(--hp-delay, 0s) both; }
 .duel-fighter.is-ko h3 { text-decoration: line-through; text-decoration-thickness: 1px; color: var(--duel-muted); }
 .duel-log {

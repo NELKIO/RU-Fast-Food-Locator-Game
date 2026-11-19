@@ -6,7 +6,7 @@ const src = readFileSync(target, 'utf8');
 const start = src.indexOf('export const FIGHTERS = {');
 const end = src.indexOf('\n};\n', start) + 4;
 const lit = v => typeof v === 'string' ? `'${v}'` : typeof v === 'object' ? '{ ' + Object.entries(v).map(([k, x]) => `${k}: ${lit(x)}`).join(', ') + ' }' : String(v);
-const order = ['name', 'cost', 'power', 'pierce', 'shatter', 'execute', 'burn', 'weaken', 'sap', 'drain', 'heal', 'team', 'shield', 'buff', 'cleanse', 'recoil'];
+const order = ['name', 'cost', 'power', 'hits', 'pierce', 'shatter', 'purge', 'execute', 'burn', 'freeze', 'sleep', 'toxic', 'leech', 'weaken', 'sap', 'drain', 'heal', 'team', 'shield', 'buff', 'charge', 'cleanse', 'recoil'];
 const skill = s => lit(Object.fromEntries(Object.entries(s).sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))));
 const sections = { bk: '  // Бургер Кинг — открытый огонь и гриль', vkusno: '  // Вкусно — и точка — классика и большие порции', rostics: '  // Rostic’s — острая хрустящая курица', dodo: '  // Додо Пицца — печь и сыр' };
 let out = 'export const FIGHTERS = {\n', last = '';

@@ -1,8 +1,8 @@
 import { applyMove, battleStats, MAX_TEAM, MAX_TURNS, opener, startBattle, validTeam } from './duel-engine.js';
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-// Version 2: fighters carry signature skills, so version-1 clients must not join.
-const PROTOCOL = 2;
+// Version 3: freeze, sleep, heartburn and other new effects change the engine, so version-2 clients must not join.
+const PROTOCOL = 3;
 export const SILENT_MS = 12_000;
 export const RECONNECT_MS = 25_000;
 
@@ -213,7 +213,8 @@ export class DuelRoom {
     const extra = data.history.length - this.history.length;
     // A faster fighter moves again after a knockout, so the peer can be a few moves ahead (one
     // per knockout plus one). Every one of them must be the peer's own turn.
-    if (extra > MAX_TEAM + 1) return;
+    // Knockouts and frozen or sleeping fighters can give the peer several moves in a row.
+    if (extra > MAX_TEAM + 3) return;
     for (const command of data.history.slice(this.history.length)) {
       if (this.state.turn === this.side) return;
       const next = applyMove(this.state, 1 - this.side, command);
