@@ -182,8 +182,21 @@
 .duel-chip.is-weaken { color: var(--duel-foe); }
 .duel-chip.is-freeze { color: #8fd6ff; }
 .duel-chip.is-sleep { color: #b9a7ff; }
-.duel-chip.is-toxic { color: #a7e05a; }
-.duel-chip.is-leech { color: #6fd18f; }
+.duel-chip.is-toxic { color: #b6e84a; }
+.duel-chip.is-leech { color: #ff8db3; }
+/* Status chips carry a small icon in the colour of the battle effect: snowflake, moon, flame, drop. */
+.duel-chip:is(.is-freeze, .is-sleep, .is-toxic, .is-leech)::before {
+  content: ''; flex: none; width: 11px; height: 11px; background: currentColor;
+  -webkit-mask: var(--chip-icon) center / contain no-repeat; mask: var(--chip-icon) center / contain no-repeat;
+}
+.duel-chip.is-freeze { --chip-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7M9 3.5l3 3 3-3M9 20.5l3-3 3 3'/%3E%3C/svg%3E"); }
+.duel-chip.is-sleep { --chip-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20 14.5A8.5 8.5 0 1 1 9.5 4a6.8 6.8 0 0 0 10.5 10.5z'/%3E%3C/svg%3E"); }
+.duel-chip.is-toxic { --chip-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2c1 4 6.5 6 6.5 12.5a6.5 6.5 0 0 1-13 0c0-3 2-5.5 3.5-6.5 0 2 1 3.5 2.5 3.5 0-4-1.5-6.5.5-9.5z'/%3E%3C/svg%3E"); }
+.duel-chip.is-leech { --chip-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2s7.5 8.5 7.5 13.5a7.5 7.5 0 0 1-15 0C4.5 10.5 12 2 12 2z'/%3E%3C/svg%3E"); }
+:root[data-theme='white'] :is(.duel-chip, .duel-pop).is-freeze { color: #1b78ad; }
+:root[data-theme='white'] :is(.duel-chip, .duel-pop).is-sleep { color: #6247d6; }
+:root[data-theme='white'] :is(.duel-chip, .duel-pop).is-toxic { color: #4a8410; }
+:root[data-theme='white'] :is(.duel-chip, .duel-pop).is-leech { color: #c2185b; }
 .duel-fighter.is-ko .duel-art { opacity: .28; filter: grayscale(1); transform: translateY(8px) rotate(-7deg) scale(.9); animation: duel-ko .6s ease-in var(--hp-delay, 0s) both; }
 .duel-fighter.is-ko h3 { text-decoration: line-through; text-decoration-thickness: 1px; color: var(--duel-muted); }
 .duel-log {
@@ -213,6 +226,13 @@
 .duel-pop.is-heal { color: var(--duel-accent); font-size: 1.05rem; }
 .duel-pop.is-burn { color: var(--duel-burn); font-size: 1.05rem; }
 .duel-pop.is-info { color: var(--text, #fff); font-size: .85rem; font-family: inherit; font-weight: 700; }
+.duel-pop.is-freeze { color: #a9e4ff; }
+.duel-pop.is-sleep { color: #cfc2ff; }
+.duel-pop.is-toxic { color: #c6f25e; font-size: 1.05rem; }
+.duel-pop.is-leech { color: #ff8db3; font-size: 1.05rem; }
+.duel-pop.is-word { font-family: inherit; font-size: .95rem; }
+.duel-pop.is-word.is-info { font-size: .85rem; }
+.duel-pop.is-under { top: 62%; }
 .duel-callout {
   position: absolute; left: 50%; top: 50%; z-index: 3; pointer-events: none;
   padding: 8px 16px; border-radius: 99px; white-space: nowrap; max-width: 92%; overflow: hidden; text-overflow: ellipsis;

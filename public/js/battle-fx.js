@@ -797,6 +797,513 @@ const SHAPES = {
     ctx.textBaseline = 'middle';
     ctx.fillText('z', 0, 0);
   },
+  // A whole burger; `c` is the filling (cheese, tomato, sauce), so a box of three can differ.
+  burger(ctx, s, c) {
+    ctx.fillStyle = '#e39a3b';
+    ctx.beginPath();
+    ctx.ellipse(0, -s * 0.1, s * 1.1, s * 0.8, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.fillStyle = '#6fbf3a';
+    ctx.beginPath();
+    ctx.moveTo(-s * 1.22, -s * 0.12);
+    for (let i = 0; i <= 8; i++) ctx.lineTo(-s * 1.22 + i * s * 0.305, -s * 0.12 + (i % 2 ? s * 0.18 : 0));
+    ctx.lineTo(s * 1.22, s * 0.04);
+    ctx.lineTo(-s * 1.22, s * 0.04);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = c || '#ffc21a';
+    ctx.beginPath();
+    ctx.moveTo(-s * 1.15, 0);
+    ctx.lineTo(s * 1.15, 0);
+    for (const [x, y] of [[0.95, 0.24], [0.6, 0.14], [0.32, 0.38], [0, 0.16], [-0.55, 0.22], [-0.95, 0.18]]) ctx.lineTo(x * s, y * s);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#5a2e17';
+    roundRect(ctx, -s * 1.1, s * 0.14, s * 2.2, s * 0.34, s * 0.17);
+    ctx.fill();
+    ctx.fillStyle = '#d98d34';
+    roundRect(ctx, -s * 1.04, s * 0.48, s * 2.08, s * 0.32, s * 0.16);
+    ctx.fill();
+    ctx.fillStyle = '#fff1cf';
+    for (const [x, y] of [[-0.5, -0.45], [0, -0.66], [0.5, -0.45], [-0.18, -0.3], [0.28, -0.26]]) {
+      ctx.beginPath();
+      ctx.ellipse(x * s, y * s, s * 0.06, s * 0.11, x, 0, TAU);
+      ctx.fill();
+    }
+  },
+  // The burger box shaped like a tram: three windows, a burger in each, wheels underneath.
+  tram(ctx, s) {
+    ctx.fillStyle = '#3b2a22';
+    for (const x of [-0.95, 0.95]) {
+      ctx.beginPath();
+      ctx.arc(x * s, s * 0.62, s * 0.2, 0, TAU);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#f47a20';
+    roundRect(ctx, -s * 1.55, -s * 0.72, s * 3.1, s * 1.32, s * 0.22);
+    ctx.fill();
+    ctx.fillStyle = '#d4531a';
+    roundRect(ctx, -s * 1.55, s * 0.3, s * 3.1, s * 0.3, s * 0.12);
+    ctx.fill();
+    ctx.fillStyle = '#ffd25e';
+    roundRect(ctx, -s * 1.45, -s * 0.86, s * 2.9, s * 0.2, s * 0.1);
+    ctx.fill();
+    ['#ffc21a', '#e8322a', '#ff9a1f'].forEach((filling, i) => {
+      const x = (i - 1) * s * 0.98;
+      ctx.fillStyle = '#ffe9c7';
+      roundRect(ctx, x - s * 0.4, -s * 0.56, s * 0.8, s * 0.74, s * 0.12);
+      ctx.fill();
+      ctx.save();
+      ctx.translate(x, -s * 0.16);
+      SHAPES.burger(ctx, s * 0.3, filling);
+      ctx.restore();
+    });
+    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    ctx.lineWidth = s * 0.06;
+    ctx.beginPath();
+    ctx.moveTo(-s * 1.4, -s * 0.66);
+    ctx.lineTo(-s * 1.4, s * 0.2);
+    ctx.stroke();
+  },
+  // A sealed sachet with crimped ends (a wet wipe, a seasoning packet). `c` is the packet colour.
+  sachet(ctx, s, c) {
+    const base = c || '#ffffff', w = s * 0.82, h = s * 1.05;
+    const n = parseInt(base.slice(1), 16), light = ((n >> 16) * 0.3 + ((n >> 8) & 255) * 0.59 + (n & 255) * 0.11) > 160;
+    ctx.fillStyle = base;
+    roundRect(ctx, -w, -h, w * 2, h * 2, s * 0.1);
+    ctx.fill();
+    ctx.strokeStyle = shade(base, -0.18);
+    ctx.lineWidth = s * 0.05;
+    for (const y of [-h, h - h * 0.16]) {
+      for (let i = 0; i <= 8; i++) {
+        ctx.beginPath();
+        ctx.moveTo(-w + (i / 8) * w * 2, y + h * 0.02);
+        ctx.lineTo(-w + (i / 8) * w * 2, y + h * 0.14);
+        ctx.stroke();
+      }
+    }
+    ctx.fillStyle = light ? '#4a3a35' : '#ffffff';
+    roundRect(ctx, -w * 0.62, -h * 0.28, w * 1.25, h * 0.17, h * 0.05);
+    ctx.fill();
+    roundRect(ctx, -w * 0.62, -h * 0.02, w * 0.9, h * 0.15, h * 0.05);
+    ctx.fill();
+    ctx.fillStyle = light ? '#ff8732' : '#ffd23f';
+    ctx.beginPath();
+    ctx.arc(w * 0.45, h * 0.48, s * 0.16, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.35)';
+    roundRect(ctx, -w * 0.9, -h * 0.75, w * 0.22, h * 1.4, w * 0.1);
+    ctx.fill();
+  },
+  // An unfolded wet wipe: a soft white square with a quilted pattern.
+  cloth(ctx, s) {
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * TAU - Math.PI * 0.75, b = a + TAU / 4;
+      const [x0, y0, x1, y1] = [Math.cos(a) * s * 1.4, Math.sin(a) * s * 1.4, Math.cos(b) * s * 1.4, Math.sin(b) * s * 1.4];
+      if (!i) ctx.moveTo(x0, y0);
+      ctx.quadraticCurveTo((x0 + x1) / 2 * 0.86 + Math.sin(i * 2.3) * s * 0.12, (y0 + y1) / 2 * 0.86, x1, y1);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(120,190,230,.45)';
+    for (let i = -1.5; i <= 1.5; i++) {
+      for (let j = -1.5; j <= 1.5; j++) {
+        ctx.beginPath();
+        ctx.arc(i * s * 0.42, j * s * 0.42, s * 0.06, 0, TAU);
+        ctx.fill();
+      }
+    }
+    ctx.strokeStyle = 'rgba(120,190,230,.5)';
+    ctx.lineWidth = s * 0.05;
+    roundRect(ctx, -s * 0.78, -s * 0.78, s * 1.56, s * 1.56, s * 0.16);
+    ctx.stroke();
+  },
+  // A dip cup full of sauce; `c` is the sauce.
+  dip(ctx, s, c) {
+    const sauce = c || '#ff9a1f';
+    ctx.fillStyle = sauce;
+    ctx.beginPath();
+    ctx.ellipse(0, -s * 0.3, s * 0.95, s * 0.5, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-s * 1.15, -s * 0.3);
+    ctx.lineTo(s * 1.15, -s * 0.3);
+    ctx.lineTo(s * 0.82, s * 0.78);
+    ctx.lineTo(-s * 0.82, s * 0.78);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = shade(sauce, -0.12);
+    ctx.beginPath();
+    ctx.moveTo(-s * 1.0, s * 0.2);
+    ctx.lineTo(s * 1.0, s * 0.2);
+    ctx.lineTo(s * 0.82, s * 0.78);
+    ctx.lineTo(-s * 0.82, s * 0.78);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.75)';
+    ctx.lineWidth = s * 0.1;
+    ctx.beginPath();
+    ctx.ellipse(0, -s * 0.3, s * 1.15, s * 0.16, 0, 0, TAU);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.45)';
+    ctx.beginPath();
+    ctx.ellipse(-s * 0.32, -s * 0.52, s * 0.3, s * 0.1, -0.3, 0, TAU);
+    ctx.fill();
+    roundRect(ctx, -s * 0.85, -s * 0.15, s * 0.16, s * 0.75, s * 0.08);
+    ctx.fill();
+  },
+  // A dessert spoon, bowl pointing along +x.
+  spoon(ctx, s) {
+    const g = ctx.createLinearGradient(0, -s * 0.4, 0, s * 0.4);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(1, '#9fb0c0');
+    ctx.fillStyle = g;
+    roundRect(ctx, -s * 1.5, -s * 0.12, s * 1.6, s * 0.24, s * 0.12);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(s * 0.65, 0, s * 0.62, s * 0.42, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.7)';
+    ctx.beginPath();
+    ctx.ellipse(s * 0.5, -s * 0.14, s * 0.26, s * 0.1, -0.2, 0, TAU);
+    ctx.fill();
+  },
+  // A ball of ice cream with a drip.
+  scoop(ctx, s, c) {
+    ctx.fillStyle = c || '#fff6e6';
+    ctx.beginPath();
+    ctx.arc(0, -s * 0.1, s * 0.9, Math.PI * 0.95, Math.PI * 0.05);
+    for (let i = 0; i <= 6; i++) ctx.lineTo(s * 0.9 - (i / 6) * s * 1.8, s * 0.3 + (i % 2 ? s * 0.22 : 0) + (i === 3 ? s * 0.25 : 0));
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.75)';
+    ctx.beginPath();
+    ctx.ellipse(-s * 0.35, -s * 0.45, s * 0.22, s * 0.14, -0.5, 0, TAU);
+    ctx.fill();
+  },
+  // A molten chocolate cake with its glossy crack.
+  brownie(ctx, s) {
+    ctx.fillStyle = '#4a2412';
+    roundRect(ctx, -s, -s * 0.35, s * 2, s * 1.05, s * 0.3);
+    ctx.fill();
+    ctx.fillStyle = '#6e3a1d';
+    ctx.beginPath();
+    ctx.ellipse(0, -s * 0.35, s, s * 0.38, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#2a1006';
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.45, -s * 0.42);
+    ctx.lineTo(-s * 0.05, -s * 0.28);
+    ctx.lineTo(s * 0.15, -s * 0.5);
+    ctx.lineTo(s * 0.5, -s * 0.32);
+    ctx.quadraticCurveTo(s * 0.6, s * 0.35, s * 0.35, s * 0.55);
+    ctx.quadraticCurveTo(s * 0.2, s * 0.1, -s * 0.45, -s * 0.42);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.3)';
+    ctx.beginPath();
+    ctx.ellipse(s * 0.36, s * 0.05, s * 0.05, s * 0.16, 0.2, 0, TAU);
+    ctx.fill();
+  },
+  // A fish pointing along +x; `c` tints the body (golden breading, or icy blue).
+  fish(ctx, s, c) {
+    const body = c || '#e8b25a';
+    ctx.fillStyle = shade(body, -0.12);
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.75, 0);
+    ctx.lineTo(-s * 1.45, -s * 0.6);
+    ctx.quadraticCurveTo(-s * 1.2, 0, -s * 1.45, s * 0.6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, s * 1.05, s * 0.55, 0, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = shade(body, -0.2);
+    ctx.lineWidth = s * 0.08;
+    for (const x of [-0.35, 0, 0.3]) {
+      ctx.beginPath();
+      ctx.arc(x * s - s * 0.2, 0, s * 0.35, -0.9, 0.9);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#1e1a18';
+    ctx.beginPath();
+    ctx.arc(s * 0.62, -s * 0.12, s * 0.09, 0, TAU);
+    ctx.fill();
+  },
+  pickle(ctx, s) {
+    ctx.fillStyle = '#4f7f2a';
+    ctx.beginPath();
+    ctx.arc(0, 0, s, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#9cc95a';
+    ctx.beginPath();
+    ctx.arc(0, 0, s * 0.8, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#d6ec9a';
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * TAU;
+      ctx.beginPath();
+      ctx.ellipse(Math.cos(a) * s * 0.42, Math.sin(a) * s * 0.42, s * 0.08, s * 0.14, a, 0, TAU);
+      ctx.fill();
+    }
+  },
+  // The paper dodo mask's beak, pointing along +x, with a bit of the white mask and an eye.
+  beak(ctx, s) {
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.ellipse(-s * 0.85, -s * 0.15, s * 0.55, s * 0.7, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#ff6a12';
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.ellipse(-s * 1.1 + i * s * 0.22, -s * 0.85, s * 0.13, s * 0.3, -0.5 + i * 0.3, 0, TAU);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#ff7a1a';
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.55, -s * 0.5);
+    ctx.quadraticCurveTo(s * 0.6, -s * 0.55, s * 1.35, s * 0.25);
+    ctx.quadraticCurveTo(s * 1.0, s * 0.05, s * 0.5, s * 0.12);
+    ctx.lineTo(-s * 0.55, s * 0.25);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#e0560a';
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.55, s * 0.1);
+    ctx.lineTo(s * 0.5, s * 0.12);
+    ctx.quadraticCurveTo(s * 0.2, s * 0.42, -s * 0.5, s * 0.45);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#1e1a18';
+    ctx.beginPath();
+    ctx.arc(-s * 0.8, -s * 0.25, s * 0.1, 0, TAU);
+    ctx.fill();
+  },
+  feather(ctx, s, c) {
+    ctx.fillStyle = c || '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(0, -s);
+    ctx.quadraticCurveTo(s * 0.55, -s * 0.2, 0, s);
+    ctx.quadraticCurveTo(-s * 0.55, -s * 0.2, 0, -s);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.18)';
+    ctx.lineWidth = s * 0.08;
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.8);
+    ctx.lineTo(0, s * 1.1);
+    ctx.stroke();
+  },
+  // A golden curd pancake seen at an angle.
+  syrnik(ctx, s) {
+    ctx.fillStyle = '#c98a3f';
+    ctx.beginPath();
+    ctx.ellipse(0, s * 0.18, s * 1.05, s * 0.6, 0, 0, TAU);
+    ctx.fill();
+    const g = ctx.createRadialGradient(-s * 0.2, -s * 0.2, s * 0.1, 0, -s * 0.1, s);
+    g.addColorStop(0, '#fff0c8');
+    g.addColorStop(0.6, '#f0c77e');
+    g.addColorStop(1, '#d9963f');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(0, -s * 0.05, s, s * 0.55, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(160,90,30,.35)';
+    for (const [x, y] of [[-0.4, -0.1], [0.3, 0.05], [0.05, -0.3]]) {
+      ctx.beginPath();
+      ctx.arc(x * s, y * s, s * 0.12, 0, TAU);
+      ctx.fill();
+    }
+  },
+  // A baked tortilla envelope with grill stripes and cheese peeking out.
+  envelope(ctx, s) {
+    ctx.fillStyle = '#fff3b0';
+    ctx.beginPath();
+    ctx.ellipse(s * 0.75, s * 0.45, s * 0.42, s * 0.2, -0.6, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#e9c27a';
+    ctx.beginPath();
+    ctx.moveTo(-s * 1.1, -s * 0.2);
+    ctx.lineTo(0, -s * 1.0);
+    ctx.lineTo(s * 1.1, -s * 0.1);
+    ctx.lineTo(s * 0.1, s * 0.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#b97a33';
+    ctx.lineWidth = s * 0.1;
+    ctx.lineCap = 'round';
+    for (const d of [-0.4, 0, 0.4]) {
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.5 + d * s, -s * 0.45 + d * s * 0.6);
+      ctx.lineTo(s * 0.35 + d * s, s * 0.25 + d * s * 0.6);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(120,70,20,.5)';
+    ctx.lineWidth = s * 0.06;
+    ctx.beginPath();
+    ctx.moveTo(-s * 1.1, -s * 0.2);
+    ctx.lineTo(s * 1.1, -s * 0.1);
+    ctx.stroke();
+  },
+  // A wrap half in red paper, filling showing at the open end.
+  wrap(ctx, s) {
+    ctx.fillStyle = '#efd7a4';
+    roundRect(ctx, -s * 1.35, -s * 0.48, s * 2.7, s * 0.96, s * 0.46);
+    ctx.fill();
+    ctx.fillStyle = '#d6202a';
+    roundRect(ctx, -s * 0.15, -s * 0.52, s * 1.5, s * 1.04, s * 0.4);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    for (const x of [0.25, 0.75]) {
+      ctx.fillRect(x * s, -s * 0.52, s * 0.14, s * 1.04);
+    }
+    for (const [x, y, c] of [[-1.32, -0.15, '#7cc04a'], [-1.3, 0.15, '#e8322a'], [-1.22, 0, '#f2a33a']]) {
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.arc(x * s, y * s, s * 0.16, 0, TAU);
+      ctx.fill();
+    }
+  },
+  garlic(ctx, s) {
+    ctx.fillStyle = '#fbf7ea';
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 1.2);
+    ctx.quadraticCurveTo(s * 0.2, -s * 0.6, s * 0.85, -s * 0.1);
+    ctx.quadraticCurveTo(s * 1.1, s * 0.7, 0, s * 0.8);
+    ctx.quadraticCurveTo(-s * 1.1, s * 0.7, -s * 0.85, -s * 0.1);
+    ctx.quadraticCurveTo(-s * 0.2, -s * 0.6, 0, -s * 1.2);
+    ctx.fill();
+    ctx.strokeStyle = '#d9cfb0';
+    ctx.lineWidth = s * 0.07;
+    for (const x of [-0.45, 0, 0.45]) {
+      ctx.beginPath();
+      ctx.moveTo(x * s * 0.3, -s * 0.6);
+      ctx.quadraticCurveTo(x * s * 1.6, s * 0.1, x * s, s * 0.72);
+      ctx.stroke();
+    }
+  },
+  // A tiny island with a palm tree.
+  island(ctx, s) {
+    ctx.fillStyle = 'rgba(120,200,255,.55)';
+    ctx.beginPath();
+    ctx.ellipse(0, s * 0.55, s * 1.3, s * 0.28, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#f4d58d';
+    ctx.beginPath();
+    ctx.ellipse(0, s * 0.5, s * 1.0, s * 0.42, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.strokeStyle = '#8b5a2b';
+    ctx.lineWidth = s * 0.16;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.1, s * 0.2);
+    ctx.quadraticCurveTo(s * 0.15, -s * 0.4, s * 0.05, -s * 0.85);
+    ctx.stroke();
+    ctx.fillStyle = '#3fae49';
+    for (const a of [-2.6, -1.9, -1.2, -0.5]) {
+      ctx.save();
+      ctx.translate(s * 0.05, -s * 0.85);
+      ctx.rotate(a);
+      ctx.beginPath();
+      ctx.ellipse(s * 0.42, 0, s * 0.45, s * 0.14, 0.2, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+    }
+  },
+  // A crescent moon (sleep).
+  moon(ctx, s, c) {
+    const d = s * 0.6, h = Math.sqrt(s * s - (d / 2) ** 2);
+    ctx.fillStyle = c || '#ffe9a8';
+    ctx.beginPath();
+    ctx.arc(0, 0, s, Math.atan2(-h, d / 2), Math.atan2(h, d / 2), true);
+    ctx.arc(d, 0, s, Math.atan2(h, -d / 2), Math.atan2(-h, -d / 2), false);
+    ctx.closePath();
+    ctx.fill();
+  },
+  // An exclamation mark with a dark outline, readable on any portrait (waking up).
+  bang(ctx, s, c) {
+    ctx.lineWidth = s * 0.16;
+    ctx.strokeStyle = '#2a1a10';
+    ctx.fillStyle = c || '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.3, -s * 1.1);
+    ctx.lineTo(s * 0.3, -s * 1.1);
+    ctx.lineTo(s * 0.16, s * 0.35);
+    ctx.lineTo(-s * 0.16, s * 0.35);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, s * 0.8, s * 0.2, 0, TAU);
+    ctx.stroke();
+    ctx.fill();
+  },
+  // Two angry eyes under slanted brows: the grim look of an intimidating fighter.
+  glare(ctx, s, c) {
+    for (const side of [-1, 1]) {
+      ctx.save();
+      ctx.translate(side * s * 0.62, 0);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(0, s * 0.1, s * 0.48, s * 0.3, side * 0.2, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = c || '#d8232a';
+      ctx.beginPath();
+      ctx.arc(-side * s * 0.1, s * 0.14, s * 0.17, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = '#2a1a10';
+      ctx.lineWidth = s * 0.2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(side * s * 0.5, -s * 0.4);
+      ctx.lineTo(-side * s * 0.38, -s * 0.12);
+      ctx.stroke();
+      ctx.restore();
+    }
+  },
+  // A mound of melted cheese (or sauce) with drips running down; `c` is its colour.
+  mound(ctx, s, c) {
+    const base = c || '#ffc21a';
+    const g = ctx.createLinearGradient(0, -s, 0, s);
+    g.addColorStop(0, shade(base, 0.14));
+    g.addColorStop(1, shade(base, -0.1));
+    ctx.fillStyle = g;
+    for (const [x, len] of [[-0.85, 0.55], [-0.4, 0.85], [0.15, 0.6], [0.6, 0.95], [0.95, 0.5]]) {
+      roundRect(ctx, (x - 0.11) * s, 0, s * 0.22, s * (0.3 + len), s * 0.11);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.moveTo(-s * 1.2, s * 0.4);
+    ctx.bezierCurveTo(-s * 1.15, -s * 0.95, s * 1.15, -s * 0.95, s * 1.2, s * 0.4);
+    ctx.quadraticCurveTo(0, s * 0.62, -s * 1.2, s * 0.4);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.45)';
+    ctx.beginPath();
+    ctx.ellipse(-s * 0.42, -s * 0.38, s * 0.3, s * 0.12, -0.5, 0, TAU);
+    ctx.fill();
+  },
+  // A golden serving dome on a plate.
+  cloche(ctx, s) {
+    const g = ctx.createLinearGradient(-s, -s, s, s * 0.5);
+    g.addColorStop(0, '#fff6c2');
+    g.addColorStop(0.5, '#ffd76a');
+    g.addColorStop(1, '#c58a12');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(0, s * 0.45, s * 1.25, s * 1.2, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, -s * 0.85, s * 0.17, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#e8edf2';
+    roundRect(ctx, -s * 1.45, s * 0.42, s * 2.9, s * 0.2, s * 0.1);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.6)';
+    ctx.beginPath();
+    ctx.ellipse(-s * 0.5, -s * 0.2, s * 0.16, s * 0.42, 0.5, 0, TAU);
+    ctx.fill();
+  },
 };
 export const SHAPE_NAMES = Object.keys(SHAPES);
 
@@ -808,7 +1315,9 @@ function drawShape(name, ctx, size, color, p) {
 // Food shapes have their own natural colors; everything else is white unless a recipe says so.
 const NATURAL = new Set(['seed', 'cube', 'fry', 'cheese', 'leaf', 'nugget', 'macaron', 'cup', 'cake', 'cone',
   'wedge', 'onion', 'pepperoni', 'slice', 'patty', 'bun', 'strip', 'wing', 'drumstick', 'shrimp', 'cherry', 'pie',
-  'roll', 'medallion', 'crown', 'basket', 'potato', 'pizza', 'chili', 'glove', 'grill', 'toque']);
+  'roll', 'medallion', 'crown', 'basket', 'potato', 'pizza', 'chili', 'glove', 'grill', 'toque', 'burger', 'tram', 'sachet',
+  'cloth', 'dip', 'spoon', 'scoop', 'brownie', 'fish', 'pickle', 'beak', 'feather', 'syrnik', 'envelope', 'wrap', 'garlic',
+  'island', 'moon', 'glare', 'cloche', 'mound']);
 function paint(shape, colors) {
   if (colors) return pick(colors);
   return NATURAL.has(shape) ? undefined : '#fff';
@@ -1078,7 +1587,7 @@ export function createFx({ anchor, shakeTarget }) {
             acc -= every;
             const p = where(s.at ?? 'src', 0, s.alias);
             particle({
-              x: p.x + rand(-p.r, p.r) * (s.width ?? 0.9), y: p.y + rand(-p.r * 0.2, p.r * 0.7),
+              x: p.x + rand(-p.r, p.r) * (s.width ?? 0.9), y: p.y + (s.dy ?? 0) * p.r + rand(-p.r * 0.2, p.r * 0.7),
               vx: rand(-15, 15), vy: (s.down ? 1 : -1) * val(s.speed ?? [60, 130]), life: val(s.life ?? [600, 900]),
               size: val(s.size ?? [5, 9]), size2: s.size2 ?? val(s.size ?? [5, 9]) * 0.6, shape: s.shape ?? 'plus',
               colors: s.colors ?? '#7ef0a6', c2: s.c2, vr: s.spin ? rand(-s.spin, s.spin) : 0, rot: s.spin ? undefined : 0,
@@ -1328,32 +1837,248 @@ export function createFx({ anchor, shakeTarget }) {
       things.push({
         age: 0, life: dur, update(dt) {
           acc += dt;
-          if (acc < 45) return;
+          // A waving string is recomputed every frame; a crackling one jumps a few times a second.
+          if (acc < (s.wave ? 0 : 45)) return;
           acc = 0;
           const a = where(s.from ?? 'src', 0, s.alias), b = where(s.to ?? 'tgt', 0, s.alias);
-          const n = s.segments ?? 9, amp = s.amp ?? 16;
+          const n = s.segments ?? 9, amp = s.amp ?? 16, age = this.age;
           pts = Array.from({ length: n + 1 }, (_, i) => {
-            const u = i / n, j = i === 0 || i === n ? 0 : rand(-amp, amp);
+            const u = i / n, j = (i === 0 || i === n ? 0 : rand(-amp, amp)) + (s.wave ?? 0) * Math.sin(u * Math.PI * 3 - age / 70) * Math.sin(Math.PI * u);
             const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
             return [a.x + dx * u - (dy / d) * j, a.y + dy * u + (dx / d) * j + (s.sag ?? 0) * Math.sin(Math.PI * u)];
           });
         },
         draw(k) {
           if (!pts.length) return;
-          ctx.globalCompositeOperation = light() ? 'source-over' : 'lighter';
-          ctx.globalAlpha = 1 - k * k;
-          ctx.strokeStyle = s.color ?? '#fff';
-          ctx.shadowColor = s.color ?? '#fff';
-          ctx.shadowBlur = 14;
+          const color = s.color ?? '#fff';
+          // `soft`: a string of sauce or cheese rather than a bolt of light: no glow, a glossy line.
+          ctx.globalCompositeOperation = light() || s.soft ? 'source-over' : 'lighter';
+          ctx.globalAlpha = (1 - k * k) * (s.soft ? 0.92 : 1);
+          ctx.strokeStyle = color;
+          ctx.shadowColor = s.soft ? 'rgba(0,0,0,.35)' : color;
+          ctx.shadowBlur = s.soft ? 4 : 14;
           ctx.lineWidth = s.width ?? 4;
           ctx.lineJoin = 'round';
           ctx.lineCap = 'round';
           ctx.beginPath();
           pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
           ctx.stroke();
+          ctx.shadowBlur = 0;
           ctx.lineWidth = (s.width ?? 4) * 0.35;
-          ctx.strokeStyle = '#fff';
+          ctx.strokeStyle = s.soft ? 'rgba(255,255,255,.55)' : '#fff';
           ctx.stroke();
+        },
+      });
+    },
+    // A shape travelling through waypoints around an anchor: a tram rolling in, a wipe going back
+    // and forth, a beak pecking. Points are [dx, dy] in portrait radii. With `aim` the first number
+    // runs from the attacker towards the target (negative is on the attacker's side) and the shape
+    // turns to face the target. `contact` lists the waypoints where it touches: `onHit` plays there.
+    glide(s) {
+      const dur = s.dur ?? 700, path = s.path ?? [[0, 0]], n = path.length - 1;
+      const times = s.times ?? path.map((_, i) => (n ? i / n : 0));
+      const contacts = s.contact ?? [];
+      const seed = Math.random() * 10;
+      let reached = 0, trailClock = 0;
+      const touch = (index) => {
+        if (!contacts.includes(index)) return;
+        for (const step of [].concat(s.onHit ?? [])) later(step.t ?? 0, () => run({ ...step, at: step.at ?? s.at ?? 'tgt', alias: s.alias }));
+      };
+      things.push({
+        age: 0, life: dur,
+        update(dt) {
+          const k = this.age / dur;
+          while (reached <= n && times[reached] <= k) touch(reached++);
+          if (!s.trail || !this.pos) return;
+          trailClock += dt;
+          const every = 1000 / (s.trail.rate ?? 60);
+          while (trailClock > every) {
+            trailClock -= every;
+            particle({
+              x: this.pos.x + rand(-4, 4), y: this.pos.y + rand(-4, 4), vx: rand(-30, 30), vy: rand(-30, 30) + (s.trail.rise ?? 0),
+              life: val(s.trail.life ?? [260, 460]), size: val(s.trail.size ?? [3, 6]), shape: s.trail.shape ?? 'dot',
+              colors: s.trail.colors, size2: s.trail.size2, vr: rand(-4, 4),
+            });
+          }
+        },
+        draw(k) {
+          const p = where(s.at ?? 'tgt', 0, s.alias);
+          let j = 0;
+          while (j < n - 1 && k > times[j + 1]) j++;
+          const span = n ? times[j + 1] - times[j] || 1 : 1;
+          const u = n ? (ease[s.ease ?? 'inOut'] ?? ease.inOut)(Math.min(1, Math.max(0, (k - times[j]) / span))) : 0;
+          const a = path[j], b = path[Math.min(n, j + 1)];
+          let dx = a[0] + (b[0] - a[0]) * u, dy = a[1] + (b[1] - a[1]) * u - (s.lob ?? 0) * Math.sin(Math.PI * u), angle = 0;
+          // `inward`: negative dx points towards the middle of the arena, whichever side the anchor is on.
+          const other = where((s.at ?? 'tgt') === 'tgt' ? 'src' : 'tgt', 0, s.alias);
+          const flip = s.inward && other.x > p.x ? -1 : 1;
+          dx *= flip;
+          if (s.aim) {
+            const from = where('src', 0, s.alias), to = where('tgt', 0, s.alias);
+            angle = Math.atan2(to.y - from.y, to.x - from.x);
+            [dx, dy] = [dx * Math.cos(angle) - dy * Math.sin(angle), dx * Math.sin(angle) + dy * Math.cos(angle)];
+          }
+          const x = p.x + dx * p.r, y = p.y + dy * p.r + (s.bob ? Math.abs(Math.sin(this.age / 60)) * -s.bob * p.r : 0);
+          this.pos = { x, y };
+          const fade = s.fade ?? 0.1;
+          const alpha = Math.min(1, k / fade, (1 - k) / fade);
+          if (s.rails) {
+            // Tram rails along the ground under the anchor, fading in and out with the ride.
+            const ry = p.y + s.rails * p.r;
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.7;
+            ctx.strokeStyle = '#9aa3ad';
+            ctx.lineWidth = 2.5;
+            for (const off of [0, 7]) {
+              ctx.beginPath();
+              ctx.moveTo(0, ry + off);
+              ctx.lineTo(width, ry + off);
+              ctx.stroke();
+            }
+            ctx.strokeStyle = '#6b4a35';
+            ctx.lineWidth = 3;
+            for (let rx = 6; rx < width; rx += 16) {
+              ctx.beginPath();
+              ctx.moveTo(rx, ry - 2);
+              ctx.lineTo(rx - 3, ry + 10);
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+          ctx.globalAlpha = alpha;
+          ctx.translate(x, y);
+          ctx.rotate((s.aim ? angle : 0) + (s.tilt ?? 0) + (s.spin ?? 0) * k + (s.rock ? Math.sin(this.age / 55) * s.rock : 0));
+          // A shape aimed to the left is mirrored, so it does not fly upside down.
+          if (s.aim && Math.cos(angle) < -0.01) ctx.scale(1, -1);
+          if (flip < 0) ctx.scale(-1, 1);
+          const size = p.r * (s.size ?? 0.5);
+          if (s.halo) {
+            ctx.save();
+            ctx.globalCompositeOperation = light() ? 'source-over' : 'lighter';
+            ctx.globalAlpha = alpha * 0.5;
+            SHAPES.dot(ctx, size * 2.2, s.halo);
+            ctx.restore();
+          }
+          drawShape(s.shape, ctx, size, paint(s.shape, s.colors), { seed, vx: 0, vy: 0 });
+        },
+        done() {
+          while (reached <= n) touch(reached++);
+        },
+      });
+    },
+    // Jaws snapping shut on an anchor: a bite. `onHit` plays the moment the teeth meet.
+    chomp(s) {
+      const dur = s.dur ?? 380, close = s.close ?? 0.4;
+      let bitten = false;
+      things.push({
+        age: 0, life: dur, draw(k) {
+          const p = where(s.at ?? 'tgt', 0, s.alias);
+          if (!bitten && k >= close) {
+            bitten = true;
+            for (const step of [].concat(s.onHit ?? [])) later(step.t ?? 0, () => run({ ...step, at: step.at ?? s.at ?? 'tgt', alias: s.alias }));
+          }
+          const w = p.r * (s.size ?? 1.05);
+          const open = k < close ? 1 - ease.in(k / close) : Math.min(1, (k - close) / (1 - close)) * 0.2;
+          ctx.globalAlpha = k < 0.1 ? k / 0.1 : k > 0.72 ? (1 - k) / 0.28 : 1;
+          ctx.translate(p.x, p.y + (s.dy ?? 0) * p.r);
+          for (const side of [-1, 1]) {
+            ctx.save();
+            ctx.translate(0, side * w * (0.06 + 0.8 * open));
+            ctx.scale(1, side);
+            const c = w * 0.55, ci = w * 0.3;
+            ctx.fillStyle = s.color ?? '#e8546a';
+            ctx.beginPath();
+            ctx.moveTo(-w, 0);
+            ctx.quadraticCurveTo(0, c * 2, w, 0);
+            ctx.quadraticCurveTo(0, ci * 2, -w, 0);
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = 'rgba(0,0,0,.25)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 7; i++) {
+              const t = 0.12 + (i / 6) * 0.76, x = -w + 2 * w * t, y = 2 * t * (1 - t) * ci;
+              const tw = w * 0.11, th = w * (0.22 - Math.abs(t - 0.5) * 0.16);
+              ctx.beginPath();
+              ctx.moveTo(x - tw, y + 1);
+              ctx.lineTo(x, y - th);
+              ctx.lineTo(x + tw, y + 1);
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+        },
+      });
+    },
+    // A block of ice closing around an anchor. `shake` (ms from the start) makes it rattle;
+    // `crack` breaks it into shards at the end, otherwise it melts away.
+    encase(s) {
+      const dur = s.dur ?? 900;
+      const pts = Array.from({ length: 9 }, (_, i) => {
+        const a = (i / 9) * TAU - Math.PI / 2 + rand(-0.12, 0.12), r = rand(0.9, 1.08);
+        return [Math.cos(a) * r, Math.sin(a) * r * 1.1];
+      });
+      const cracks = Array.from({ length: 4 }, (_, i) => {
+        const a = (i / 4) * TAU + rand(-0.4, 0.4);
+        return Array.from({ length: 4 }, (_, j) => [Math.cos(a + rand(-0.3, 0.3)) * (j / 3), Math.sin(a + rand(-0.3, 0.3)) * (j / 3)]);
+      });
+      const crackAt = s.crack ? dur - 180 : Infinity;
+      things.push({
+        age: 0, life: dur, draw(k) {
+          const p = where(s.at ?? 'tgt', 0, s.alias);
+          const R = p.r * (s.size ?? 1.15), t = this.age;
+          const grow = s.instant ? 1 : ease.out(Math.min(1, t / 260));
+          const a = Math.min(1, t / 100) * (s.crack || k < 0.75 ? 1 : (1 - k) / 0.25);
+          const shaking = s.shake !== undefined && t > s.shake && t < crackAt + 80;
+          const ox = shaking ? Math.sin(t / 14) * p.r * 0.06 : 0;
+          ctx.globalAlpha = a;
+          ctx.translate(p.x + ox, p.y);
+          ctx.rotate(shaking ? Math.sin(t / 23) * 0.04 : 0);
+          ctx.beginPath();
+          ctx.rect(-R * 1.6, R * 1.3 - R * 2.7 * grow, R * 3.2, R * 2.7 * grow);
+          ctx.clip();
+          const g = ctx.createLinearGradient(-R, -R, R, R);
+          g.addColorStop(0, 'rgba(255,255,255,.62)');
+          g.addColorStop(0.45, 'rgba(160,220,255,.36)');
+          g.addColorStop(1, 'rgba(90,170,240,.5)');
+          ctx.fillStyle = g;
+          ctx.strokeStyle = '#e8f8ff';
+          ctx.lineWidth = 2.5;
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          pts.forEach(([x, y], i) => (i ? ctx.lineTo(x * R, y * R) : ctx.moveTo(x * R, y * R)));
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(255,255,255,.55)';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          for (const [i, j] of [[0, 4], [2, 6], [7, 3], [5, 8]]) {
+            ctx.moveTo(pts[i][0] * R * 0.9, pts[i][1] * R * 0.9);
+            ctx.lineTo(pts[j][0] * R * 0.25, pts[j][1] * R * 0.25);
+          }
+          ctx.stroke();
+          ctx.fillStyle = 'rgba(255,255,255,.75)';
+          roundRect(ctx, -R * 0.62, -R * 0.75, R * 0.14, R * 0.7, R * 0.07);
+          ctx.fill();
+          if (t > crackAt) {
+            const u = Math.min(1, (t - crackAt) / 140);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2.2;
+            ctx.beginPath();
+            for (const line of cracks) {
+              const m = Math.max(1, Math.ceil(u * (line.length - 1)));
+              line.slice(0, m + 1).forEach(([x, y], i) => (i ? ctx.lineTo(x * R, y * R) : ctx.moveTo(x * R, y * R)));
+            }
+            ctx.stroke();
+          }
+        },
+        done() {
+          if (!s.crack) return;
+          const p = where(s.at ?? 'tgt', 0, s.alias);
+          spray(p, { shape: ['shard', 'shard', 'cube'], colors: ['#ffffff', '#cfefff', '#8fd3ff'], count: 22, speed: [160, 420], life: [420, 720], size: [4, 8], gravity: 700, spin: [-9, 9] });
+          spray(p, { shape: 'dot', colors: ['#dff6ff'], count: 8, speed: [60, 160], life: [300, 500], size: [6, 10] });
         },
       });
     },
@@ -1465,7 +2190,7 @@ export function createFx({ anchor, shakeTarget }) {
   };
 }
 
-const LIFETIME = { pillar: 700, spot: 900, dim: 1200, bubble: 900, stamp: 800, orbit: 800 };
+const LIFETIME = { pillar: 700, spot: 900, dim: 1200, bubble: 900, stamp: 800, orbit: 800, glide: 700, chomp: 380 };
 
 // How long a recipe runs, and when its main blow lands. Pure, so the arena can plan the turn.
 export function fxTiming(steps) {
@@ -1482,14 +2207,39 @@ export function fxTiming(steps) {
       case 'burst': dur = Array.isArray(s.life) ? s.life[1] : s.life ?? 720; break;
       case 'shake': dur = s.dur ?? 320; break;
       case 'slam': dur = (s.fall ?? 420) + (s.hold ?? 220) + 240; break;
+      case 'encase': dur = (s.dur ?? 900) + (s.crack ? 720 : 0); break;
       default: dur = s.dur ?? LIFETIME[s.type] ?? 500;
     }
     end = Math.max(end, t + dur);
-    if (s.hit && impact === null) {
-      impact = t + (s.type === 'projectile' ? (s.travel ?? 420) + (s.hitLast ? ((s.count ?? 1) - 1) * (s.gap ?? 70) : 0)
-        : s.type === 'rain' ? (s.fall ?? 420) + (s.dur ?? 420) * 0.4 : s.type === 'beam' ? Math.min(260, s.dur ?? 520)
-        : s.type === 'slam' ? (s.fall ?? 420) : 0);
-    }
+    if (s.hit && impact === null) impact = t + landing(s);
   }
   return { impact: impact ?? Math.min(300, end), end: Math.min(end, 2600) };
+}
+
+// When a step that carries the blow touches the target, counted from its own start.
+function landing(s) {
+  switch (s.type) {
+    case 'projectile': return (s.travel ?? 420) + (s.hitLast ? ((s.count ?? 1) - 1) * (s.gap ?? 70) : 0);
+    case 'rain': return (s.fall ?? 420) + (s.dur ?? 420) * 0.4;
+    case 'beam': return Math.min(260, s.dur ?? 520);
+    case 'slam': return s.fall ?? 420;
+    case 'chomp': return (s.dur ?? 380) * (s.close ?? 0.4);
+    case 'glide': return contactTimes(s)[0] ?? (s.dur ?? 700) / 2;
+    default: return 0;
+  }
+}
+
+// Every moment a step touches the target, counted from its own start: one per thrown piece,
+// per stroke, per contact of a gliding shape. Used for flurries, where each strike is shown.
+export function contactTimes(s) {
+  const count = s.count ?? 1;
+  switch (s.type) {
+    case 'projectile': return Array.from({ length: s.hitOnce ? 1 : count }, (_, i) => (s.travel ?? 420) + (s.hitOnce ? count - 1 : i) * (s.gap ?? 70));
+    case 'slash': return Array.from({ length: s.count ?? 3 }, (_, i) => i * (s.gap ?? 70));
+    case 'glide': {
+      const n = (s.path?.length ?? 1) - 1, times = s.times ?? (s.path ?? [0]).map((_, i) => (n ? i / n : 0));
+      return (s.contact ?? []).map((i) => times[i] * (s.dur ?? 700));
+    }
+    default: return [landing(s)];
+  }
 }

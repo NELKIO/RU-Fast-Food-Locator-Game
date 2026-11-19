@@ -5,7 +5,7 @@
 // A recipe is a list of steps for battle-fx.js. Anchors: 'src' is the fighter who moves,
 // 'tgt' is the one on the other side. The first step marked `hit` decides when the target
 // flinches, the damage number pops and the health bar slides.
-import { fxTiming } from './battle-fx.js';
+import { contactTimes, fxTiming } from './battle-fx.js';
 
 const FIRE = ['#fff1a1', '#ffb52e', '#ff7a1a', '#ff3d12'];
 const CHEESE = ['#ffe36e', '#ffd23f', '#ffc21a', '#fff3b0'];
@@ -24,6 +24,22 @@ const HEAL = ['#8ff0b0', '#c9ffd9', '#5fd98a'];
 const PASTEL = ['#ffb3cf', '#b8e2ff', '#c9f2b0', '#ffe3a3', '#d9c2ff'];
 const CHOCO = ['#5a2d17', '#7a3f1f', '#3d1d0e'];
 const SMOKE = ['rgba(90,70,60,.55)', 'rgba(130,110,95,.45)', 'rgba(60,45,40,.5)'];
+// Statuses: heartburn is acid green, draining is a pink vital stream, sleep is lavender.
+const TOXIC = ['#eaff8a', '#b6e84a', '#79c22a'];
+const LEECH = ['#ffb3cf', '#ff5d93', '#ff8db3'];
+const DREAM = ['#e6dcff', '#b9a7ff', '#ffffff'];
+const CLEAN = ['#ffffff', '#e6fbff', '#bdefff'];
+// Sauces, each in the colour of its cup.
+const KETCHUP = ['#ff4a35', '#e0241a', '#b5150f'];
+const MUSTARD = ['#fff07a', '#ffd21f', '#f0b400'];
+const CURRY = ['#ffd06a', '#f2a51d', '#d97f0b'];
+const SWEETSOUR = ['#ffc070', '#ff9a2e', '#ee6f10'];
+const ISLANDS = ['#ffd0b0', '#ffab7a', '#ff8a5c'];
+const CHILICHEESE = ['#ffe36e', '#ffc21a', '#ff9a1f'];
+const GARLIC_SMOKE = ['rgba(240,252,214,.6)', 'rgba(214,236,178,.5)', 'rgba(255,255,240,.55)'];
+const PICKLE = ['#d6ec9a', '#9cc95a', '#4f7f2a'];
+const PROVENCE = ['#86ad46', '#5c7f2e', '#b4cf72'];
+const SOURCREAM = ['#ffffff', '#f7f3ea'];
 
 const BRAND = {
   bk: { main: '#ff8732', glow: '#ffb15c', shield: '#ffb15c' },
@@ -54,7 +70,7 @@ function toss(shape, o = {}) {
     type: 'projectile', t: o.t ?? 0, shape, colors: o.colors, size: o.size ?? 13, travel: o.travel ?? 420,
     arc: o.arc ?? 0.16, lob: o.lob ?? 0, spin: o.spin ?? 9, face: o.face, faceOffset: o.faceOffset,
     count: o.count, gap: o.gap, fan: o.fan, spread: o.spread, alternate: o.alternate, grow: o.grow, halo: o.halo,
-    ease: o.ease, trail: o.trail, hit: o.hit ?? true, hitOnce: o.hitOnce, hitLast: o.hitLast,
+    ease: o.ease, trail: o.trail, hit: o.hit ?? true, hitOnce: o.hitOnce, hitLast: o.hitLast, strike: o.strike,
     onHit: o.onHit ?? impact(o.impact ?? FIRE, { debris: o.debris, debrisColors: o.debrisColors, count: o.sparks }),
   };
 }
@@ -74,6 +90,78 @@ const groundRing = (color, o = {}) => ({ type: 'ring', t: o.t ?? 0, at: o.at, co
 // Orbs flying back from the target: stolen energy (yellow) or stolen health (green).
 const backOrbs = (colors, t, o = {}) => ({ type: 'projectile', t, from: 'tgt', to: 'src', shape: 'orb', colors, size: o.size ?? 4, count: o.count ?? 4, gap: 55, fan: 14, travel: o.travel ?? 420, arc: 0.3, alternate: true,
   trail: { shape: 'dot', colors, size: [2, 4], rate: 40 } });
+
+// ------------------------------------------------------------------------------ status pieces
+// Each new status has one look, used by the layers and by the recipes that build on it.
+// Heartburn: acid-green flames and bubbles rising from the chest.
+const heartburnFx = (t, at, o = {}) => [
+  { type: 'rise', t, at, shape: 'flame', colors: TOXIC, c2: '#f8ffd0', dur: o.small ? 460 : 620, rate: o.small ? 24 : 26, size: [5, 9], size2: 2, speed: [70, 140], width: 0.6, dy: 0.1 },
+  { type: 'rise', t: t + 60, at, shape: 'bubble', colors: ['#c8f07a', '#eaff8a'], dur: o.small ? 300 : 480, rate: 14, size: [3, 6], speed: [40, 90], wobble: 40, width: 0.5 },
+  { type: 'ring', t, at, color: '#b6e84a', from: 18, to: o.small ? 56 : 76, width: 4, dur: 420 },
+];
+// Draining: a pink stream from the drained fighter to the one facing it.
+const leechFx = (t, from, to, o = {}) => [
+  ...(o.tether === false ? [] : [{ type: 'bolt', t, from, to, color: o.color ?? '#ff5d93', width: o.small ? 3 : 5, amp: 0, wave: o.small ? 4 : 7, sag: 22, segments: 16, dur: o.small ? 520 : 760, soft: true }]),
+  { type: 'projectile', t: t + 80, from, to, shape: 'drop', colors: LEECH, size: o.small ? 4 : 5, count: o.small ? 3 : 5, gap: 90, fan: 6, travel: 460, arc: 0.1, face: true, faceOffset: Math.PI / 2, alternate: true,
+    trail: { shape: 'dot', colors: ['#ff8db3'], size: [2, 3], rate: 30 } },
+  { type: 'ring', t, at: from, color: '#ff5d93', from: 64, to: 26, width: 4, dur: 380 },
+  { type: 'rise', t: t + 520, at: to, shape: 'plus', colors: ['#ff8db3', ...HEAL], dur: 300, rate: 14, size: [4, 7] },
+];
+// Asleep: a crescent moon over the head, lazy z's and a lavender glow.
+const sleepFx = (t, dur, at) => [
+  { type: 'flash', t, at, color: '#b9a7ff', alpha: 0.4, size: 2, dur: 520 },
+  { type: 'stamp', t, at, shape: 'moon', size: 0.3, dx: 0.62, dy: -0.92, tilt: -0.4, halo: '#b9a7ff', dur },
+  { type: 'rise', t: t + 120, at, shape: 'zz', colors: DREAM, dur: Math.max(200, dur - 420), rate: 5, size: [7, 11], speed: [30, 55], wobble: 70, dy: -0.5, width: 0.4, life: [800, 1000] },
+  { type: 'orbit', t: t + 80, at, shape: 'twinkle', colors: DREAM, count: 3, from: 0.62, to: 0.62, turns: 1.1, flat: 0.3, dy: -0.95, size: 5, dur: Math.min(dur, 1200) },
+];
+// Waking up: an exclamation mark and a few stars.
+const wakeFx = (t, at) => [
+  { type: 'stamp', t, at, shape: 'bang', colors: ['#fff6a8'], size: 0.34, dx: 0.55, dy: -0.85, dur: 620 },
+  { type: 'burst', t, at, shape: 'star', colors: GOLD, count: 7, speed: [120, 240], life: [400, 600], size: [4, 7] },
+  { type: 'ring', t, at, color: '#ffffff', from: 20, to: 80, width: 4, dur: 360 },
+];
+// Frozen: snowflakes swirl in, a frosty hexagon closes, then the ice block itself (`encase`).
+const frostFx = (t, at) => [
+  { type: 'burst', t, at, shape: 'snowflake', colors: ICE, count: 10, speed: [80, 220], life: [500, 800], size: [4, 7], drag: 2 },
+  { type: 'ring', t, at, shape: 'hex', color: '#cfefff', from: 110, to: 46, width: 4, dur: 360 },
+];
+// Own energy up: yellow sparks gather and small lightning bolts rise.
+const chargeFx = (t) => [
+  { type: 'charge', t, at: 'src', colors: ['#fff6a8', '#ffe066'], dur: 360, count: 14 },
+  { type: 'rise', t: t + 120, at: 'src', shape: 'bolt', colors: ['#ffe066', '#fff3a8'], dur: 360, rate: 14, size: [6, 9], speed: [80, 140] },
+  { type: 'ring', t: t + 120, at: 'src', color: '#ffe066', width: 4, dur: 420 },
+];
+// A clean wipe: a soft white stroke across the target, the boosts popping off as bubbles.
+const purgeFx = (t) => [
+  { type: 'slash', t: Math.max(0, t - 80), at: 'tgt', color: '#dff6ff', count: 1, angle: 0.15, curve: 0.06, width: 11, len: 1.5, dur: 380 },
+  { type: 'ring', t, at: 'tgt', shape: 'hex', color: '#dff6ff', from: 50, to: 120, width: 4, dur: 380 },
+  { type: 'burst', t, at: 'tgt', shape: ['bubble', 'twinkle'], colors: CLEAN, count: 14, speed: [80, 240], life: [400, 700], size: [3, 7], gravity: -60 },
+];
+// Sterile: nothing sticks, a white hexagon and a sparkle.
+const immuneFx = (t) => [
+  { type: 'ring', t, at: 'tgt', shape: 'hex', color: '#ffffff', from: 40, to: 90, width: 4, dur: 420 },
+  { type: 'bubble', t, at: 'tgt', color: '#dff6ff', size: 1.25, dur: 560 },
+  { type: 'burst', t: t + 60, at: 'tgt', shape: 'twinkle', colors: CLEAN, count: 12, speed: [60, 200], life: [400, 700], size: [4, 8] },
+];
+// Fire melts the ice: meltwater drips, steam rises, the last shards fall.
+const thawFx = (t) => [
+  { type: 'burst', t, at: 'tgt', shape: 'shard', colors: ['#ffffff', '#cfefff'], count: 10, speed: [120, 280], life: [400, 600], size: [3, 6], gravity: 700 },
+  { type: 'rise', t, at: 'tgt', shape: 'drop', colors: ICE, down: true, dur: 380, rate: 18, size: [3, 5], speed: [60, 120] },
+  { type: 'rise', t: t + 80, at: 'tgt', shape: 'smoke', colors: ['rgba(255,255,255,.45)'], dur: 420, rate: 18, size: [5, 8], size2: 16, speed: [50, 110] },
+];
+// Grim look: angry eyes over the newcomer, a red wave, the other side's attack sinks.
+export const intimidateFx = (t = 0) => [
+  { type: 'stamp', t, at: 'src', shape: 'glare', size: 0.36, dy: -0.95, halo: '#ff3b2f', dur: 820 },
+  { type: 'ring', t: t + 140, at: 'src', color: '#ff5a4a', from: 30, to: 150, width: 5, dur: 520 },
+  { type: 'shake', t: t + 160, mag: 3, dur: 200 },
+  { type: 'rise', t: t + 320, at: 'tgt', shape: 'arrowDown', colors: ['#8fb8ff'], dur: 380, rate: 12, down: true, size: [6, 9] },
+];
+// One extra strike of a flurry the recipe does not show itself.
+const strikeFx = (t) => [
+  { type: 'burst', t, at: 'tgt', jitter: 14, shape: 'spark', colors: ['#ffffff', '#ffd76a'], count: 10, speed: [200, 420], life: [200, 360], size: [2, 4] },
+  { type: 'ring', t, at: 'tgt', color: '#ffffff', from: 14, to: 60, width: 4, dur: 260 },
+  { type: 'shake', t, mag: 4, dur: 160 },
+];
 
 const BASIC = {
   // Бургер Кинг
@@ -262,6 +350,141 @@ const BASIC = {
   'dodo-hawaiian': () => throwBasic('cube', ['#ffe36e', '#ffd23f'], { size: 9, count: 3, gap: 60, fan: 8, spread: 14, colors: ['#ffe36e', '#ffd23f'], spin: 10, hitOnce: true, impact: CHEESE, debris: 'cube', debrisColors: ['#ffe36e', '#ffd23f'], debrisSize: [3, 5] }),
   // A chili hurled like a fireball.
   'dodo-diablo': () => throwBasic('chili', SPICE, { size: 13, spin: 12, impact: SPICE, halo: '#ff3d12', trail: { shape: 'flame', colors: FIRE, size: [4, 7], size2: 1, rate: 60 } }),
+
+  // ---- new fighters
+  // The tram-shaped box lands on the enemy and three little burgers bounce out of it.
+  'bk-burger-box': () => [
+    { type: 'slam', t: 40, at: 'tgt', shape: 'tram', size: 0.42, height: 2.4, fall: 300, hold: 160, tilt: -0.15, spin: 0.15, hit: true,
+      onHit: [...impact(['#ffd25e', '#f47a20', '#ffffff'], { count: 10, shake: 6 }), groundRing('#f47a20', { to: 130 }),
+        { type: 'burst', shape: 'burger', colors: ['#ffc21a', '#e8322a', '#ff9a1f'], count: 3, angle: -Math.PI / 2, spread: 0.9, speed: [160, 260], life: [500, 700], size: [5, 7], gravity: 700, spin: [-6, 6] }] },
+  ],
+  // A royal bite: jaws snap shut on the enemy, sesame seeds fly.
+  'bk-big-king': () => [
+    { type: 'chomp', t: 60, at: 'tgt', dur: 380, close: 0.42, hit: true,
+      onHit: [...impact(['#ffffff', '#ffd76a', '#ff8732'], { count: 10, debris: 'seed', debrisColors: ['#fff1cf'] }),
+        { type: 'burst', shape: 'twinkle', colors: GOLD, count: 5, angle: -Math.PI / 2, spread: 0.6, speed: [120, 240], life: [400, 600], size: [5, 8] }] },
+  ],
+  // The packet swings in and slaps the enemy: a wet splash of droplets.
+  'bk-wet-wipe': () => [
+    { type: 'glide', t: 0, at: 'tgt', shape: 'sachet', size: 0.36, aim: true, path: [[-1.6, -0.6], [-0.3, 0.05], [-0.7, 0.45]], times: [0, 0.55, 1], dur: 520, spin: 1.6, tilt: -0.8, contact: [1], hit: true,
+      onHit: [{ type: 'flash', color: '#e6fbff', alpha: 0.6, size: 1.8, dur: 220 }, { type: 'ring', color: '#bfefff', from: 20, to: 70, width: 5, dur: 300 },
+        { type: 'burst', shape: ['drop', 'twinkle'], colors: CLEAN, count: 12, speed: [140, 320], life: [300, 520], size: [3, 6], gravity: 300 }, { type: 'shake', mag: 5, dur: 220 }] },
+  ],
+  // A huge dollop lobbed high: it lands with a heavy splash, chili flecks and all.
+  'bk-sauce-xxl-chili-cheese': () => [
+    toss('drop', { size: 15, lob: 0.42, face: true, faceOffset: Math.PI / 2, spin: 0, travel: 460, colors: ['#ffb21a'], halo: '#ff9a1f', trail: { shape: 'drop', colors: CHILICHEESE, size: [3, 5], rate: 40 },
+      onHit: [...impact(CHILICHEESE, { count: 10, shake: 8, debris: 'splat', debrisColors: CHILICHEESE, debrisCount: 12 }), groundRing('#ffc21a', { to: 160, width: 7 }),
+        { type: 'burst', shape: 'cube', colors: ['#d8321e', '#ff4a2a'], count: 8, speed: [120, 280], life: [500, 700], size: [2, 3.5], gravity: 600 }] }),
+  ],
+  // The spoon flicks a scoop of cold ice cream; it splats with chocolate and a breath of frost.
+  'bk-brownie-ice-cream': () => [
+    { type: 'stamp', t: 0, at: 'src', shape: 'spoon', size: 0.42, dx: 0.5, dy: -0.55, tilt: -0.3, spin: -1.6, dur: 360 },
+    toss('scoop', { t: 140, size: 11, lob: 0.3, spin: 4, travel: 400, trail: { shape: 'snowflake', colors: ICE, size: [2, 4], rate: 30 },
+      onHit: [...impact(CREAM, { count: 8, debris: 'splat', debrisColors: ['#fff6e6', '#5a2d17'] }), { type: 'burst', shape: 'drop', colors: CHOCO, count: 5, speed: [100, 220], life: [400, 600], size: [3, 5], gravity: 600 }] }),
+  ],
+  // A slap of the tail: the fish swings across the enemy and water splashes up.
+  'bk-fish-burger': () => [
+    { type: 'glide', t: 0, at: 'tgt', shape: 'fish', size: 0.42, aim: true, path: [[-1.3, -1.1], [-0.1, 0], [0.5, 1.0]], times: [0, 0.5, 1], dur: 540, spin: 2.6, tilt: -1.3, contact: [1], hit: true,
+      onHit: [...impact(['#ffffff', '#8fd3ff', '#e8b25a'], { count: 8 }),
+        { type: 'burst', angle: -Math.PI / 2, spread: 1, shape: 'drop', colors: ['#bfe6ff', '#8fd3ff', '#ffffff'], count: 12, speed: [180, 360], life: [400, 600], size: [3, 5], gravity: 900 }] },
+  ],
+  // A molten brownie jabbed straight in; hot chocolate squirts out of the back.
+  'bk-brownie': () => [
+    toss('brownie', { size: 12, travel: 260, ease: 'in', spin: 0.6, arc: 0.02, grow: 1.25, trail: { shape: 'crumb', colors: CHOCO, size: [2, 3], rate: 50 },
+      onHit: [...impact(['#ffe9d6', '#a0602f', '#ffffff'], { count: 10 }), { type: 'burst', along: true, spread: 0.35, shape: 'drop', colors: ['#3d1d0e', '#5a2d17'], count: 8, speed: [220, 400], life: [400, 600], size: [3, 5], gravity: 500 }] }),
+  ],
+  // Sauces: six cups, six colours, six ways to fly.
+  // Sweet and sour: a glossy amber spit that drips off the enemy.
+  'bk-sauce-sweet-sour': () => [
+    { type: 'burst', t: 0, at: 'src', shape: 'dot', colors: SWEETSOUR, count: 6, speed: [40, 90], life: [200, 300], size: [4, 7] },
+    toss('drop', { t: 80, size: 10, travel: 360, lob: 0.12, face: true, faceOffset: Math.PI / 2, spin: 0, colors: ['#ff9a2e'], halo: '#ffc070', trail: { shape: 'drop', colors: SWEETSOUR, size: [2, 4], rate: 50 },
+      onHit: [...impact(SWEETSOUR, { count: 8, debris: 'splat', debrisColors: SWEETSOUR }), { type: 'rise', shape: 'drop', colors: SWEETSOUR, down: true, dur: 380, rate: 18, size: [3, 5], speed: [40, 90], width: 0.6 }] }),
+  ],
+  // Garlic: a breath, a pale green cloud with a clove or two in it.
+  'bk-sauce-garlic': () => [
+    { type: 'beam', t: 40, shape: 'smoke', colors: GARLIC_SMOKE, size: [8, 12], size2: 24, dur: 340, rate: 50, speed: [380, 480], spread: 0.25, hit: true },
+    { type: 'projectile', t: 60, shape: 'garlic', size: 6, count: 2, gap: 120, arc: 0.3, alternate: true, spin: 6, travel: 400 },
+    { type: 'orbit', t: 300, at: 'tgt', shape: 'smoke', colors: GARLIC_SMOKE, count: 6, from: 0.4, to: 1.4, turns: 0.8, size: 12, dur: 600 },
+    ...later(300, impact(['#f6ffe0', '#d4f09a'], { count: 6, shake: 3 })),
+  ],
+  // Ketchup: one fat red drop falls from above and bursts.
+  'bk-sauce-ketchup': () => [
+    { type: 'slam', t: 30, at: 'tgt', shape: 'drop', colors: ['#e0241a'], size: 0.32, height: 3, fall: 300, hold: 60, dy: -0.1, hit: true,
+      onHit: [...impact(KETCHUP, { count: 10, debris: 'splat', debrisColors: KETCHUP, debrisCount: 10 }),
+        { type: 'burst', shape: 'drop', colors: KETCHUP, count: 8, angle: -Math.PI / 2, spread: 1, speed: [160, 320], life: [400, 600], size: [3, 5], gravity: 900 }] },
+  ],
+  // Mustard: a fast flicked drop and a hot yellow star.
+  'bk-sauce-mustard': () => [
+    { type: 'burst', t: 0, at: 'src', shape: 'twinkle', colors: MUSTARD, count: 4, speed: [60, 120], life: [200, 300], size: [5, 8] },
+    toss('drop', { t: 60, size: 7, travel: 200, ease: 'in', arc: 0, face: true, faceOffset: Math.PI / 2, spin: 0, colors: ['#ffd21f'], trail: { shape: 'spark', colors: MUSTARD, size: [2, 3], rate: 90 },
+      onHit: [...impact(MUSTARD, { count: 12 }), { type: 'burst', shape: 'star', colors: ['#fff07a', '#ff7a1a'], count: 5, speed: [140, 260], life: [300, 480], size: [5, 8] },
+        { type: 'burst', shape: 'splat', colors: MUSTARD, count: 6, speed: [80, 200], life: [500, 700], size: [3, 5], gravity: 500 }] }),
+  ],
+  // Curry: one broad ochre smear and a cloud of spice dust.
+  'bk-sauce-curry': () => [
+    { type: 'slash', t: 80, at: 'tgt', color: '#f2a51d', count: 1, angle: -0.5, curve: 0.18, width: 16, len: 1.4, dur: 420, hit: true },
+    ...later(100, impact(CURRY, { count: 8 })),
+    { type: 'burst', t: 120, at: 'tgt', shape: ['crumb', 'dot'], colors: ['#c0461a', '#8a3a12', '#ffd06a'], count: 14, speed: [60, 200], life: [500, 800], size: [1.5, 3], drag: 2 },
+  ],
+  // Thousand Islands: three peach drops and a splash with green relish in it.
+  'bk-sauce-1000-islands': () => [
+    toss('drop', { size: 8, count: 3, gap: 60, fan: 10, spread: 16, alternate: true, arc: 0.32, colors: ISLANDS, face: true, faceOffset: Math.PI / 2, spin: 0, hitOnce: true, hitLast: true, travel: 380,
+      onHit: [...impact(ISLANDS, { count: 8 }), groundRing('#7fd3ff', { to: 120 }),
+        { type: 'burst', dy: 0.4, angle: -Math.PI / 2, spread: 0.7, shape: ['drop', 'drop', 'cube'], colors: [...ISLANDS, '#7cb342'], count: 12, speed: [220, 380], life: [450, 650], size: [3, 6], gravity: 900 }] }),
+  ],
+  // A cheese slice flops onto the enemy.
+  'bk-cheeseburger-classic': () => [
+    { type: 'slam', t: 40, at: 'tgt', shape: 'cheese', colors: ['#ffc21a'], size: 0.5, height: 2.2, fall: 260, hold: 160, spin: 1.2, tilt: -0.6, hit: true,
+      onHit: [...impact(CHEESE, { count: 10 }), { type: 'burst', shape: 'splat', colors: CHEESE, count: 8, speed: [60, 180], life: [600, 800], size: [4, 7], gravity: 400 }] },
+  ],
+  // The little Whopper's jab: a quick poke and a single grill mark.
+  'bk-whopper-junior': () => [
+    toss('burger', { size: 9, travel: 260, ease: 'in', arc: 0.04, spin: 0.8, colors: ['#e8322a'],
+      onHit: [...impact(FIRE, { count: 8, shake: 4 }), { type: 'slash', color: '#ff8a2a', count: 1, angle: -0.35, curve: 0, width: 7, len: 0.9, dur: 300 },
+        { type: 'burst', t: 120, shape: 'smoke', colors: SMOKE, count: 4, angle: -Math.PI / 2, spread: 0.5, speed: [40, 80], life: [450, 600], size: [4, 6], size2: 12 }] }),
+  ],
+  // A pinch: the sachet tips over the enemy and a little herb dust falls.
+  'vkusno-seasoning-provence-sour-cream': () => [
+    { type: 'stamp', t: 0, at: 'tgt', shape: 'sachet', colors: ['#e2231a'], size: 0.26, dx: 0.1, dy: -1.35, tilt: 2.6, dur: 560 },
+    { type: 'rain', t: 100, at: 'tgt', shape: ['leaf', 'leaf', 'sugar'], colors: [...PROVENCE, '#ffffff'], count: 14, dur: 220, fall: 280, top: 1.2, size: [2, 3.5], width: 0.5, spin: [-6, 6], hit: true },
+    ...later(468, impact(HERB, { count: 8, shake: 3 })),
+  ],
+  // The classic: a whole burger drops on the enemy, ketchup and mustard fly, a pickle rolls off.
+  'vkusno-hamburger': () => [
+    { type: 'slam', t: 30, at: 'tgt', shape: 'burger', colors: ['#e0241a'], size: 0.46, height: 2.6, fall: 300, hold: 140, tilt: 0.15, hit: true,
+      onHit: [...impact(['#ffffff', '#ffbc0d', '#e8322a'], { count: 10, debris: 'pickle', debrisSize: [3, 5], debrisCount: 3 }),
+        { type: 'burst', shape: 'splat', colors: ['#e0241a', '#ffd21f'], count: 6, speed: [80, 200], life: [500, 700], size: [3, 5], gravity: 500 }] },
+  ],
+  // The wrap thrown end over end like a baton, scraps of red paper flying.
+  'rostics-i-roll': () => [
+    toss('wrap', { size: 12, spin: 22, travel: 380, arc: 0.12, trail: { shape: 'dot', colors: ['#ffffff', '#ff3347'], size: [2, 4], rate: 40 },
+      onHit: [...impact(['#ffffff', '#ff3347', '#ffd166'], { count: 10, debris: 'shard', debrisColors: ['#d6202a', '#ffffff'], debrisSize: [3, 5] }),
+        { type: 'burst', shape: ['leaf', 'cube'], colors: ['#7cc04a', '#e8322a', '#f2a33a'], count: 6, speed: [100, 220], life: [500, 700], size: [3, 4], gravity: 500 }] }),
+  ],
+  // A wave of melted cheese with bits of chicken and tomato in it.
+  'dodo-cheesy-chicken': () => [
+    { type: 'beam', t: 40, shape: ['splat', 'splat', 'nugget'], colors: CHEESE, size: [6, 10], size2: 12, dur: 320, rate: 70, speed: [520, 640], spread: 0.3, gravity: -260, hit: true },
+    ...later(300, impact(CHEESE, { count: 8, debris: 'cube', debrisColors: ['#e8322a', '#ff6a3a'], debrisSize: [2.5, 4], debrisCount: 8 })),
+    groundRing('#ffd23f', { t: 300, at: 'tgt', to: 140, width: 7 }),
+  ],
+  // The crispy edge: the envelope spins in like a shuriken and crunches.
+  'dodo-starter-cheese': () => [
+    toss('envelope', { size: 12, spin: 18, travel: 360, arc: 0.18,
+      onHit: [...impact(['#fff3b0', '#e9c27a', '#ffffff'], { count: 10, debris: 'crumb', debrisColors: CRUMB, debrisCount: 10 }),
+        { type: 'burst', shape: 'shard', colors: ['#e9c27a', '#b97a33'], count: 6, speed: [180, 320], life: [350, 550], size: [3, 6], gravity: 600 }] }),
+  ],
+  // A warm syrnik lobbed with a curl of steam; sour cream splats.
+  'dodo-syrniki': () => [
+    toss('syrnik', { size: 12, lob: 0.3, spin: 4, travel: 420, trail: { shape: 'smoke', colors: ['rgba(255,255,255,.45)'], size: [3, 6], size2: 12, rate: 30, rise: -40 },
+      onHit: [...impact(['#fff0c8', '#f0c77e', '#ffffff'], { count: 8, shake: 4 }), { type: 'burst', shape: 'splat', colors: SOURCREAM, count: 6, speed: [60, 160], life: [600, 800], size: [4, 7], gravity: 400 },
+        { type: 'rise', shape: 'smoke', colors: ['rgba(255,255,255,.4)'], dur: 260, rate: 18, size: [4, 7], size2: 14, speed: [50, 100] }] }),
+  ],
+  // The dodo mask pulls back and pecks once; a feather floats down.
+  'dodo-beak': () => [
+    { type: 'glide', t: 0, at: 'tgt', shape: 'beak', size: 0.42, aim: true, path: [[-1.5, 0], [-1.9, 0], [-0.45, 0], [-1.3, 0]], times: [0, 0.32, 0.6, 1], contact: [2], dur: 560, hit: true,
+      onHit: [...impact(['#ffffff', '#ff7a1a', '#ffd166'], { count: 8, shake: 4 }),
+        { type: 'burst', shape: 'feather', colors: ['#ffffff', '#ffd9c2'], count: 4, speed: [80, 180], life: [600, 900], size: [4, 6], gravity: 120, spin: [-3, 3] }] },
+  ],
 };
 
 // ------------------------------------------------------------------------------ signature skills
@@ -269,11 +492,10 @@ const BASIC = {
 const SKILL = {
   // Бургер Кинг
   'bk-angus-parmigiano': () => ({
-    covers: ['buff'],
     steps: [
       charge(GOLD, 0, { dur: 480, count: 26 }),
       { type: 'stamp', t: 120, at: 'src', shape: 'crown', size: 0.55, dy: -0.95, halo: '#ffd76a', dur: 900, lift: 0.3 },
-      { type: 'rise', t: 200, at: 'src', shape: 'arrowUp', colors: GOLD, dur: 500, rate: 14, size: [7, 10] },
+      { type: 'rise', t: 200, at: 'src', shape: 'twinkle', colors: GOLD, dur: 500, rate: 14, size: [5, 8] },
       { type: 'rain', t: 520, at: 'tgt', shape: ['cheese', 'shard'], colors: CHEESE, count: 12, dur: 380, fall: 380, size: [9, 13], splash: { shape: 'twinkle', colors: GOLD, speed: [80, 200], life: [300, 500], size: [4, 7] } },
       { type: 'slash', t: 820, at: 'tgt', color: '#ffd76a', count: 2, cross: true, width: 10, len: 2, curve: 0.1, gap: 90, dur: 360, hit: true },
       { type: 'flash', t: 820, screen: true, color: '#fff2b0', alpha: 0.14, dur: 300 },
@@ -295,8 +517,8 @@ const SKILL = {
     steps: [
       charge(FIRE, 0, { dur: 380 }),
       { type: 'orbit', t: 120, at: 'src', shape: 'patty', count: 2, from: 1.1, to: 0.9, turns: 0.8, size: 14, dur: 440 },
-      toss('patty', { t: 520, size: 16, travel: 360, arc: 0.28, spin: 6, impact: FIRE, sparks: 12, debris: 'crumb', debrisColors: CRUMB, trail: { shape: 'flame', colors: FIRE, size: [4, 7], size2: 1, rate: 50 } }),
-      toss('patty', { t: 700, size: 16, travel: 360, arc: -0.28, spin: -6, impact: FIRE, sparks: 14, hit: false, debris: 'seed', trail: { shape: 'flame', colors: FIRE, size: [4, 7], size2: 1, rate: 50 } }),
+      toss('patty', { t: 520, size: 16, travel: 360, arc: 0.28, spin: 6, impact: FIRE, sparks: 12, strike: true, debris: 'crumb', debrisColors: CRUMB, trail: { shape: 'flame', colors: FIRE, size: [4, 7], size2: 1, rate: 50 } }),
+      toss('patty', { t: 720, size: 16, travel: 360, arc: -0.28, spin: -6, impact: FIRE, sparks: 14, hit: false, strike: true, debris: 'seed', trail: { shape: 'flame', colors: FIRE, size: [4, 7], size2: 1, rate: 50 } }),
       { type: 'ring', t: 1060, at: 'tgt', color: '#ffb15c', width: 9, dur: 500 },
     ],
   }),
@@ -327,13 +549,14 @@ const SKILL = {
     ],
   }),
   'bk-cheese-sauce': () => ({
-    covers: ['sap'],
+    covers: ['leech', 'weaken'],
     steps: [
       charge(CHEESE, 0, { dur: 320, shape: 'dot' }),
       { type: 'beam', t: 260, shape: 'drop', colors: CHEESE, size: [6, 10], size2: 7, dur: 560, rate: 90, speed: [600, 760], spread: 0.08, gravity: 260, hit: true },
       { type: 'burst', t: 520, at: 'tgt', shape: 'splat', colors: CHEESE, count: 12, speed: [80, 260], life: [700, 1000], size: [6, 11], gravity: 320 },
       ...later(500, impact(CHEESE, { count: 8, shake: 4 })),
-      { type: 'projectile', t: 860, from: 'tgt', to: 'src', shape: 'orb', colors: ['#ffe066'], size: 4, count: 5, gap: 50, fan: 16, travel: 420, arc: 0.3, alternate: true, trail: { shape: 'dot', colors: ['#ffe066'], size: [2, 4], rate: 40 } },
+      { type: 'rise', t: 760, at: 'tgt', shape: 'arrowDown', colors: ['#8fb8ff'], dur: 380, rate: 12, down: true, size: [6, 9] },
+      ...leechFx(880, 'tgt', 'src', { color: '#ffd23f' }),
     ],
   }),
   'bk-shrimps': () => ({
@@ -509,14 +732,11 @@ const SKILL = {
     ],
   }),
   'vkusno-macarons': () => ({
-    covers: ['sap', 'heal'],
     steps: [
       { type: 'orbit', t: 0, at: 'tgt', shape: 'macaron', colors: PASTEL, count: 6, from: 1.9, to: 0.4, turns: 1.6, size: 10, dur: 900 },
       { type: 'rain', t: 200, at: 'tgt', shape: 'sugar', colors: SUGAR, count: 18, dur: 500, fall: 300, size: [2.5, 4] },
       { type: 'flash', t: 860, at: 'tgt', color: '#ffd1e6', alpha: 0.6, size: 2.4, dur: 360, hit: true },
-      { type: 'rise', t: 900, at: 'tgt', shape: 'zz', colors: ['#d9c2ff', '#ffffff'], dur: 700, rate: 6, size: [6, 9], speed: [40, 70], wobble: 80 },
-      { type: 'projectile', t: 950, from: 'tgt', to: 'src', shape: 'orb', colors: ['#ffe066'], size: 4, count: 4, gap: 60, fan: 14, travel: 420, arc: 0.3, alternate: true },
-      { type: 'rise', t: 1150, at: 'src', shape: ['heart', 'plus'], colors: ['#ffb3cf', ...HEAL], dur: 500, rate: 18 },
+      { type: 'burst', t: 880, at: 'tgt', shape: ['heart', 'sugar'], colors: PASTEL, count: 12, speed: [60, 170], life: [500, 800], size: [3, 6], gravity: -40 },
     ],
   }),
 
@@ -568,6 +788,7 @@ const SKILL = {
     covers: ['team'],
     steps: [
       { type: 'stamp', t: 0, at: 'src', shape: 'basket', size: 0.55, dy: -1, halo: '#ff7a86', dur: 1100 },
+      toss('drumstick', { t: 160, size: 11, travel: 380, lob: 0.3, spin: 12, impact: CRUMB, sparks: 10 }),
       { type: 'burst', t: 260, at: 'src', offset: 0, angle: -Math.PI / 2, spread: 0.7, shape: ['drumstick', 'wing', 'nugget'], colors: CRUMB, count: 10, speed: [280, 420], life: [900, 1100], size: [7, 10], gravity: 700, spin: [-7, 7] },
       { type: 'rise', t: 500, at: 'src', shape: 'heart', colors: ['#ff7a86', '#ffb3c0', '#ffffff'], dur: 800, rate: 26, size: [6, 10], width: 1.4 },
       { type: 'ring', t: 500, at: 'src', color: '#ff7a86', width: 5, dur: 600 },
@@ -579,20 +800,22 @@ const SKILL = {
     steps: [
       charge(CRUMB, 0, { dur: 300 }),
       ...[0, 1, 2].flatMap((i) => [
-        { type: 'bolt', t: 260 + i * 170, color: i === 2 ? '#ffd76a' : '#e9b04f', width: 5 + i * 2.5, amp: 3, sag: i % 2 ? -40 : 40, dur: 300, segments: 10, hit: i === 0 },
+        { type: 'bolt', t: 260 + i * 170, color: i === 2 ? '#ffd76a' : '#e9b04f', width: 5 + i * 2.5, amp: 3, sag: i % 2 ? -40 : 40, dur: 300, segments: 10, hit: i === 0, strike: true },
         { type: 'burst', t: 280 + i * 170, at: 'tgt', shape: 'spark', colors: ['#ffffff', '#ffd76a'], count: 5 + i * 3, speed: [240, 420 + i * 80], life: [180, 320], size: [2, 4] },
         { type: 'shake', t: 280 + i * 170, mag: 3 + i * 2, dur: 180 },
       ]),
-      ...later(620, impact(CRUMB, { count: 12, debris: 'crumb', debrisColors: CRUMB })),
+      ...later(600, impact(CRUMB, { count: 12, debris: 'crumb', debrisColors: CRUMB })),
     ],
   }),
+  // A handful of bites: four nuggets, four separate hits, then the taste flows back.
   'rostics-bites': () => ({
     covers: ['drain'],
     steps: [
-      toss('nugget', { t: 0, size: 9, count: 7, gap: 40, fan: 20, spread: 26, alternate: true, arc: 0.24, spin: 10, travel: 360, hitOnce: true, impact: CRUMB, sparks: 10, debris: 'crumb', debrisColors: CRUMB }),
-      { type: 'slash', t: 560, at: 'tgt', color: '#ffffff', count: 2, angle: 0, curve: 0.45, space: 26, width: 5, len: 1.1, gap: 0, dur: 300 },
-      { type: 'projectile', t: 760, from: 'tgt', to: 'src', shape: 'orb', colors: ['#8ff0b0'], size: 5, count: 6, gap: 50, fan: 16, travel: 460, arc: 0.3, alternate: true, trail: { shape: 'dot', colors: ['#8ff0b0'], size: [2, 4], rate: 40 } },
-      { type: 'rise', t: 1150, at: 'src', shape: 'plus', colors: HEAL, dur: 450, rate: 18 },
+      toss('nugget', { t: 0, size: 10, count: 4, gap: 150, fan: 16, spread: 20, alternate: true, arc: 0.26, spin: 10, travel: 360, strike: true,
+        onHit: [...impact(CRUMB, { count: 8, shake: 4, debris: 'crumb', debrisColors: CRUMB, debrisCount: 4 }), { type: 'slash', color: '#ffffff', count: 2, cross: true, angle: -0.4, curve: 0.45, width: 4, len: 0.8, gap: 0, dur: 220 }] }),
+      { type: 'slash', t: 840, at: 'tgt', color: '#ffffff', count: 2, angle: 0, curve: 0.45, space: 26, width: 5, len: 1.1, gap: 0, dur: 300 },
+      { type: 'projectile', t: 960, from: 'tgt', to: 'src', shape: 'orb', colors: ['#8ff0b0'], size: 5, count: 6, gap: 50, fan: 16, travel: 460, arc: 0.3, alternate: true, trail: { shape: 'dot', colors: ['#8ff0b0'], size: [2, 4], rate: 40 } },
+      { type: 'rise', t: 1350, at: 'src', shape: 'plus', colors: HEAL, dur: 450, rate: 18 },
     ],
   }),
   'rostics-drumsticks': () => ({
@@ -624,14 +847,11 @@ const SKILL = {
     ],
   }),
   'rostics-ice-cream-cone': () => ({
-    covers: ['sap', 'weaken', 'cleanse'],
     steps: [
       { type: 'stamp', t: 0, at: 'src', shape: 'cone', size: 0.45, dy: -0.95, halo: '#cfefff', dur: 640 },
-      { type: 'beam', t: 260, shape: ['twinkle', 'dot'], colors: ICE, size: [4, 7], size2: 3, dur: 460, rate: 80, speed: [560, 720], spread: 0.14 },
+      { type: 'beam', t: 260, shape: ['snowflake', 'twinkle', 'dot'], colors: ICE, size: [4, 7], size2: 3, dur: 460, rate: 80, speed: [560, 720], spread: 0.14 },
       { type: 'flash', t: 560, at: 'tgt', color: '#dff6ff', alpha: 0.75, size: 2.4, dur: 360, hit: true },
-      { type: 'orbit', t: 560, at: 'tgt', shape: 'shard', colors: ICE, count: 8, from: 0.5, to: 1.3, turns: 0.4, size: 9, dur: 700, flat: 0.8 },
-      { type: 'rise', t: 760, at: 'tgt', shape: 'arrowDown', colors: ['#8fb8ff'], dur: 360, rate: 12, down: true, size: [6, 9] },
-      { type: 'projectile', t: 800, from: 'tgt', to: 'src', shape: 'orb', colors: ['#ffe066'], size: 4, count: 4, gap: 60, fan: 14, travel: 400, arc: 0.3, alternate: true },
+      { type: 'orbit', t: 560, at: 'tgt', shape: 'shard', colors: ICE, count: 8, from: 1.3, to: 0.6, turns: 0.4, size: 9, dur: 500, flat: 0.8 },
     ],
   }),
 
@@ -750,10 +970,254 @@ const SKILL = {
       { type: 'rise', t: 800, at: 'tgt', shape: ['flame', 'smoke'], colors: [...FIRE.slice(1), ...SMOKE], dur: 650, rate: 30, size: [6, 11], size2: 4 },
     ],
   }),
+
+  // ---- new fighters
+  // Three flavours: the box rolls up overhead and fires its three burgers one after another.
+  'bk-burger-box': () => ({
+    steps: [
+      { type: 'stamp', t: 0, at: 'src', shape: 'tram', size: 0.4, dy: -1.0, halo: '#ffb15c', dur: 1000, lift: 0.1 },
+      ...['#ffc21a', '#e8322a', '#ff9a1f'].map((filling, i) => toss('burger', { t: 300 + i * 190, size: 12, colors: [filling], travel: 380, arc: [0.3, 0, -0.3][i], spin: 5, hit: i === 0, strike: true,
+        onHit: impact([filling, '#ffffff', '#ffd76a'], { count: 10, shake: 4 + i, debris: 'seed', debrisColors: ['#fff1cf'], debrisCount: 4 }) })),
+      { type: 'ring', t: 1080, at: 'tgt', color: '#ff8732', width: 7, dur: 420 },
+    ],
+  }),
+  // Two storeys: a patty drops on the enemy, then a second one lands on top of it.
+  'bk-big-king': () => ({
+    steps: [
+      charge(GOLD, 0, { dur: 320 }),
+      { type: 'stamp', t: 60, at: 'src', shape: 'crown', size: 0.32, dy: -1.05, halo: '#ffd76a', dur: 560 },
+      { type: 'slam', t: 300, at: 'tgt', shape: 'patty', size: 0.55, height: 2.8, fall: 300, hold: 420, dy: 0.2, ground: 0.75, hit: true, strike: true,
+        onHit: [...impact(FIRE, { count: 10, debris: 'seed', debrisColors: ['#fff1cf'] }), groundRing('#ffd76a')] },
+      { type: 'slam', t: 520, at: 'tgt', shape: 'patty', size: 0.55, height: 3, fall: 300, hold: 200, dy: -0.18, ground: 0.75, strike: true,
+        onHit: [...impact(GOLD, { count: 12, shake: 7, debris: 'cheese', debrisColors: CHEESE, debrisCount: 5 }), { type: 'burst', shape: 'twinkle', colors: GOLD, count: 6, speed: [100, 220], life: [400, 600], size: [5, 8] }] },
+    ],
+  }),
+  // The packet tears open and the wipe goes back and forth across the enemy, leaving a shine.
+  'bk-wet-wipe': () => ({
+    steps: [
+      { type: 'stamp', t: 0, at: 'src', shape: 'sachet', size: 0.34, dy: -1.0, dur: 420, spin: 0.4 },
+      { type: 'burst', t: 300, at: 'src', dy: -1.0, shape: 'twinkle', colors: CLEAN, count: 8, speed: [60, 160], life: [300, 500], size: [4, 7] },
+      { type: 'glide', t: 320, at: 'tgt', shape: 'cloth', size: 0.42, inward: true, path: [[-1.4, -0.35], [0.9, -0.2], [-0.9, 0.1], [1.2, 0.35]], dur: 720, contact: [1], rock: 0.25, hit: true,
+        trail: { shape: 'twinkle', colors: CLEAN, size: [3, 6], rate: 40 }, onHit: [{ type: 'shake', mag: 3, dur: 160 }] },
+      { type: 'flash', t: 1040, at: 'tgt', color: '#e6fbff', alpha: 0.45, size: 2, dur: 300 },
+      { type: 'burst', t: 1040, at: 'tgt', shape: 'twinkle', colors: CLEAN, count: 10, speed: [40, 140], life: [400, 700], size: [4, 8] },
+    ],
+  }),
+  // A double helping: two big dollops, then a sticky orange string keeps drinking from the enemy.
+  'bk-sauce-xxl-chili-cheese': () => ({
+    covers: ['leech'],
+    steps: [
+      { type: 'stamp', t: 0, at: 'src', shape: 'dip', colors: ['#ffb21a'], size: 0.42, dy: -1.0, halo: '#ffc21a', dur: 700 },
+      toss('drop', { t: 280, size: 13, count: 2, gap: 160, alternate: true, arc: 0.3, lob: 0.2, face: true, faceOffset: Math.PI / 2, spin: 0, colors: ['#ffb21a', '#ff9a1f'], travel: 400,
+        onHit: impact(CHILICHEESE, { count: 8, debris: 'splat', debrisColors: CHILICHEESE }) }),
+      { type: 'rise', t: 760, at: 'tgt', shape: 'drop', colors: CHILICHEESE, down: true, dur: 500, rate: 20, size: [4, 7], speed: [60, 120], width: 0.8 },
+      ...leechFx(940, 'tgt', 'src', { color: '#ffb21a' }),
+    ],
+  }),
+  // Hot and cold: a hot brownie and a cold scoop spiral in from both sides and meet in a cloud of steam.
+  'bk-brownie-ice-cream': () => ({
+    steps: [
+      charge([...FIRE.slice(0, 2), ...ICE], 0, { dur: 380, count: 24 }),
+      toss('brownie', { t: 320, size: 12, travel: 400, arc: 0.42, spin: 5, trail: { shape: 'flame', colors: FIRE, size: [3, 6], size2: 1, rate: 50 }, onHit: impact(FIRE, { count: 8 }) }),
+      toss('scoop', { t: 320, size: 12, travel: 400, arc: -0.42, spin: -5, hit: false, trail: { shape: 'snowflake', colors: ICE, size: [3, 5], rate: 40 }, onHit: impact(ICE, { count: 8 }) }),
+      { type: 'flash', t: 720, at: 'tgt', color: '#ffffff', alpha: 0.6, size: 2.2, dur: 280 },
+      { type: 'burst', t: 740, at: 'tgt', shape: 'smoke', colors: ['rgba(255,255,255,.5)', 'rgba(220,240,255,.45)'], count: 10, angle: -Math.PI / 2, spread: 1.2, speed: [50, 120], life: [600, 900], size: [6, 9], size2: 22 },
+    ],
+  }),
+  // An icy fish leaps in a high arc, trailing snow, and dives into the enemy.
+  'bk-fish-burger': () => ({
+    steps: [
+      { type: 'rise', t: 0, at: 'src', shape: 'snowflake', colors: ICE, dur: 360, rate: 18, size: [4, 7], spin: 2 },
+      toss('fish', { t: 260, size: 13, colors: ['#bfe6ff'], travel: 480, lob: 0.55, arc: 0.1, face: true, spin: 0, halo: '#a9e4ff', trail: { shape: ['snowflake', 'dot'], colors: ICE, size: [2, 5], rate: 50 },
+        onHit: [...impact(ICE, { count: 12 }), { type: 'burst', dy: 0.3, angle: -Math.PI / 2, spread: 0.6, shape: 'drop', colors: ['#bfe6ff', '#8fd3ff', '#ffffff'], count: 12, speed: [240, 400], life: [400, 600], size: [3, 6], gravity: 900 }] }),
+    ],
+  }),
+  // A sugar bomb: the brownie bursts into a cloud of sugar, and the sugar rush fills the energy.
+  'bk-brownie': () => ({
+    covers: ['charge'],
+    steps: [
+      { type: 'orbit', t: 0, at: 'src', shape: 'sugar', colors: SUGAR, count: 10, from: 1.6, to: 0.6, turns: 1.2, size: 4, dur: 420 },
+      toss('brownie', { t: 300, size: 13, travel: 380, lob: 0.15, spin: 4, halo: '#ffe9f3',
+        onHit: [...impact(['#ffffff', '#ffb3cf', '#ffd76a'], { count: 14, shake: 6 }), { type: 'flash', screen: true, color: '#fff0f6', alpha: 0.12, dur: 240 },
+          { type: 'burst', shape: ['sugar', 'twinkle'], colors: [...SUGAR, '#ffb3cf'], count: 22, speed: [180, 460], life: [500, 800], size: [3, 6], gravity: 220, drag: 1.5 }] }),
+      ...chargeFx(860),
+    ],
+  }),
+  // A long sticky string of sweet-and-sour sauce that stays and drinks.
+  'bk-sauce-sweet-sour': () => ({
+    covers: ['leech'],
+    steps: [
+      { type: 'stamp', t: 0, at: 'src', shape: 'dip', colors: ['#ff9a2e'], size: 0.34, dy: -0.95, halo: '#ffc070', dur: 560 },
+      { type: 'beam', t: 240, shape: 'drop', colors: SWEETSOUR, size: [4, 7], size2: 5, dur: 260, rate: 60, speed: [620, 760], spread: 0.05, hit: true },
+      { type: 'bolt', t: 380, color: '#ff9a2e', width: 7, amp: 0, wave: 5, sag: 34, segments: 14, dur: 520, soft: true },
+      ...later(500, impact(SWEETSOUR, { count: 8, debris: 'splat', debrisColors: SWEETSOUR })),
+      { type: 'rise', t: 540, at: 'tgt', shape: 'drop', colors: SWEETSOUR, down: true, dur: 420, rate: 16, size: [3, 6], speed: [40, 90], width: 0.7 },
+      ...leechFx(840, 'tgt', 'src', { color: '#ff9a2e' }),
+    ],
+  }),
+  // The garlic spirit: a smelly cloud swirls round the enemy and settles in its stomach.
+  'bk-sauce-garlic': () => ({
+    steps: [
+      { type: 'rise', t: 0, at: 'src', shape: 'garlic', dur: 300, rate: 10, size: [5, 8], speed: [60, 110], spin: 3 },
+      { type: 'beam', t: 200, shape: 'smoke', colors: GARLIC_SMOKE, size: [9, 13], size2: 26, dur: 420, rate: 55, speed: [360, 460], spread: 0.3 },
+      { type: 'orbit', t: 420, at: 'tgt', shape: ['smoke', 'smoke', 'garlic'], colors: GARLIC_SMOKE, count: 9, from: 1.7, to: 0.5, turns: 1.3, size: 11, dur: 640 },
+      { type: 'flash', t: 980, at: 'tgt', color: '#efffd0', alpha: 0.5, size: 2.1, dur: 300, hit: true },
+      ...later(980, impact(['#f6ffe0', '#d4f09a'], { count: 8, shake: 4 })),
+    ],
+  }),
+  // Three squirts of ketchup, each a separate splat, each a little bigger.
+  'bk-sauce-ketchup': () => ({
+    steps: [
+      { type: 'stamp', t: 0, at: 'src', shape: 'dip', colors: ['#e0241a'], size: 0.34, dy: -0.95, halo: '#ff5a3c', dur: 520 },
+      ...[0, 1, 2].map((i) => toss('drop', { t: 260 + i * 170, size: 8 + i, travel: 300, ease: 'in', arc: [0.18, -0.18, 0][i], face: true, faceOffset: Math.PI / 2, spin: 0, colors: ['#e0241a'], hit: i === 0, strike: true,
+        trail: { shape: 'drop', colors: KETCHUP, size: [2, 3], rate: 50 },
+        onHit: [...impact(KETCHUP, { count: 6 + i * 3, shake: 3 + i * 1.5 }), { type: 'burst', shape: 'splat', colors: KETCHUP, count: 4 + i * 2, speed: [80, 220], life: [500, 800], size: [3, 6], gravity: 420 }] })),
+    ],
+  }),
+  // A jet of hot mustard straight through the guard; the enemy's eyes water.
+  'bk-sauce-mustard': () => ({
+    covers: ['weaken'],
+    steps: [
+      charge(MUSTARD, 0, { dur: 300, count: 16 }),
+      { type: 'beam', t: 260, shape: 'drop', colors: MUSTARD, size: [4, 6], size2: 4, dur: 320, rate: 90, speed: [900, 1050], spread: 0.03, hit: true },
+      { type: 'ring', t: 520, at: 'tgt', shape: 'hex', color: '#fff07a', from: 40, to: 100, width: 5, dur: 340 },
+      { type: 'burst', t: 520, at: 'tgt', along: true, spread: 0.25, shape: ['spark', 'drop'], colors: [...MUSTARD, '#ff7a1a'], count: 16, speed: [400, 720], life: [260, 460], size: [2.5, 5] },
+      ...later(520, impact(MUSTARD, { count: 10, shake: 6 })),
+      { type: 'rise', t: 720, at: 'tgt', shape: 'drop', colors: ['#bfe6ff'], down: true, dur: 380, rate: 10, size: [3, 5], speed: [40, 80], width: 0.5 },
+      { type: 'rise', t: 760, at: 'tgt', shape: 'arrowDown', colors: ['#ffd21f'], dur: 380, rate: 12, down: true, size: [6, 9] },
+    ],
+  }),
+  // Indian heat: spices spiral into the enemy and it glows like a curry pot.
+  'bk-sauce-curry': () => ({
+    covers: ['burn'],
+    steps: [
+      { type: 'orbit', t: 0, at: 'src', shape: ['crumb', 'dot'], colors: ['#c0461a', '#f2a51d', '#ffd06a'], count: 12, from: 0.5, to: 1.5, turns: 1.2, size: 4, dur: 460 },
+      { type: 'orbit', t: 300, at: 'tgt', shape: ['crumb', 'dot', 'flame'], colors: CURRY, count: 14, from: 2.0, to: 0.4, turns: 1.6, size: 6, dur: 620 },
+      { type: 'pillar', t: 860, at: 'tgt', colors: ['#ffe9a8', '#f2a51d'], width: 0.55, height: 2.4, dur: 700, alpha: 0.6, hit: true },
+      ...later(860, impact(CURRY, { count: 12 })),
+      { type: 'rise', t: 960, at: 'tgt', shape: 'flame', colors: CURRY, c2: '#fff6c8', dur: 650, rate: 28, size: [6, 10], size2: 2, speed: [80, 160] },
+    ],
+  }),
+  // The archipelago: an island lands on the enemy, then little islands circle the team and heal it.
+  'bk-sauce-1000-islands': () => ({
+    covers: ['team'],
+    steps: [
+      toss('island', { t: 0, size: 12, travel: 420, lob: 0.3, spin: 1, onHit: [...impact(ISLANDS, { count: 10, debris: 'drop', debrisColors: ['#7fd3ff', '#ffab7a'] }), groundRing('#7fd3ff', { to: 140 })] }),
+      { type: 'ring', t: 500, at: 'src', color: '#7fd3ff', flat: 0.35, dy: 0.6, from: 20, to: 150, width: 5, dur: 700 },
+      { type: 'orbit', t: 520, at: 'src', shape: 'island', count: 3, from: 1.9, to: 1.3, turns: 0.6, flat: 0.4, dy: 0.25, size: 11, dur: 1000 },
+      { type: 'ring', t: 700, at: 'src', color: '#ffab7a', flat: 0.35, dy: 0.6, from: 20, to: 130, width: 4, dur: 700 },
+      { type: 'rise', t: 800, at: 'src', shape: ['heart', 'plus', 'drop'], colors: ['#ff8a5c', '#ffd0b0', ...HEAL], dur: 700, rate: 22, size: [5, 9], width: 1.4 },
+    ],
+  }),
+  // A cheese slice sticks to the enemy and melts; a cheese string drinks from it.
+  'bk-cheeseburger-classic': () => ({
+    covers: ['leech'],
+    steps: [
+      { type: 'stamp', t: 0, at: 'src', shape: 'burger', colors: ['#ffc21a'], size: 0.34, dy: -0.95, dur: 520 },
+      toss('cheese', { t: 260, size: 13, colors: ['#ffc21a'], travel: 380, spin: 6, lob: 0.12,
+        onHit: [...impact(CHEESE, { count: 10 }), { type: 'rise', shape: 'drop', colors: CHEESE, down: true, dur: 500, rate: 18, size: [4, 7], speed: [50, 100], width: 0.7 }] }),
+      ...leechFx(720, 'tgt', 'src', { color: '#ffc21a' }),
+    ],
+  }),
+  // The Whopper's little brother: a short flame, a small grill and two marks instead of three.
+  'bk-whopper-junior': () => ({
+    covers: ['burn'],
+    steps: [
+      charge(FIRE, 0, { dur: 260, shape: 'flame', count: 10 }),
+      { type: 'beam', t: 200, shape: 'flame', colors: FIRE, size: [5, 8], size2: 12, dur: 360, rate: 60, speed: [560, 700], spread: 0.1, hit: true },
+      { type: 'stamp', t: 420, at: 'tgt', shape: 'grill', size: 0.42, dur: 520, halo: '#ff7a1a' },
+      { type: 'slash', t: 460, at: 'tgt', color: '#ff7b2a', count: 2, angle: -0.35, curve: 0, space: 14, width: 5, len: 0.9, gap: 60, dur: 380 },
+      ...later(460, impact(FIRE, { count: 8, shake: 4 })),
+      { type: 'rise', t: 560, at: 'tgt', shape: 'flame', colors: FIRE, dur: 460, rate: 16, size: [4, 7], size2: 2, speed: [60, 120], width: 0.6 },
+    ],
+  }),
+  // Three shakes of the sachet over the enemy: three clumps of herbs, three hits.
+  'vkusno-seasoning-provence-sour-cream': () => ({
+    covers: ['weaken'],
+    steps: [
+      { type: 'stamp', t: 0, at: 'tgt', shape: 'sachet', colors: ['#e2231a'], size: 0.3, dy: -1.45, tilt: 2.7, dur: 1000 },
+      ...[0, 1, 2].flatMap((i) => [
+        { type: 'rain', t: 160 + i * 200, at: 'tgt', shape: ['leaf', 'leaf', 'sugar'], colors: [...PROVENCE, '#ffffff'], count: 10, dur: 120, fall: 240, top: 1.3, size: [2, 3.5], width: 0.45, spin: [-6, 6] },
+        { type: 'burst', t: 400 + i * 200, at: 'tgt', shape: ['leaf', 'twinkle'], colors: [...PROVENCE, '#ffffff'], count: 8 + i * 2, speed: [100, 240], life: [300, 500], size: [2.5, 4.5], hit: i === 0, strike: true },
+        { type: 'ring', t: 400 + i * 200, at: 'tgt', color: '#a9c46a', from: 14, to: 60 + i * 10, width: 4, dur: 260 },
+        { type: 'shake', t: 400 + i * 200, mag: 3 + i, dur: 150 },
+      ]),
+      { type: 'rise', t: 900, at: 'tgt', shape: 'arrowDown', colors: ['#8fb8ff'], dur: 380, rate: 12, down: true, size: [6, 9] },
+    ],
+  }),
+  // A pickle slice flicked straight at the forehead, through any guard.
+  'vkusno-hamburger': () => ({
+    steps: [
+      { type: 'stamp', t: 0, at: 'src', shape: 'pickle', size: 0.22, dy: -0.95, dur: 420, spin: 6 },
+      toss('pickle', { t: 300, size: 10, travel: 220, ease: 'in', arc: 0, spin: 14, grow: 1.3, trail: { shape: 'drop', colors: PICKLE, size: [2, 3], rate: 60 },
+        onHit: [...impact(['#ffffff', '#9cc95a', '#d6ec9a'], { count: 12, shake: 7 }),
+          { type: 'ring', shape: 'hex', color: '#d6ec9a', from: 40, to: 100, width: 5, dur: 320 },
+          { type: 'burst', along: true, spread: 0.3, shape: 'drop', colors: PICKLE, count: 10, speed: [300, 520], life: [300, 500], size: [2.5, 4], gravity: 300 },
+          { type: 'stamp', shape: 'star', colors: ['#fff6a8'], size: 0.22, dx: 0.4, dy: -0.6, dur: 380 }] }),
+    ],
+  }),
+  // Two wraps circle the enemy and lash it twice, one way and back.
+  'rostics-i-roll': () => ({
+    steps: [
+      { type: 'orbit', t: 0, at: 'src', shape: 'wrap', count: 2, from: 1.3, to: 1.0, turns: 1, size: 10, dur: 420 },
+      { type: 'orbit', t: 380, at: 'tgt', shape: 'wrap', count: 2, from: 1.8, to: 0.5, turns: 1.4, size: 11, dur: 520, flat: 0.6 },
+      { type: 'slash', t: 860, at: 'tgt', color: '#ff3347', count: 1, angle: -0.3, curve: 0.6, width: 9, len: 1.4, dur: 320, hit: true, strike: true },
+      ...later(860, impact(['#ffffff', '#ff3347', '#ffd166'], { count: 10 })),
+      { type: 'slash', t: 1060, at: 'tgt', color: '#ffffff', count: 1, angle: 2.84, curve: 0.6, width: 9, len: 1.4, dur: 320, strike: true },
+      ...later(1060, impact(['#ffffff', '#efd7a4', '#7cc04a'], { count: 12, shake: 7, debris: 'leaf', debrisColors: HERB, debrisCount: 5 })),
+    ],
+  }),
+  // A slice pulled away: three cheese strings stretch from the enemy and drink from it.
+  'dodo-cheesy-chicken': () => ({
+    covers: ['leech'],
+    steps: [
+      { type: 'stamp', t: 0, at: 'src', shape: 'pizza', size: 0.4, dy: -1.0, spin: 1.5, halo: '#ffd23f', dur: 560 },
+      toss('slice', { t: 300, size: 14, travel: 380, spin: 5, onHit: impact(CHEESE, { count: 12, debris: 'cube', debrisColors: ['#e8322a'], debrisSize: [2.5, 4] }) }),
+      ...[[44, 3], [20, 5], [66, 2]].map(([sag, w], i) => ({ type: 'bolt', t: 700 + i * 60, from: 'tgt', to: 'src', color: ['#ffd23f', '#ffe98a', '#ffc21a'][i], width: w + 2, amp: 0, wave: 4 + i * 2, sag, segments: 14, dur: 900, soft: true })),
+      ...leechFx(800, 'tgt', 'src', { tether: false }),
+    ],
+  }),
+  // The envelope opens on the enemy: melted cheese and a burst of confetti.
+  'dodo-starter-cheese': () => ({
+    steps: [
+      { type: 'stamp', t: 0, at: 'src', shape: 'envelope', size: 0.36, dy: -0.95, halo: '#ffe36e', dur: 520, spin: 0.6 },
+      toss('envelope', { t: 300, size: 14, travel: 400, lob: 0.2, spin: 6, halo: '#ffe36e',
+        onHit: [...impact(CHEESE, { count: 12, shake: 7 }),
+          { type: 'burst', angle: -Math.PI / 2, spread: 0.9, shape: ['star', 'twinkle', 'cube'], colors: CONFETTI, count: 16, speed: [200, 420], life: [600, 900], size: [4, 7], gravity: 500 },
+          { type: 'burst', shape: 'splat', colors: CHEESE, count: 8, speed: [60, 180], life: [600, 800], size: [4, 7], gravity: 400 }] }),
+    ],
+  }),
+  // A dollop of sour cream lands softly and the enemy dozes off; the morning sun warms the fighter.
+  'dodo-syrniki': () => ({
+    covers: ['heal'],
+    steps: [
+      { type: 'stamp', t: 0, at: 'src', shape: 'syrnik', size: 0.36, dy: -0.95, dur: 560, halo: '#fff0c8' },
+      toss('splat', { t: 280, size: 13, colors: ['#ffffff'], travel: 420, lob: 0.35, spin: 2,
+        onHit: [{ type: 'flash', color: '#fff8e8', alpha: 0.6, size: 2, dur: 300 }, { type: 'ring', color: '#fff0c8', from: 20, to: 80, width: 5, dur: 420 },
+          { type: 'burst', shape: 'splat', colors: SOURCREAM, count: 10, speed: [60, 180], life: [600, 900], size: [4, 8], gravity: 360 }] }),
+      { type: 'stamp', t: 820, at: 'src', shape: 'star', colors: ['#ffe08a'], size: 0.26, dx: -0.6, dy: -0.9, halo: '#ffd75a', dur: 800, spin: 1, lift: 0.3 },
+      { type: 'rise', t: 860, at: 'src', shape: ['plus', 'heart'], colors: [...HEAL, '#fff0c8'], dur: 600, rate: 18 },
+      { type: 'ring', t: 860, at: 'src', color: '#ffe08a', width: 5, dur: 600 },
+    ],
+  }),
+  // Peck, peck, peck: three jabs of the beak, each a hit, feathers flying.
+  'dodo-beak': () => ({
+    steps: [
+      { type: 'glide', t: 0, at: 'tgt', shape: 'beak', size: 0.44, aim: true,
+        path: [[-1.7, 0], [-1.1, 0], [-0.4, -0.18], [-1.0, 0], [-0.4, 0.18], [-1.0, 0], [-0.35, 0], [-1.6, 0]],
+        times: [0, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1], contact: [2, 4, 6], dur: 1000, hit: true, strike: true,
+        onHit: [...impact(['#ffffff', '#ff7a1a', '#ffd166'], { count: 8, shake: 4 }),
+          { type: 'burst', shape: 'feather', colors: ['#ffffff', '#ffe0cc'], count: 3, speed: [80, 180], life: [600, 900], size: [4, 6], gravity: 120, spin: [-3, 3] }] },
+      { type: 'burst', t: 820, at: 'tgt', shape: 'star', colors: GOLD, count: 6, speed: [120, 240], life: [400, 600], size: [5, 8] },
+    ],
+  }),
 };
 
 // ------------------------------------------------------------------------------ status layers
-function layers(event, skill, covered, t0, brand) {
+// How long the arena shows a fighter missing its turn (frozen or asleep).
+const SKIP = 720;
+
+function layers(event, skill, covered, t0, brand, skips) {
   const steps = [];
   const has = (k) => event.effects.includes(k) && !covered.has(k);
   // Regeneration is drawn by its own layer; the rest of `heal` is the move's own healing.
@@ -797,14 +1261,55 @@ function layers(event, skill, covered, t0, brand) {
     { type: 'burst', t: t0 + 220, at: 'tgt', shape: 'star', colors: GOLD, count: 8, speed: [80, 200], life: [500, 800], size: [5, 8] },
   );
   if (has('team')) steps.push({ type: 'rise', t: t0 + 100, at: 'src', shape: 'heart', colors: ['#ff7a86', '#ffffff'], dur: 600, rate: 20 });
+  if (has('purge')) steps.push(...purgeFx(t0));
+  // Freezing and falling asleep usually cost the very next turn: then the ice block and the moon
+  // stay on until that skipped turn is over, instead of vanishing and coming back.
+  if (has('freeze')) {
+    const t = t0 + 60, held = skips.find((k) => k.fresh && k.kind === 'freeze');
+    steps.push(...frostFx(t0, 'tgt'), { type: 'encase', t, at: 'tgt', ...(held ? { dur: held.start + SKIP - t, shake: held.start - t, crack: held.recovered } : { dur: 1000 }) });
+  }
+  if (has('sleep')) {
+    const t = t0 + 100, held = skips.find((k) => k.fresh && k.kind === 'sleep');
+    steps.push(...sleepFx(t, held ? held.start + SKIP - t : 1100, 'tgt'));
+  }
+  if (has('thaw')) steps.push(...thawFx(t0 + 80));
+  if (has('wake')) steps.push(...wakeFx(t0 + 60, 'tgt'));
+  if (has('toxic')) steps.push(...heartburnFx(t0 + 140, 'tgt'));
+  if (has('leech')) steps.push(...leechFx(t0 + 180, 'tgt', 'src'));
+  if (has('charge')) steps.push(...chargeFx(t0 + 160));
+  if (has('immune')) steps.push(...immuneFx(t0 + 120));
   const drained = skill?.drain && !covered.has('drain') && heal;
   if (drained) steps.push(backOrbs(['#8ff0b0'], t0 + 160, { size: 5 }));
   // Vampiric bite: a basic hit that heals sends drops of red back to the attacker.
   if (event.command === 'hit' && heal) steps.push({ type: 'projectile', t: t0 + 120, from: 'tgt', to: 'src', shape: 'drop', colors: ['#ff4d6d', '#d8274f'], size: 5, count: 3, gap: 60, fan: 12, travel: 380, arc: 0.3, alternate: true,
     trail: { shape: 'dot', colors: ['#ff8fa3'], size: [2, 3], rate: 35 } });
   if (heal && !['heal', 'team', 'drain'].some((k) => covered.has(k)) && !drained) steps.push({ type: 'rise', t: t0 + 140, at: 'src', shape: 'plus', colors: HEAL, dur: 480, rate: 18 });
-  if (has('cleanse')) steps.push({ type: 'rise', t: t0 + 140, at: 'src', shape: 'drop', colors: ICE, dur: 420, rate: 16, size: [4, 7], speed: [40, 90], down: true });
+  if (has('cleanse')) steps.push(
+    { type: 'rise', t: t0 + 140, at: 'src', shape: 'drop', colors: ICE, dur: 420, rate: 16, size: [4, 7], speed: [40, 90], down: true },
+    { type: 'burst', t: t0 + 160, at: 'src', shape: 'twinkle', colors: CLEAN, count: 8, speed: [60, 160], life: [400, 600], size: [4, 7] },
+  );
   if (event.recoil) steps.push({ type: 'burst', t: t0 + 220, at: 'src', shape: 'spark', colors: ['#ff6b6b', '#ffd166'], count: 10, speed: [140, 300], life: [260, 460], size: [2, 4] }, { type: 'shake', t: t0 + 220, mag: 3, dur: 200 });
+  return steps;
+}
+
+// A turn the engine skipped: the frozen fighter rattles in its ice and breaks out, the sleeping
+// one snores and wakes; burning, heartburn and draining still cost it HP.
+function skipFx(skip) {
+  const { at, start: t } = skip, other = at === 'src' ? 'tgt' : 'src';
+  const steps = [];
+  if (skip.kind === 'freeze') {
+    if (!skip.fresh) steps.push({ type: 'encase', t, at, instant: true, dur: SKIP, shake: 0, crack: skip.recovered });
+    steps.push({ type: 'burst', t: t + 80, at, shape: 'snowflake', colors: ICE, count: 6, speed: [30, 80], life: [600, 800], size: [3, 6], gravity: -30 });
+    if (skip.recovered) steps.push({ type: 'rise', t: t + SKIP, at, shape: 'drop', colors: ICE, down: true, dur: 300, rate: 20, size: [3, 5], speed: [60, 120] });
+  } else {
+    if (!skip.fresh) steps.push(...sleepFx(t, SKIP, at));
+    steps.push({ type: 'ring', t: t + 100, at, color: '#b9a7ff', flat: 0.3, dy: 0.72, from: 20, to: 70, width: 3, alpha: 0.5, dur: 600 });
+    if (skip.recovered) steps.push(...wakeFx(t + SKIP - 100, at));
+  }
+  const tick = t + 260;
+  if (skip.burned) steps.push({ type: 'rise', t: tick, at, shape: 'flame', colors: FIRE, dur: 420, rate: 26, size: [5, 9], size2: 2 });
+  if (skip.poisoned) steps.push(...heartburnFx(tick, at, { small: true }));
+  if (skip.leeched) steps.push(...leechFx(tick + 60, at, other, { small: true }));
   return steps;
 }
 
@@ -909,23 +1414,21 @@ const ULT = {
       { type: 'burst', t: 1100, at: 'tgt', shape: 'smoke', colors: SMOKE, count: 7, angle: -Math.PI / 2, spread: 0.6, speed: [50, 100], life: [700, 900], size: [7, 11], size2: 22 },
     ],
   }),
-  // The ice age: snow falls, an ice column freezes the enemy, its energy is pulled away and
-  // the cola wraps itself in ice.
+  // The ice age: snow falls, an ice column erupts and freezes the enemy solid, and the cola wraps
+  // itself in ice.
   'bk-cola-08': () => ({
-    covers: ['sap', 'shield'],
+    covers: ['shield'],
     dim: '#06233d',
     steps: [
       { type: 'stamp', t: 150, at: 'src', shape: 'cup', colors: ['#d62300'], size: 0.58, dy: -1.05, halo: '#a9e4ff', dur: 720 },
       { type: 'rain', t: 220, at: 'tgt', shape: 'snowflake', colors: ICE, count: 14, dur: 700, fall: 640, size: [5, 9], spin: [-2, 2], width: 1.6 },
       { type: 'charge', t: 380, at: 'tgt', colors: ICE, dur: 400, count: 16 },
       { type: 'pillar', t: 780, at: 'tgt', colors: ['#ffffff', '#8fd3ff'], width: 0.7, height: 2.8, dur: 700, hit: true },
-      { type: 'bubble', t: 780, at: 'tgt', color: '#bfeaff', hex: true, size: 1.15, dur: 700 },
       { type: 'burst', t: 780, at: 'tgt', dy: 0.5, angle: -Math.PI / 2, spread: 0.7, shape: 'shard', colors: ICE, count: 14, speed: [320, 560], life: [400, 650], size: [5, 9], gravity: 900 },
       ...later(780, heavy(ICE, { count: 12 })),
       { type: 'flash', t: 780, screen: true, color: '#dff6ff', alpha: 0.22, dur: 340 },
-      backOrbs(['#ffe066'], 1250, { size: 5, count: 5 }),
-      { type: 'bubble', t: 1600, at: 'src', color: '#a9e4ff', hex: true, size: 1.4, dur: 880 },
-      { type: 'orbit', t: 1600, at: 'src', shape: 'snowflake', colors: ICE, count: 6, from: 1.55, to: 1.35, turns: 0.6, size: 7, dur: 880 },
+      { type: 'bubble', t: 1250, at: 'src', color: '#a9e4ff', hex: true, size: 1.4, dur: 880 },
+      { type: 'orbit', t: 1250, at: 'src', shape: 'snowflake', colors: ICE, count: 6, from: 1.55, to: 1.35, turns: 0.6, size: 7, dur: 880 },
     ],
   }),
   // A stage hit: spotlights and music, a giant bun drops on the enemy like a mic drop, the
@@ -1053,9 +1556,10 @@ const ULT = {
       { type: 'rise', t: 1450, at: 'src', shape: ['plus', 'twinkle'], colors: [...HEAL, '#ffe36e'], dur: 600, rate: 16 },
     ],
   }),
-  // Hellfire: the screen turns red, fire columns burst under the enemy and a chili meteor lands.
+  // Hellfire: the screen turns red, fire columns burst under the enemy and a chili meteor lands;
+  // the fire left inside burns acid green — heartburn.
   'dodo-diablo': () => ({
-    covers: ['burn'],
+    covers: ['toxic'],
     dim: '#3a0000',
     steps: [
       charge(SPICE, 150, { dur: 420, shape: 'flame', count: 24 }),
@@ -1066,21 +1570,158 @@ const ULT = {
           groundRing('#ff3d12', { to: 200, width: 8, dur: 560 }),
           { type: 'flash', screen: true, color: '#ff5a3a', alpha: 0.2, dur: 320 },
         ] },
-      { type: 'rise', t: 1150, at: 'tgt', shape: 'flame', colors: FIRE, dur: 800, rate: 34, size: [7, 13], size2: 2, speed: [110, 210], width: 1.2 },
+      { type: 'rise', t: 1150, at: 'tgt', shape: 'flame', colors: ['#ff3d12', '#ff7a1a', ...TOXIC], c2: '#f8ffd0', dur: 800, rate: 34, size: [7, 13], size2: 2, speed: [110, 210], width: 1.2 },
+      ...heartburnFx(1350, 'tgt'),
     ],
   }),
-  // Two rolls spin up like a buzzsaw, cut the enemy in an X, then a stream of health flows back.
+  // Two rolls spin up like a buzzsaw and cut the enemy twice, then a stream of health flows back.
   'dodo-dodster': () => ({
     covers: ['drain'],
     steps: [
       { type: 'orbit', t: 150, at: 'src', shape: 'roll', count: 2, from: 1.3, to: 1.1, turns: 2.2, size: 14, dur: 520 },
       { type: 'rise', t: 150, at: 'src', shape: 'flame', colors: FIRE, dur: 400, rate: 24, size: [5, 9], size2: 2 },
-      ...[0.45, -0.45].map((arc, i) => toss('roll', { t: 640 + i * 40, size: 16, spin: arc * 50, travel: 380, arc, hit: i === 0,
-        trail: { shape: 'crumb', colors: CRUMB, size: [2, 4], rate: 40 }, onHit: i ? [] : heavy(FIRE, { debris: 'crumb', debrisColors: CRUMB }) })),
-      { type: 'slash', t: 1060, at: 'tgt', color: '#ffb067', count: 2, cross: true, width: 10, len: 1.7, gap: 50, dur: 320 },
-      { type: 'beam', t: 1240, from: 'tgt', to: 'src', shape: ['dot', 'plus'], colors: ['#8ff0b0', '#5fd98a', '#c9ffd9'], size: [8, 12], size2: 4, dur: 560, rate: 90, speed: [560, 700], spread: 0.12 },
-      { type: 'ring', t: 1600, at: 'src', color: '#8ff0b0', from: 20, to: 80, width: 5, dur: 500 },
-      { type: 'rise', t: 1600, at: 'src', shape: 'plus', colors: HEAL, dur: 420, rate: 20, life: [500, 700] },
+      ...[0.45, -0.45].map((arc, i) => toss('roll', { t: 600 + i * 190, size: 16, spin: arc * 50, travel: 380, arc, hit: i === 0, strike: true,
+        trail: { shape: 'crumb', colors: CRUMB, size: [2, 4], rate: 40 }, onHit: [
+          { type: 'slash', color: '#ffb067', count: 1, angle: i ? 0.7 : -0.7, curve: 0.05, width: 10, len: 1.7, dur: 300 },
+          ...(i ? heavy(FIRE, { debris: 'crumb', debrisColors: CRUMB }) : impact(FIRE, { count: 12, shake: 6, debris: 'crumb', debrisColors: CRUMB })),
+        ] })),
+      { type: 'beam', t: 1260, from: 'tgt', to: 'src', shape: ['dot', 'plus'], colors: ['#8ff0b0', '#5fd98a', '#c9ffd9'], size: [8, 12], size2: 4, dur: 520, rate: 90, speed: [560, 700], spread: 0.12 },
+      { type: 'ring', t: 1580, at: 'src', color: '#8ff0b0', from: 20, to: 80, width: 5, dur: 500 },
+      { type: 'rise', t: 1580, at: 'src', shape: 'plus', colors: HEAL, dur: 420, rate: 20, life: [500, 700] },
+    ],
+  }),
+  // The flavour tram: rails appear, the tram-shaped box rolls up next to the enemy, three burgers
+  // jump out of its windows one by one (three hits), it drives off, and the team gets a treat.
+  'bk-burger-box': () => ({
+    covers: ['team'],
+    steps: [
+      { type: 'glide', t: 150, at: 'tgt', inward: true, shape: 'tram', size: 0.5, path: [[-5.5, 0.36], [-1.75, 0.36], [-1.75, 0.36], [5.5, 0.36]], times: [0, 0.3, 0.74, 1], dur: 1500, bob: 0.025, rails: 0.78, fade: 0.05 },
+      { type: 'burst', t: 600, at: 'tgt', dy: 0.75, shape: 'spark', colors: ['#ffffff', '#ffd25e'], count: 10, angle: -Math.PI / 2, spread: 1.2, speed: [120, 260], life: [200, 360], size: [2, 3.5] },
+      ...['#ffc21a', '#e8322a', '#ff9a1f'].map((filling, i) => ({
+        type: 'glide', t: 650 + i * 170, at: 'tgt', inward: true, shape: 'burger', colors: [filling], size: 0.3, path: [[-1.75 + (i - 1) * 0.49, 0.28], [0, -0.05]], lob: 0.9, dur: 300, ease: 'in', spin: 5, fade: 0.08,
+        contact: [1], hit: i === 0, strike: true,
+        onHit: [...impact([filling, '#ffffff', '#ffd76a'], { count: 12, shake: 5 + i * 2, debris: 'seed', debrisColors: ['#fff1cf'], debrisCount: 5 }), ...(i === 2 ? [{ type: 'flash', screen: true, color: '#ffe0b8', alpha: 0.18, dur: 300 }] : [])],
+      })),
+      { type: 'orbit', t: 1450, at: 'src', shape: 'burger', colors: ['#ffc21a', '#e8322a', '#ff9a1f'], count: 3, from: 1.6, to: 1.25, turns: 0.7, size: 9, dur: 900 },
+      { type: 'rise', t: 1500, at: 'src', shape: 'heart', colors: ['#ff8732', '#ffd25e', '#ffffff'], dur: 650, rate: 22, size: [6, 10], width: 1.4 },
+      { type: 'ring', t: 1500, at: 'src', color: '#ff8732', width: 5, dur: 600 },
+    ],
+  }),
+  // A royal lunch: a golden cloche is brought down over the enemy, it is lifted off a whole
+  // Big King, and the overfed enemy nods off (the sleep layer adds the moon and z's).
+  'bk-big-king': () => ({
+    dim: '#1a0d00',
+    steps: [
+      { type: 'stamp', t: 150, at: 'src', shape: 'crown', size: 0.42, dy: -1.05, halo: '#ffd76a', dur: 700, lift: 0.2 },
+      { type: 'spot', t: 200, at: 'tgt', dur: 1100, color: '#fff2b0' },
+      { type: 'slam', t: 500, at: 'tgt', shape: 'cloche', size: 0.8, height: 3.4, fall: 380, hold: 300, halo: '#ffd76a', ground: 0.8, dy: 0.05, hit: true,
+        onHit: [...heavy(GOLD, { debris: 'seed', debrisColors: ['#fff1cf'], debrisCount: 12 }), groundRing('#ffd76a', { to: 200, width: 8, dur: 560 }),
+          { type: 'flash', screen: true, color: '#fff2b0', alpha: 0.2, dur: 320 }] },
+      { type: 'stamp', t: 1180, at: 'tgt', shape: 'burger', colors: ['#ffc21a'], size: 0.45, dy: -0.1, halo: '#ffd76a', dur: 520 },
+      { type: 'burst', t: 1200, at: 'tgt', shape: ['twinkle', 'star'], colors: GOLD, count: 10, speed: [80, 200], life: [500, 800], size: [4, 7] },
+    ],
+  }),
+  // Refreshing clean: a giant wipe sweeps the enemy twice, everything it had gleams off, and the
+  // fighter is left sparkling, cool and healed.
+  'bk-wet-wipe': () => ({
+    covers: ['heal'],
+    dim: '#032638',
+    steps: [
+      { type: 'stamp', t: 150, at: 'src', shape: 'sachet', size: 0.44, dy: -1.05, halo: '#bfefff', dur: 520, spin: 0.5 },
+      { type: 'burst', t: 560, at: 'src', dy: -1.05, shape: ['twinkle', 'bubble'], colors: CLEAN, count: 14, speed: [100, 260], life: [400, 700], size: [4, 8] },
+      { type: 'glide', t: 520, at: 'tgt', inward: true, shape: 'cloth', size: 0.72, path: [[-2.6, -0.6], [1.1, -0.3], [-1.1, 0.05], [1.1, 0.35], [2.8, 0.5]], times: [0, 0.3, 0.55, 0.8, 1], dur: 1000,
+        contact: [1, 3], rock: 0.3, halo: '#e6fbff', hit: true, trail: { shape: ['twinkle', 'bubble'], colors: CLEAN, size: [3, 7], rate: 55 },
+        onHit: [{ type: 'flash', color: '#ffffff', alpha: 0.5, size: 2.2, dur: 240 }, { type: 'shake', mag: 5, dur: 200 }] },
+      { type: 'slash', t: 1500, at: 'tgt', color: '#ffffff', count: 1, angle: -0.5, curve: 0, width: 4, len: 1.9, dur: 420 },
+      { type: 'burst', t: 1520, at: 'tgt', shape: 'twinkle', colors: ['#ffffff'], count: 10, speed: [20, 90], life: [500, 800], size: [6, 11] },
+      { type: 'rise', t: 1450, at: 'src', shape: ['bubble', 'plus', 'twinkle'], colors: [...CLEAN, ...HEAL], dur: 700, rate: 24, size: [4, 8], wobble: 50 },
+      { type: 'ring', t: 1450, at: 'src', color: '#bfefff', width: 5, dur: 600 },
+    ],
+  }),
+  // Chili blast: chilis drop into the giant cup, it boils over and erupts, the sauce rains on the
+  // enemy (heartburn follows), and a cheesy crust shields the cup.
+  'bk-sauce-xxl-chili-cheese': () => ({
+    covers: ['shield'],
+    dim: '#2a0a00',
+    steps: [
+      { type: 'stamp', t: 150, at: 'src', shape: 'dip', colors: ['#ffb21a'], size: 0.55, dy: -1.0, halo: '#ff9a1f', dur: 760 },
+      { type: 'orbit', t: 200, at: 'src', shape: 'chili', count: 4, from: 1.5, to: 0.15, turns: 0.8, dy: -1.1, size: 8, dur: 440 },
+      { type: 'rise', t: 480, at: 'src', dy: -1.3, shape: 'bubble', colors: CHILICHEESE, dur: 260, rate: 30, size: [3, 6], speed: [60, 120], width: 0.5 },
+      { type: 'burst', t: 660, at: 'src', dy: -1.2, angle: -Math.PI / 2, spread: 0.5, shape: ['splat', 'splat', 'chili'], colors: CHILICHEESE, count: 14, speed: [420, 620], life: [380, 460], size: [6, 10], gravity: 300 },
+      { type: 'shake', t: 660, mag: 5, dur: 220 },
+      { type: 'rain', t: 760, at: 'tgt', shape: ['splat', 'splat', 'chili'], colors: CHILICHEESE, count: 14, dur: 300, fall: 300, size: [8, 13], width: 1.2, hit: true,
+        splash: { shape: 'drop', colors: CHILICHEESE, count: 3, speed: [60, 160], life: [300, 500], size: [3, 5], gravity: 500 } },
+      ...later(1180, heavy(['#fff1a1', '#ff9a1f', '#ff3d12'], { debris: 'splat', debrisColors: CHILICHEESE, debrisCount: 10 })),
+      { type: 'flash', t: 1180, screen: true, color: '#ffb36b', alpha: 0.2, dur: 320 },
+      { type: 'bubble', t: 1500, at: 'src', color: '#ffc21a', hex: true, size: 1.45, dur: 950 },
+      { type: 'orbit', t: 1500, at: 'src', shape: 'chili', count: 4, from: 1.6, to: 1.45, turns: 0.6, size: 8, dur: 950 },
+    ],
+  }),
+  // A chocolate avalanche: brownies and scoops come tumbling in like boulders, chocolate rains,
+  // a giant brownie lands on top, and the fighter licks the spoon.
+  'bk-brownie-ice-cream': () => ({
+    covers: ['heal'],
+    dim: '#1a0a03',
+    steps: [
+      { type: 'stamp', t: 150, at: 'src', shape: 'brownie', size: 0.45, dy: -1.0, halo: '#c98a5a', dur: 600 },
+      ...[0, 1, 2, 3, 4, 5].map((i) => ({ type: 'glide', t: 330 + i * 70, at: 'tgt', inward: true, shape: i % 3 === 1 ? 'scoop' : 'brownie', size: 0.34 + (i % 2) * 0.06,
+        path: [[-5.2, 0.62 - (i % 3) * 0.24], [-0.4 + (i % 2) * 0.25, 0.42 - (i % 3) * 0.3]], dur: 540, ease: 'in', bob: 0.3, spin: -9, fade: 0.06, contact: [1],
+        onHit: [{ type: 'burst', shape: i % 3 === 1 ? 'splat' : 'crumb', colors: i % 3 === 1 ? CREAM : CHOCO, count: 6, speed: [100, 240], life: [400, 600], size: [3, 6], gravity: 600 }, { type: 'shake', mag: 3, dur: 140 }] })),
+      { type: 'rain', t: 600, at: 'tgt', shape: ['drop', 'drop', 'crumb'], colors: CHOCO, count: 26, dur: 460, fall: 320, size: [6, 10], width: 1.5 },
+      { type: 'slam', t: 760, at: 'tgt', shape: 'brownie', size: 0.75, height: 3.4, fall: 380, hold: 260, ground: 0.75, halo: '#c98a5a', hit: true,
+        onHit: [...heavy(['#b87445', '#e8c9a8', '#7a3f1f'], { debris: 'splat', debrisColors: CHOCO, debrisCount: 12 }), groundRing('#7a3f1f', { to: 200, width: 9 }),
+          { type: 'burst', shape: 'scoop', count: 3, speed: [160, 260], life: [600, 800], size: [6, 8], gravity: 700 }, { type: 'flash', screen: true, color: '#e8c9a8', alpha: 0.2, dur: 320 }] },
+      { type: 'rise', t: 1450, at: 'src', shape: ['heart', 'plus', 'drop'], colors: ['#c98a5a', '#fff0cc', ...HEAL], dur: 700, rate: 22, size: [6, 10] },
+      { type: 'ring', t: 1450, at: 'src', color: '#c98a5a', width: 5, dur: 600 },
+    ],
+  }),
+  // Season everything: the sachet flips and bursts, herbs rain over the whole arena, the enemy
+  // takes the brunt, and the fragrance lifts the team.
+  'vkusno-seasoning-provence-sour-cream': () => ({
+    covers: ['team', 'buff'],
+    dim: '#0c1804',
+    steps: [
+      { type: 'stamp', t: 150, at: 'src', shape: 'sachet', colors: ['#e2231a'], size: 0.5, dy: -1.1, halo: '#ffbc0d', dur: 560, spin: Math.PI },
+      { type: 'burst', t: 660, at: 'src', dy: -1.3, angle: -Math.PI / 2, spread: 1.3, shape: ['leaf', 'leaf', 'sugar'], colors: [...PROVENCE, '#ffffff'], count: 26, speed: [300, 540], life: [400, 600], size: [3, 5], gravity: 400 },
+      { type: 'flash', t: 660, screen: true, color: '#f0ffd8', alpha: 0.14, dur: 260 },
+      { type: 'rain', t: 700, at: 'tgt', shape: ['leaf', 'leaf', 'sugar', 'twinkle'], colors: [...PROVENCE, '#ffffff', '#ffd75a'], count: 48, dur: 450, fall: 360, size: [4, 7], width: 2.6, spin: [-6, 6], hit: true },
+      { type: 'rain', t: 760, at: 'src', shape: ['leaf', 'sugar', 'twinkle'], colors: [...PROVENCE, '#ffffff', '#ffd75a'], count: 32, dur: 450, fall: 360, size: [4, 7], width: 2.6, spin: [-6, 6] },
+      { type: 'flash', t: 1240, screen: true, color: '#e8ffd0', alpha: 0.16, dur: 300 },
+      ...later(1240, heavy(HERB, { debris: 'leaf', debrisColors: PROVENCE, debrisCount: 10 })),
+      { type: 'orbit', t: 1400, at: 'src', shape: ['leaf', 'twinkle'], colors: [...PROVENCE, '#ffd75a'], count: 10, from: 0.6, to: 1.5, turns: 1.2, lift: 0.4, size: 7, dur: 800 },
+      { type: 'rise', t: 1450, at: 'src', shape: ['heart', 'arrowUp'], colors: ['#ff7a86', '#ffd75a', ...HEAL], dur: 700, rate: 22, size: [6, 10], width: 1.4 },
+      { type: 'ring', t: 1450, at: 'src', color: '#ffd76a', width: 5, dur: 520 },
+    ],
+  }),
+  // A basket for everyone: a giant basket comes down upside down over the enemy like a trap, then
+  // the chicken inside flies back to the team and turns into hearts.
+  'rostics-basket': () => ({
+    covers: ['team'],
+    steps: [
+      { type: 'stamp', t: 150, at: 'src', shape: 'basket', size: 0.5, dy: -1.05, halo: '#ff7a86', dur: 520, lift: 0.3 },
+      { type: 'slam', t: 520, at: 'tgt', shape: 'basket', size: 0.85, height: 3.6, fall: 360, hold: 380, tilt: Math.PI, dy: -0.05, ground: 0.85, halo: '#ff3347', hit: true,
+        onHit: [...heavy(['#ffffff', '#ff3347', '#ffd166'], { debris: 'drumstick', debrisCount: 6, debrisSize: [6, 9] }), groundRing('#ff3347', { to: 200, width: 8 }),
+          { type: 'flash', screen: true, color: '#ffe0e4', alpha: 0.18, dur: 300 }] },
+      { type: 'projectile', t: 1200, from: 'tgt', to: 'src', shape: ['drumstick', 'wing', 'nugget'], size: 10, count: 6, gap: 60, fan: 18, spread: 24, lob: 0.35, arc: 0.2, alternate: true, spin: 10, travel: 460,
+        onHit: [{ type: 'burst', shape: 'heart', colors: ['#ff7a86', '#ffffff'], count: 3, speed: [60, 140], life: [500, 700], size: [5, 8], gravity: -60 }] },
+      { type: 'ring', t: 1700, at: 'src', color: '#ff7a86', width: 6, dur: 620 },
+      { type: 'rise', t: 1700, at: 'src', shape: 'heart', colors: ['#ff7a86', '#ffb3c0', '#ffffff'], dur: 600, rate: 24, size: [6, 10], width: 1.4 },
+    ],
+  }),
+  // A cheese avalanche: a torrent of molten cheese with chicken in it buries the enemy under a
+  // golden mound, then the cheese sets around the pizza into a crust.
+  'dodo-cheesy-chicken': () => ({
+    covers: ['shield'],
+    steps: [
+      charge(CHEESE, 150, { dur: 380, count: 22 }),
+      { type: 'beam', t: 480, shape: ['splat', 'splat', 'drop', 'nugget'], colors: CHEESE, size: [8, 14], size2: 16, dur: 620, rate: 120, speed: [560, 700], spread: 0.32, gravity: -220 },
+      { type: 'slam', t: 620, at: 'tgt', shape: 'mound', colors: ['#ffc21a'], size: 0.8, height: 2.8, fall: 360, hold: 420, ground: 0.8, dy: 0.15, hit: true,
+        onHit: [...heavy(CHEESE, { debris: 'cube', debrisColors: ['#e8322a', '#ff6a3a'], debrisCount: 10, debrisSize: [3, 5] }), groundRing('#ffd23f', { to: 210, width: 9 }),
+          { type: 'flash', screen: true, color: '#fff3b0', alpha: 0.2, dur: 320 }] },
+      { type: 'rise', t: 1050, at: 'tgt', shape: 'drop', colors: CHEESE, down: true, dur: 600, rate: 26, size: [5, 8], speed: [60, 120], width: 1.1 },
+      { type: 'orbit', t: 1350, at: 'src', shape: 'drop', colors: CHEESE, count: 10, from: 2, to: 1.4, turns: 0.6, size: 7, dur: 600 },
+      { type: 'ring', t: 1550, at: 'src', shape: 'hex', color: '#ffe36e', from: 150, to: 60, width: 6, dur: 420 },
+      { type: 'bubble', t: 1600, at: 'src', color: '#ffc21a', hex: true, size: 1.5, dur: 950 },
     ],
   }),
 };
@@ -1115,10 +1756,33 @@ export function movePlan(event, { brand, energyFor } = {}) {
   else recipe = { steps: (BASIC[id] ?? (() => throwBasic('orb', [BRAND[brand]?.glow ?? '#fff', '#ffffff'], { size: 8, halo: BRAND[brand]?.main ?? '#fff', spin: 0 })))() };
   const timing = fxTiming(recipe.steps);
   const steps = [...recipe.steps];
-  const blow = !event.command.startsWith('switch:') && event.command !== 'guard';
-  if (blow) steps.push(...layers(event, energyFor, new Set(recipe.covers ?? []), timing.impact, brand));
-  if (event.regen && !event.command.startsWith('switch:')) steps.push(...regenFx(blow ? timing.impact + 480 : 320));
+  const switched = event.command.startsWith('switch:');
+  const blow = !switched && event.command !== 'guard';
+  // A flurry lands as separate strikes: the ones the recipe throws itself, then plain extra
+  // strikes if it shows fewer than the engine dealt.
+  let strikes;
+  if (blow && event.hits > 1) {
+    strikes = recipe.steps.filter((s) => s.strike).flatMap((s) => contactTimes(s).map((c) => (s.t ?? 0) + c)).sort((a, b) => a - b).slice(0, event.hits);
+    if (!strikes.length) strikes.push(timing.impact);
+    while (strikes.length < event.hits) {
+      const at = strikes.at(-1) + 170;
+      strikes.push(at);
+      steps.push(...strikeFx(at));
+    }
+  }
+  // Skipped turns play one after another once the move itself has landed.
+  const skipStart = blow ? (strikes?.at(-1) ?? timing.impact) + 650 : 420;
+  const skips = (event.skips ?? []).map((skip, i) => {
+    const at = skip.side === event.side ? 'src' : 'tgt';
+    return { ...skip, at, start: skipStart + i * (SKIP + 120), fresh: i === 0 && at === 'tgt' && event.effects.includes(skip.kind) };
+  });
+  if (blow) steps.push(...layers(event, energyFor, new Set(recipe.covers ?? []), timing.impact, brand, skips));
+  if (switched && event.intimidated?.includes(event.target)) steps.push(...intimidateFx(260));
+  if (event.regen && !switched) steps.push(...regenFx(blow ? timing.impact + 480 : 320));
   if (event.burned) steps.push({ type: 'rise', t: timing.impact + 450, at: 'src', shape: 'flame', colors: FIRE, dur: 420, rate: 26, size: [5, 9], size2: 2 });
+  if (event.poisoned) steps.push(...heartburnFx(timing.impact + 470, 'src', { small: true }));
+  if (event.leeched) steps.push(...leechFx(timing.impact + 520, 'src', 'tgt', { small: true }));
+  for (const skip of skips) steps.push(...skipFx(skip));
   if (event.ko.length) {
     const at = event.ko.includes(event.target) ? 'tgt' : 'src';
     steps.push(
@@ -1129,7 +1793,11 @@ export function movePlan(event, { brand, energyFor } = {}) {
   const full = fxTiming(steps.map((s) => ({ ...s, hit: false })));
   // The lunge starts just before the first thing leaves the fighter.
   const launch = recipe.steps.find((s) => ['projectile', 'beam', 'slash', 'bolt'].includes(s.type) || s.hit);
-  return { steps, impact: blow ? timing.impact : 0, end: Math.max(full.end, timing.impact + 500), lungeAt: Math.max(0, (launch?.t ?? 0) - 140) };
+  return {
+    steps, impact: blow ? timing.impact : 0, end: Math.max(full.end, timing.impact + 500), lungeAt: Math.max(0, (launch?.t ?? 0) - 140),
+    // When each strike of a flurry lands, and when each skipped turn starts and is over.
+    strikes, skips: skips.map(({ at, start, kind, recovered }) => ({ at, start, end: start + SKIP, kind, recovered })),
+  };
 }
 
 export const RECIPE_IDS = { skill: Object.keys(SKILL), basic: Object.keys(BASIC), ult: Object.keys(ULT) };
