@@ -14,6 +14,10 @@ export const GPS_RULES = Object.freeze({
 const BRANDS = new Set(['bk', 'vkusno', 'rostics', 'dodo']);
 const LOOT_WEIGHTS = [60, 27, 11, 2];
 const XP_THRESHOLDS = [0, 10, 25, 45, 70, 100, 135, 175, 220, 270];
+export const CARD_XP_CAP = XP_THRESHOLDS.at(-1);
+// Wild fighters that already left (won, lost or replaced). Synced devices use this list to drop
+// a stale wild fighter that another device has already fought. Only the newest ones are kept.
+export const RETIRED_LIMIT = 60;
 const DUPLICATE_XP = 10;
 const ROUTE_XP = 25;
 const WILD_WIN = {player: 15, party: 10};
@@ -58,6 +62,68 @@ export function freshProfile() {
     lastScoutAt: null,
     battles: {wins: 0, losses: 0, draws: 0},
     battleIds: {},
+    retired: {},
+  };
+}
+
+// Encounter ids look like `<time in base36>-<sequence>`; newer ones sort later.
+export function encounterTime(id) {
+  const time = parseInt(String(id).split('-')[0], 36);
+  return Number.isSafeInteger(time) ? time : 0;
+}
+
+export function keepNewestRetired(ids) {
+  return Object.fromEntries([...new Set(ids)].filter(validId)
+    .sort((a, b) => encounterTime(b) - encounterTime(a) || (a < b ? 1 : a > b ? -1 : 0))
+    .slice(0, RETIRED_LIMIT).map(id => [id, true]));
+}
+
+function retire(saved, encounter) {
+  if (encounter?.id) saved.retired = keepNewestRetired([encounter.id, ...Object.keys(saved.retired)]);
+}
+
+// The device ledger of a synced profile. Each device owns one entry: what it added to every
+// counter. Merging takes the larger known value per device and entry, so repeated or crossed
+// syncs never count anything twice. The account key never leaves the device.
+const SYNC_DEVICE = /^[a-z0-9]{8,32}$/;
+const SYNC_KEY = /^[A-Z2-9]{32}$/;
+export const SYNC_LIMITS = Object.freeze({devices: 24, cards: 400, visits: 6000});
+
+export function cleanContribution(value) {
+  const entry = {xp: 0, wins: 0, losses: 0, draws: 0, cards: {}, visits: {}};
+  if (!record(value)) return entry;
+  for (const key of ['xp', 'wins', 'losses', 'draws']) entry[key] = count(value[key]);
+  if (record(value.cards)) {
+    for (const [id, pair] of Object.entries(value.cards).slice(0, SYNC_LIMITS.cards)) {
+      const key = current(validId(id));
+      if (!key || !Array.isArray(pair)) continue;
+      const kept = entry.cards[key] ?? [0, 0];
+      entry.cards[key] = [count(kept[0] + count(pair[0])), Math.max(kept[1], count(pair[1]))];
+    }
+  }
+  if (record(value.visits)) {
+    for (const [id, visits] of Object.entries(value.visits).slice(0, SYNC_LIMITS.visits)) {
+      if (validId(id) && count(visits)) entry.visits[id] = count(visits);
+    }
+  }
+  return entry;
+}
+
+function cleanSync(value) {
+  if (!record(value) || typeof value.device !== 'string' || !SYNC_DEVICE.test(value.device) ||
+      Object.hasOwn(Object.prototype, value.device)) return null;
+  const devices = {};
+  if (record(value.devices)) {
+    for (const [id, entry] of Object.entries(value.devices).slice(0, SYNC_LIMITS.devices)) {
+      if (SYNC_DEVICE.test(id) && !Object.hasOwn(Object.prototype, id)) devices[id] = cleanContribution(entry);
+    }
+  }
+  return {
+    device: value.device,
+    key: typeof value.key === 'string' && SYNC_KEY.test(value.key) ? value.key : null,
+    devices,
+    team: uniqueIds(value.team).slice(0, MAX_TEAM_SIZE),
+    teamAt: timestamp(value.teamAt) ?? 0,
   };
 }
 
@@ -112,6 +178,12 @@ export function normalizeProfile(value) {
       if (validId(id) && settled === true) profile.battleIds[id] = true;
     }
   }
+  if (record(value.retired)) {
+    profile.retired = keepNewestRetired(Object.entries(value.retired).filter(([, gone]) => gone === true).map(([id]) => id));
+  }
+  if (profile.encounter && Object.hasOwn(profile.retired, profile.encounter.id)) profile.encounter = null;
+  const sync = cleanSync(value.sync);
+  if (sync) profile.sync = sync;
   return profile;
 }
 
@@ -315,6 +387,7 @@ function spawnWild(saved, items, now, rng, brand = null) {
   if (!pool.length) return null;
   const unseen = pool.filter(item => !Object.hasOwn(saved.collection, item.id));
   const enemy = choose(unseen.length && unit(rng) < 0.75 ? unseen : pool, rng);
+  retire(saved, saved.encounter);
   saved.encounterSequence += 1;
   saved.encounter = {
     id: `${now.toString(36)}-${saved.encounterSequence.toString(36)}`,
@@ -361,6 +434,7 @@ export function claimVisit(profile, point, fix, menu, {now = Date.now(), rng = M
   // A visit lures a wild fighter of the same chain, unless one is already waiting.
   let spawned = null;
   if (!hasCurrentEncounter(saved, items)) {
+    retire(saved, saved.encounter);
     saved.encounter = null;
     spawned = spawnWild(saved, items, now, rng, point.brand);
   }
@@ -449,6 +523,7 @@ export function resolveEncounter(profile, encounterId, won, menu, {teamIds, draw
   const playerXp = won ? WILD_WIN.player : 0;
   const leveledIds = finishBattle(saved, outcome, playerXp, party, partyXp);
   // Win or lose, the wild fighter leaves and the next one appears after the pause.
+  retire(saved, encounter);
   saved.encounter = null;
   if (timestamp(now) !== null) saved.lastScoutAt = timestamp(now);
   return {
