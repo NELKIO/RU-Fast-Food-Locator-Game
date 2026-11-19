@@ -299,7 +299,7 @@ export function describeSkill(skill, attack) {
     parts.push(count(Math.max(0, attack + skill.power), { one: 'урон', few: 'урона', many: 'урона', other: 'урона' }) + (skill.pierce ? ' сквозь защиту' : ''));
   }
   if (skill.execute) parts.push('+' + skill.execute + ' по раненому сопернику');
-  if (skill.burn) parts.push('поджигает: −' + skill.burn.dmg + ' HP после каждого из ' + count(skill.burn.turns, TURNS) + ' соперника');
+  if (skill.burn) parts.push('поджигает на ' + count(skill.burn.turns, TURNS) + ' соперника: −' + skill.burn.dmg + ' HP за ход');
   if (skill.weaken) parts.push('атака соперника −' + skill.weaken);
   if (skill.sap) parts.push('соперник теряет всю энергию');
   if (skill.drain) parts.push('лечит на половину урона');

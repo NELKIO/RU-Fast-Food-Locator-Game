@@ -5,11 +5,11 @@
 ![Радар заведений: карта, цель и точки рядом](docs/screenshots/radar.jpg)
 
 <p align="center">
-  <img src="docs/screenshots/phone.jpg" width="23%" alt="Цель на телефоне: расстояние, адрес и возможная находка" />
+  <img src="docs/screenshots/phone.jpg" width="31%" alt="Цель на телефоне: расстояние, адрес и возможная находка" />
   &nbsp;
-  <img src="docs/screenshots/collection.jpg" width="37%" alt="Коллекция с колодой из трёх бойцов" />
+  <img src="docs/screenshots/collection.jpg" width="31%" alt="Коллекция с колодой из трёх бойцов" />
   &nbsp;
-  <img src="docs/screenshots/battle.jpg" width="37%" alt="Ангус Пармеджано бьёт суперприёмом «Коронация»" />
+  <img src="docs/screenshots/battle.jpg" width="31%" alt="Бой: фирменный приём и суперприём «Коронация»" />
 </p>
 
 ## Как играть
