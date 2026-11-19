@@ -31,6 +31,7 @@ const icons = {
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
   sound: '<path d="M4 9h4l4-4v14l-4-4H4zM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
   muted: '<path d="M4 9h4l4-4v14l-4-4H4zM16 9l5 6m0-6-5 6"/>',
+  speed: '<path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/>',
   lock: '<rect x="5.5" y="10" width="13" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
   check: '<path d="m4 12 5 5L20 6"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10h.01"/>',

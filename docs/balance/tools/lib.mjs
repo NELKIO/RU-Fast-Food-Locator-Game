@@ -35,17 +35,29 @@ export function solve(a, b, first = 0, tempo = true, maxStates = 3e6) {
   }
   try { return v(st); } catch (e) { if (e.message === 'budget') return null; throw e; }
 }
-// Score of a against b over both move orders: 1 win, .5 draw, 0 loss each.
-export function score(a, b) {
-  const r1 = solve(a, b, 0), r2 = solve(a, b, 1);
-  return [r1, r2];
+// Who opens a 1v1: 0 if a is faster, 1 if b is, null on equal speed (then both orders count).
+export const speedOf = f => E.battleStats({ id: 'x', ...f }).speed;
+export function opens(a, b) {
+  const x = speedOf(a), y = speedOf(b);
+  return x > y ? 0 : y > x ? 1 : null;
 }
-// Bot against bot, as wild fights and casual play look: average over seeds and both orders.
+const pts = r => r === null ? 0.5 : (r + 1) / 2;
+// Perfect-play score of a against b from the two ordered results: rAB has a moving first, rBA has
+// b moving first (both from the first mover's point of view). Speed picks the order that happens.
+export function pairScore(a, b, rAB, rBA) {
+  const o = opens(a, b);
+  if (o === 0) return pts(rAB);
+  if (o === 1) return 1 - pts(rBA);
+  return (pts(rAB) + 1 - pts(rBA)) / 2;
+}
+// Bot against bot, as wild fights and casual play look. The faster fighter opens; on equal speed
+// the games alternate who starts.
 export function botScore(a, b, games = 200, tempo = true) {
   let pts = 0, n = 0, seed = 7;
   const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const o = opens(a, b);
   for (let g = 0; g < games; g++) {
-    const first = g & 1;
+    const first = o ?? (g & 1);
     let s = E.startBattle([[E.battleStats({ id: 'a', ...a }, true)], [E.battleStats({ id: 'b', ...b }, true)]], first, { tempo });
     while (s.winner === null) s = E.applyMove(s, s.turn, E.botMove(s, rnd));
     pts += s.winner === 'draw' ? 0.5 : s.winner === 0 ? 1 : 0; n++;

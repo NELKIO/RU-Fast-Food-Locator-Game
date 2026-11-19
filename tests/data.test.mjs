@@ -76,6 +76,7 @@ test('every dish on the menu is a hand-made fighter, one legend per chain and co
   for (const [id, fighter] of Object.entries(FIGHTERS)) {
     assert.ok(fighter.basic && fighter.skill.name, id);
     assert.ok(fighter.skill.cost >= 1 && fighter.skill.cost <= 2, id);
+    assert.ok(Number.isInteger(fighter.speed) && fighter.speed >= 1 && fighter.speed <= 9, id + ' speed');
     unique(fighter.skill.name);
     assert.match(describeSkill(fighter.skill, fighter.attack), /^[А-ЯЁ0-9].+\.$/u, id);
     if (fighter.ultimate) {

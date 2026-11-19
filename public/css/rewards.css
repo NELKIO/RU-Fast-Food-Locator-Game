@@ -108,7 +108,7 @@
 .find-outcome svg, .find-xp svg, .find-spin-status svg { flex: none; color: var(--accent-type, var(--accent)); }
 .find-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 0;
   padding: 10px 0;
   border-block: 1px solid var(--line);

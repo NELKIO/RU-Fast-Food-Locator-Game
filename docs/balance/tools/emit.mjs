@@ -13,7 +13,7 @@ let out = 'export const FIGHTERS = {\n', last = '';
 for (const [id, f] of Object.entries(F)) {
   const brand = id.split('-')[0];
   if (brand !== last) { out += (last ? '\n' : '') + sections[brand] + '\n'; last = brand; }
-  out += `  '${id}': {\n    rarity: '${f.rarity}', role: '${f.role}', hp: ${f.hp}, attack: ${f.attack}, basic: '${f.basic}',\n    skill: ${skill(f.skill)},\n`;
+  out += `  '${id}': {\n    rarity: '${f.rarity}', role: '${f.role}', hp: ${f.hp}, attack: ${f.attack}, speed: ${f.speed ?? 5}, basic: '${f.basic}',\n    skill: ${skill(f.skill)},\n`;
   if (f.ultimate) out += `    ultimate: ${skill(f.ultimate)},\n`;
   if (f.trait) out += `    trait: ${lit(f.trait)},\n`;
   out += '  },\n';

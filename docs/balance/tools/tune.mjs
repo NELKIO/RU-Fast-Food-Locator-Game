@@ -1,15 +1,19 @@
 // node tune.mjs roster(.mjs|.json) seed iterations out.json
-// Simulated annealing over every number of every fighter (effects stay as designed).
-// Env: EVEN_W weight of order-decided matchups (default 1.2), T0 start temperature (default 0.02).
+// Simulated annealing over every number of every fighter, speed included (effects stay as designed).
+// Goal (round 3): inside a rarity the fighters form a ladder from weak to strong, so collecting and
+// hunting for the best ones is worth it, yet even the strongest has counters. A higher rarity is
+// usually stronger, but the best of a lower rarity can beat the weakest of the next one.
+// Env: EVEN_W weight of order-decided pairs (default 1.2), T0 start temperature (default 0.02),
+//      TOP / BOTTOM in-tier ladder ends (default 0.74 / 0.28).
 import { writeFileSync } from 'node:fs';
-import { solve, botScore, rank, loadRoster } from './lib.mjs';
+import { solve, botScore, loadRoster, pairScore, opens } from './lib.mjs';
 const [rosterPath, seedArg, itArg, out] = process.argv.slice(2);
 const FIGHTERS = await loadRoster(rosterPath);
 let seed = +seedArg || 1;
 const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
 const F = structuredClone(FIGHTERS);
 const ids = Object.keys(F);
-const TIER = { common: { hp: [14, 21], attack: [3, 5] }, rare: { hp: [17, 24], attack: [4, 6] }, epic: { hp: [20, 27], attack: [5, 7] }, legendary: { hp: [24, 30], attack: [6, 8] } };
+const TIER = { common: { hp: [14, 22], attack: [3, 5] }, rare: { hp: [16, 25], attack: [4, 6] }, epic: { hp: [19, 28], attack: [4, 7] }, legendary: { hp: [23, 30], attack: [5, 8] } };
 const SK = { power: [-1, 6], heal: [1, 8], shield: [2, 9], weaken: [1, 3], buff: [1, 2], execute: [1, 5], team: [2, 6], recoil: [1, 3] };
 const ULT = { ...SK, power: [0, 9], shield: [3, 10], heal: [2, 9] };
 const TR = { armor: [1, 2], thorns: [1, 2], regen: [1, 2], rage: [1, 3], vamp: [1, 2] };
@@ -17,7 +21,8 @@ const TR = { armor: [1, 2], thorns: [1, 2], regen: [1, 2], rage: [1, 3], vamp: [
 const knobs = [];
 for (const id of ids) {
   const f = F[id], t = TIER[f.rarity];
-  knobs.push([id, ['hp'], ...t.hp], [id, ['attack'], ...t.attack]);
+  f.speed ??= 5;
+  knobs.push([id, ['hp'], ...t.hp], [id, ['attack'], ...t.attack], [id, ['speed'], 1, 9]);
   for (const [part, table] of [['skill', SK], ['ultimate', ULT]]) {
     const s = f[part]; if (!s) continue;
     if (part === 'skill') knobs.push([id, [part, 'cost'], 1, 2]);
@@ -29,49 +34,67 @@ for (const id of ids) {
 const get = (o, p) => p.reduce((x, k) => x[k], o);
 const set = (o, p, v) => { const last = p.at(-1); p.slice(0, -1).reduce((x, k) => x[k], o)[last] = v; };
 const cache = new Map();
-function pair(a, b) {
+// One ordered fight: a moves first, b gets the tempo energy. Cached by both fighters' full stats.
+function fight(a, b) {
   const k = JSON.stringify(F[a]) + '#' + JSON.stringify(F[b]);
   let v = cache.get(k);
-  if (!v) { v = { r: solve(F[a], F[b], 0, true, 2e5), bot: botScore(F[a], F[b], 24) }; cache.set(k, v); }
+  if (v === undefined) { v = solve(F[a], F[b], 0, true, 2e5); cache.set(k, v); }
   return v;
 }
-const R = {};
-for (const a of ids) { R[a] = {}; for (const b of ids) if (a !== b) R[a][b] = pair(a, b); }
-const pts = r => r === null ? 0.5 : (r + 1) / 2;
-const s = (a, b) => (pts(R[a][b].r) + 1 - pts(R[b][a].r)) / 2;
-const bs = (a, b) => (R[a][b].bot + 1 - R[b][a].bot) / 2;
+function botPair(a, b) {
+  const k = 'bot' + JSON.stringify(F[a]) + '#' + JSON.stringify(F[b]);
+  let v = cache.get(k);
+  if (v === undefined) { v = botScore(F[a], F[b], 24); cache.set(k, v); }
+  return v;
+}
+// Only the order that speed allows is solved; equal speed needs both.
+function s(a, b) {
+  const o = opens(F[a], F[b]);
+  return pairScore(F[a], F[b], o === 1 ? null : fight(a, b), o === 0 ? null : fight(b, a));
+}
+const ordered = (a, b) => { const o = opens(F[a], F[b]); return o === 1 ? fight(b, a) : fight(a, b); };
+const bs = (a, b) => botPair(a, b);
 const tiers = ['common', 'rare', 'epic', 'legendary'];
 const groups = tiers.map(t => ids.filter(i => F[i].rarity === t));
+const TOP = +process.env.TOP || 0.74, BOTTOM = +process.env.BOTTOM || 0.28;
+const ladder = n => Array.from({ length: n }, (_, k) => TOP - (TOP - BOTTOM) * k / (n - 1));
 function objective(detail = false) {
-  const c = { spread: 0, even: 0, counters: 0, bot: 0, cross: 0, draws: 0, top: 0, unsolved: 0 };
-  groups.forEach((G, gi) => {
+  const c = { ladder: 0, even: 0, counters: 0, bot: 0, cross: 0, draws: 0, top: 0, unsolved: 0 };
+  groups.forEach(G => {
     const need = G.length <= 4 ? 1 : 2;
     let even = 0, pairs = 0, draws = 0, top = 0;
+    const A = [], B = [];
     for (const i of G) {
       let a = 0, b = 0, w = 0, l = 0;
       for (const j of G) if (j !== i) {
         const x = s(i, j); a += x; b += bs(i, j);
         if (x === 1) w++; else if (x === 0) l++; else even++;
-        if (R[i][j].r === 0) draws++;
-        if (R[i][j].r === null) c.unsolved += 1;
+        const r = ordered(i, j);
+        if (r === 0) draws++;
+        if (r === null) c.unsolved += 1;
         pairs++;
       }
       a /= G.length - 1; b /= G.length - 1;
-      c.spread += 8 * (a - 0.5) ** 2 / G.length;
-      c.bot += 3 * (b - 0.5) ** 2 / G.length;
-      c.counters += 0.12 * (Math.max(0, need - w) + Math.max(0, need - l)) / G.length;
+      A.push(a); B.push(b);
+      // No meta: even the best fighter loses to some, and even the weakest beats someone.
+      c.counters += 0.12 * (Math.max(0, 1 - w) + Math.max(0, need - l)) / G.length;
       top = Math.max(top, a);
     }
+    const goal = ladder(G.length);
+    A.sort((x, y) => y - x); B.sort((x, y) => y - x);
+    c.ladder += 8 * A.reduce((p, x, k) => p + (x - goal[k]) ** 2, 0) / G.length;
+    c.bot += 2 * B.reduce((p, x, k) => p + (x - goal[k]) ** 2, 0) / G.length;
     c.even += (+process.env.EVEN_W || 1.2) * even / pairs / 4;
     c.draws += draws / pairs / 4;
-    c.top += 5 * Math.max(0, top - 0.68) ** 2;
+    c.top += 5 * Math.max(0, top - 0.85) ** 2;
   });
+  // A rarity above wins most fights, two above nearly all; the overlap leaves room for upsets.
   for (let u = 0; u < 4; u++) for (let v = 0; v < u; v++) {
     let x = 0, y = 0, n = 0;
     for (const a of groups[u]) for (const b of groups[v]) { x += s(a, b); y += bs(a, b); n++; }
     x /= n; y /= n;
-    const lo = u - v === 1 ? 0.8 : 0.95, hi = u - v === 1 ? 0.94 : 1;
-    c.cross += 10 * (Math.max(0, lo - x) ** 2 + Math.max(0, x - hi) ** 2) + 4 * Math.max(0, (u - v === 1 ? 0.75 : 0.9) - y) ** 2;
+    const d = u - v, lo = [0, 0.72, 0.9, 0.97][d], hi = [0, 0.88, 1, 1][d];
+    c.cross += 10 * (Math.max(0, lo - x) ** 2 + Math.max(0, x - hi) ** 2) + 4 * Math.max(0, lo - 0.04 - y) ** 2;
   }
   const J = Object.values(c).reduce((p, q) => p + q, 0);
   return detail ? { J, ...c } : J;
@@ -91,22 +114,15 @@ for (let it = 0; it < iters; it++) {
     set(F[id], path, nv); moves.push([id, path, old]);
   }
   if (!moves.length && it !== iters - 1) continue;
-  const touched = [...new Set(moves.map(m => m[0]))];
-  const saved = [];
-  for (const a of touched) for (const b of ids) if (a !== b) {
-    saved.push([a, b, R[a][b]], [b, a, R[b][a]]);
-    R[a][b] = pair(a, b); R[b][a] = pair(b, a);
-  }
   const J2 = objective();
   if (J2 <= J || rnd() < Math.exp((J - J2) / T)) {
     J = J2;
     if (J < best) { best = J; bestF = structuredClone(F); }
   } else {
     for (const [id, path, old] of moves.reverse()) set(F[id], path, old);
-    for (const [a, b, v] of saved.reverse()) R[a][b] = v;
   }
   if (it % 200 === 0 || it === iters - 1) {
     writeFileSync(out, JSON.stringify({ it, J, best, secs: (Date.now() - t0) / 1000, cache: cache.size, detail: objective(true), F: bestF }));
-    if (cache.size > 400000) cache.clear();
+    if (cache.size > 300000) cache.clear();
   }
 }

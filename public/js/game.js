@@ -221,7 +221,7 @@ export function cardFor(item, level = 1) {
   return {
     ...item, id, rarity: fighter.rarity, level: rank, baseAttack: fighter.attack, baseHp: fighter.hp, maxHp, hp: maxHp,
     attack: fighter.attack + Math.floor((rank - 1) / 2),
-    role: ROLES[fighter.role], basic: fighter.basic, skill: {...fighter.skill},
+    speed: fighter.speed, role: ROLES[fighter.role], basic: fighter.basic, skill: {...fighter.skill},
     ...(fighter.ultimate && {ultimate: {...fighter.ultimate}}), ...(fighter.trait && {trait: {...fighter.trait}}),
   };
 }

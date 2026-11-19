@@ -1,6 +1,10 @@
 // Every fighter is defined by hand. The menu catalog (menu.json) supplies the dish name,
 // photo and official link; this table supplies what the dish does in a fight.
 //
+// Speed (1–9, default 5) decides who moves first: the faster lead fighter opens, and after a
+// knockout the faster of the two fighters on the field takes the next turn, so it can move twice
+// in a row. Equal speed keeps the usual alternation.
+//
 // Skill fields, all optional:
 //   cost     energy needed (1–3)
 //   power    bonus damage on top of the fighter's attack; omit for a skill that deals no damage
@@ -37,238 +41,238 @@ export const ROLES = { striker: 'Штурмовик', allround: 'Универс�
 export const FIGHTERS = {
   // Бургер Кинг — открытый огонь и гриль
   'bk-angus-parmigiano': {
-    rarity: 'legendary', role: 'striker', hp: 26, attack: 7, basic: 'Мраморный удар',
+    rarity: 'legendary', role: 'striker', hp: 26, attack: 7, speed: 4, basic: 'Мраморный удар',
     skill: { name: 'Корона пармезана', cost: 2, power: 4, pierce: true },
     ultimate: { name: 'Коронация', cost: 3, power: 6, pierce: true, shatter: true },
     trait: { name: 'Королевская стойкость', laststand: true, armor: 1 },
   },
   'bk-whopper': {
-    rarity: 'epic', role: 'allround', hp: 27, attack: 5, basic: 'Удар с гриля',
+    rarity: 'epic', role: 'allround', hp: 27, attack: 5, speed: 4, basic: 'Удар с гриля',
     skill: { name: 'Пламя гриля', cost: 1, power: 1, burn: { dmg: 2, turns: 3 } },
     ultimate: { name: 'Королевский гриль', cost: 3, power: 1, burn: { dmg: 2, turns: 2 } },
     trait: { name: 'Закалка огнём', fireproof: true },
   },
   'bk-double-whopper': {
-    rarity: 'epic', role: 'striker', hp: 23, attack: 7, basic: 'Двойной удар',
+    rarity: 'epic', role: 'striker', hp: 23, attack: 7, speed: 3, basic: 'Двойной удар',
     skill: { name: 'Две котлеты', cost: 1, power: 0, execute: 2 },
     ultimate: { name: 'Двойной прожар', cost: 3, power: 6, shatter: true },
     trait: { name: 'Голодная ярость', rage: 1 },
   },
   'bk-chicken-parmesan': {
-    rarity: 'rare', role: 'striker', hp: 18, attack: 6, basic: 'Хрустящий выпад',
+    rarity: 'rare', role: 'striker', hp: 18, attack: 6, speed: 6, basic: 'Хрустящий выпад',
     skill: { name: 'Сырная корочка', cost: 2, power: 1, pierce: true },
     trait: { name: 'Хрустящий азарт', rage: 3 },
   },
   'bk-onion-rings': {
-    rarity: 'rare', role: 'allround', hp: 20, attack: 5, basic: 'Бросок кольца',
+    rarity: 'rare', role: 'allround', hp: 20, attack: 5, speed: 6, basic: 'Бросок кольца',
     skill: { name: 'Луковые слёзы', cost: 2, power: 1, weaken: 2 },
     trait: { name: 'Едкий лук', thorns: 1 },
   },
   'bk-fries': {
-    rarity: 'common', role: 'striker', hp: 14, attack: 5, basic: 'Хрустящий тычок',
+    rarity: 'common', role: 'striker', hp: 14, attack: 5, speed: 8, basic: 'Хрустящий тычок',
     skill: { name: 'Соль на рану', cost: 1, power: 2 },
   },
   'bk-cheese-sauce': {
-    rarity: 'common', role: 'guard', hp: 18, attack: 3, basic: 'Брызги соуса',
+    rarity: 'common', role: 'guard', hp: 18, attack: 3, speed: 5, basic: 'Брызги соуса',
     skill: { name: 'Липкий сыр', cost: 2, power: 1, weaken: 2, sap: true },
   },
   'bk-shrimps': {
-    rarity: 'common', role: 'guard', hp: 16, attack: 5, basic: 'Щипок',
+    rarity: 'common', role: 'guard', hp: 16, attack: 5, speed: 7, basic: 'Щипок',
     skill: { name: 'Панцирь в кляре', cost: 2, shield: 6 },
   },
   'bk-cheese-medallions': {
-    rarity: 'rare', role: 'striker', hp: 19, attack: 5, basic: 'Бросок медальона',
+    rarity: 'rare', role: 'striker', hp: 19, attack: 5, speed: 6, basic: 'Бросок медальона',
     skill: { name: 'Горячая начинка', cost: 1, power: 1, burn: { dmg: 2, turns: 4 } },
     trait: { name: 'Расплавленное сердце', fireproof: true },
   },
   'bk-shrimp-roll': {
-    rarity: 'common', role: 'allround', hp: 18, attack: 4, basic: 'Удар роллом',
+    rarity: 'common', role: 'allround', hp: 18, attack: 4, speed: 6, basic: 'Удар роллом',
     skill: { name: 'Креветочный ролл', cost: 1, power: 0, shield: 2 },
   },
   'bk-sundae': {
-    rarity: 'common', role: 'guard', hp: 18, attack: 3, basic: 'Шоколадные брызги',
+    rarity: 'common', role: 'guard', hp: 18, attack: 3, speed: 4, basic: 'Шоколадные брызги',
     skill: { name: 'Холодный десерт', cost: 2, weaken: 3, heal: 3 },
   },
   // Стаканы колы: чем больше стакан, тем реже и сильнее боец
   'bk-cola-08': {
-    rarity: 'epic', role: 'guard', hp: 24, attack: 5, basic: 'Ледяной всплеск',
+    rarity: 'epic', role: 'guard', hp: 24, attack: 5, speed: 3, basic: 'Ледяной всплеск',
     skill: { name: 'Ледяной фонтан', cost: 2, power: 2, weaken: 2, cleanse: true },
     ultimate: { name: 'Ледниковый период', cost: 3, power: 3, sap: true, shield: 4 },
     trait: { name: 'Холодная голова', steady: true },
   },
   'bk-cola-05': {
-    rarity: 'rare', role: 'allround', hp: 24, attack: 5, basic: 'Струя колы',
+    rarity: 'rare', role: 'allround', hp: 24, attack: 5, speed: 5, basic: 'Струя колы',
     skill: { name: 'Шипучка', cost: 2, power: 2, sap: true },
     trait: { name: 'Газировка', quick: 1 },
   },
   'bk-cola-04': {
-    rarity: 'common', role: 'guard', hp: 18, attack: 5, basic: 'Брызги колы',
+    rarity: 'common', role: 'guard', hp: 18, attack: 5, speed: 7, basic: 'Брызги колы',
     skill: { name: 'Глоток со льдом', cost: 2, heal: 3, cleanse: true },
   },
 
   // Вкусно — и точка — классика и большие порции
   'vkusno-big-hit': {
-    rarity: 'legendary', role: 'guard', hp: 28, attack: 7, basic: 'Удар котлетой',
+    rarity: 'legendary', role: 'guard', hp: 28, attack: 7, speed: 4, basic: 'Удар котлетой',
     skill: { name: 'Большой хит', cost: 2, power: 2, shield: 6 },
     ultimate: { name: 'Хит сезона', cost: 3, power: 5, shield: 7 },
     trait: { name: 'Тройная броня', armor: 1, thorns: 1 },
   },
   'vkusno-grand': {
-    rarity: 'epic', role: 'allround', hp: 25, attack: 5, basic: 'Гранд-удар',
+    rarity: 'epic', role: 'allround', hp: 25, attack: 5, speed: 3, basic: 'Гранд-удар',
     skill: { name: 'Двойная котлета', cost: 2, power: 0, buff: 2 },
     ultimate: { name: 'Гранд-финал', cost: 3, power: 3, buff: 2 },
     trait: { name: 'Сытный укус', vamp: 2 },
   },
   'vkusno-chicken-premier': {
-    rarity: 'epic', role: 'striker', hp: 23, attack: 6, basic: 'Хрустящий удар',
+    rarity: 'epic', role: 'striker', hp: 23, attack: 6, speed: 6, basic: 'Хрустящий удар',
     skill: { name: 'Премьерная панировка', cost: 2, power: 0, shield: 2 },
     ultimate: { name: 'Премьерный выход', cost: 3, power: 5, pierce: true },
     trait: { name: 'Быстрая подача', quick: 1 },
   },
   'vkusno-big-special': {
-    rarity: 'rare', role: 'allround', hp: 21, attack: 5, basic: 'Удар соусом',
+    rarity: 'rare', role: 'allround', hp: 21, attack: 5, speed: 4, basic: 'Удар соусом',
     skill: { name: 'Особый рецепт', cost: 2, power: 1, heal: 2, buff: 1 },
     trait: { name: 'Секретный соус', regen: 1 },
   },
   'vkusno-chicken-hit': {
-    rarity: 'rare', role: 'striker', hp: 19, attack: 5, basic: 'Куриный удар',
+    rarity: 'rare', role: 'striker', hp: 19, attack: 5, speed: 7, basic: 'Куриный удар',
     skill: { name: 'Хит дня', cost: 1, power: 2, buff: 1 },
     trait: { name: 'Аппетит', vamp: 1 },
   },
   'vkusno-nuggets': {
-    rarity: 'common', role: 'allround', hp: 17, attack: 4, basic: 'Наггетс',
+    rarity: 'common', role: 'allround', hp: 17, attack: 4, speed: 8, basic: 'Наггетс',
     skill: { name: 'Макни в соус', cost: 1, power: 0, heal: 3 },
   },
   'vkusno-pie': {
-    rarity: 'common', role: 'allround', hp: 16, attack: 4, basic: 'Горячая начинка',
+    rarity: 'common', role: 'allround', hp: 16, attack: 4, speed: 6, basic: 'Горячая начинка',
     skill: { name: 'Осторожно, горячо', cost: 1, power: 0, burn: { dmg: 2, turns: 3 } },
   },
   'vkusno-double-cheeseburger': {
-    rarity: 'rare', role: 'striker', hp: 20, attack: 6, basic: 'Сырный хлопок',
+    rarity: 'rare', role: 'striker', hp: 20, attack: 6, speed: 5, basic: 'Сырный хлопок',
     skill: { name: 'Двойная порция', cost: 2, power: 0, execute: 3 },
     trait: { name: 'Двойной слой', armor: 1 },
   },
   'vkusno-caesar-roll': {
-    rarity: 'common', role: 'allround', hp: 15, attack: 4, basic: 'Хрустящий лист',
+    rarity: 'common', role: 'allround', hp: 15, attack: 4, speed: 6, basic: 'Хрустящий лист',
     skill: { name: 'Соус цезарь', cost: 2, power: 1, weaken: 1, heal: 3 },
   },
   'vkusno-chocolate-cake': {
-    rarity: 'common', role: 'guard', hp: 21, attack: 4, basic: 'Шоколадная крошка',
+    rarity: 'common', role: 'guard', hp: 21, attack: 4, speed: 3, basic: 'Шоколадная крошка',
     skill: { name: 'Шоколадный слой', cost: 1, heal: 1, shield: 3 },
   },
   'vkusno-macarons': {
-    rarity: 'common', role: 'guard', hp: 18, attack: 5, basic: 'Хруст безе',
+    rarity: 'common', role: 'guard', hp: 18, attack: 5, speed: 7, basic: 'Хруст безе',
     skill: { name: 'Сахарная кома', cost: 1, sap: true, heal: 2 },
   },
 
   // Rostic’s — острая хрустящая курица
   'rostics-chefburger': {
-    rarity: 'legendary', role: 'allround', hp: 28, attack: 7, basic: 'Удар шефа',
+    rarity: 'legendary', role: 'allround', hp: 28, attack: 7, speed: 5, basic: 'Удар шефа',
     skill: { name: 'Фирменный рецепт', cost: 2, power: 1, heal: 4, cleanse: true },
     ultimate: { name: 'Шеф на кухне', cost: 3, power: 4, drain: true, team: 3 },
     trait: { name: 'Рука шефа', regen: 2, steady: true },
   },
   'rostics-boxmaster': {
-    rarity: 'epic', role: 'striker', hp: 21, attack: 7, basic: 'Джеб',
+    rarity: 'epic', role: 'striker', hp: 21, attack: 7, speed: 4, basic: 'Джеб',
     skill: { name: 'Ростмастер-комбо', cost: 2, power: 3, recoil: 3 },
     ultimate: { name: 'Нокаут', cost: 3, power: 5, execute: 3 },
     trait: { name: 'Плотная упаковка', armor: 1 },
   },
   'rostics-wings': {
-    rarity: 'epic', role: 'striker', hp: 23, attack: 6, basic: 'Острый взмах',
+    rarity: 'epic', role: 'striker', hp: 23, attack: 6, speed: 7, basic: 'Острый взмах',
     skill: { name: 'Перечный шторм', cost: 2, power: -1, burn: { dmg: 3, turns: 2 } },
     ultimate: { name: 'Огненный смерч', cost: 3, power: 5, pierce: true, burn: { dmg: 3, turns: 4 } },
     trait: { name: 'Острые перья', thorns: 1 },
   },
   'rostics-twister': {
-    rarity: 'rare', role: 'allround', hp: 20, attack: 6, basic: 'Скрутка',
+    rarity: 'rare', role: 'allround', hp: 20, attack: 6, speed: 6, basic: 'Скрутка',
     skill: { name: 'Плотный ролл', cost: 2, power: 0, shield: 3 },
     trait: { name: 'Острая начинка', thorns: 1 },
   },
   'rostics-basket': {
-    rarity: 'rare', role: 'guard', hp: 24, attack: 4, basic: 'Удар корзиной',
+    rarity: 'rare', role: 'guard', hp: 24, attack: 4, speed: 3, basic: 'Удар корзиной',
     skill: { name: 'На всю компанию', cost: 2, power: 2, team: 4 },
     trait: { name: 'Плетёные стенки', armor: 1 },
   },
   'rostics-strips': {
-    rarity: 'common', role: 'striker', hp: 15, attack: 4, basic: 'Полоска',
+    rarity: 'common', role: 'striker', hp: 15, attack: 4, speed: 8, basic: 'Полоска',
     skill: { name: 'Тройная полоска', cost: 2, power: 6 },
   },
   'rostics-bites': {
-    rarity: 'common', role: 'allround', hp: 16, attack: 5, basic: 'Укус',
+    rarity: 'common', role: 'allround', hp: 16, attack: 5, speed: 9, basic: 'Укус',
     skill: { name: 'Горсть байтсов', cost: 2, power: 0, drain: true },
   },
   'rostics-drumsticks': {
-    rarity: 'common', role: 'guard', hp: 18, attack: 4, basic: 'Пинок',
+    rarity: 'common', role: 'guard', hp: 18, attack: 4, speed: 6, basic: 'Пинок',
     skill: { name: 'Подсечка', cost: 1, power: 0, sap: true },
   },
   'rostics-chefburger-junior': {
-    rarity: 'common', role: 'striker', hp: 15, attack: 5, basic: 'Мини-удар',
+    rarity: 'common', role: 'striker', hp: 15, attack: 5, speed: 7, basic: 'Мини-удар',
     skill: { name: 'Юный шеф', cost: 1, power: 0, buff: 1 },
   },
   'rostics-fries': {
-    rarity: 'common', role: 'striker', hp: 16, attack: 5, basic: 'Картофельный тычок',
+    rarity: 'common', role: 'striker', hp: 16, attack: 5, speed: 8, basic: 'Картофельный тычок',
     skill: { name: 'Горсть фри', cost: 2, power: 1, execute: 2 },
   },
   'rostics-ice-cream-cone': {
-    rarity: 'common', role: 'guard', hp: 20, attack: 3, basic: 'Холодок',
+    rarity: 'common', role: 'guard', hp: 20, attack: 3, speed: 5, basic: 'Холодок',
     skill: { name: 'Заморозка', cost: 1, power: 1, sap: true, cleanse: true },
   },
 
   // Додо Пицца — печь и сыр
   'dodo-pepperoni': {
-    rarity: 'legendary', role: 'striker', hp: 27, attack: 8, basic: 'Острый ломтик',
+    rarity: 'legendary', role: 'striker', hp: 27, attack: 8, speed: 6, basic: 'Острый ломтик',
     skill: { name: 'Острые кружки', cost: 1, power: 2, burn: { dmg: 3, turns: 3 } },
     ultimate: { name: 'Пепперони-шторм', cost: 3, power: 4, burn: { dmg: 3, turns: 2 } },
     trait: { name: 'Жар печи', rage: 3, fireproof: true },
   },
   'dodo-four-cheeses': {
-    rarity: 'epic', role: 'guard', hp: 25, attack: 5, basic: 'Сырный удар',
+    rarity: 'epic', role: 'guard', hp: 25, attack: 5, speed: 3, basic: 'Сырный удар',
     skill: { name: 'Сырный квартет', cost: 2, power: -1, weaken: 3, shield: 2 },
     ultimate: { name: 'Сырная крепость', cost: 3, power: 2, heal: 2, shield: 6 },
     trait: { name: 'Плотная корка', armor: 1 },
   },
   'dodo-diablo': {
-    rarity: 'epic', role: 'striker', hp: 22, attack: 6, basic: 'Перчинка',
+    rarity: 'epic', role: 'striker', hp: 22, attack: 6, speed: 7, basic: 'Перчинка',
     skill: { name: 'Адское пламя', cost: 2, power: 3, burn: { dmg: 2, turns: 4 }, recoil: 1 },
     ultimate: { name: 'Адский жар', cost: 3, power: 7, burn: { dmg: 3, turns: 3 }, recoil: 2 },
     trait: { name: 'Огненный нрав', rage: 1 },
   },
   'dodo-dodster': {
-    rarity: 'epic', role: 'allround', hp: 23, attack: 5, basic: 'Ролл-удар',
+    rarity: 'epic', role: 'allround', hp: 23, attack: 5, speed: 6, basic: 'Ролл-удар',
     skill: { name: 'Прямо из печи', cost: 2, power: 1, drain: true },
     ultimate: { name: 'Двойной додстер', cost: 3, power: 6, drain: true },
     trait: { name: 'Тёплый ролл', regen: 1 },
   },
   'dodo-carbonara': {
-    rarity: 'rare', role: 'allround', hp: 22, attack: 5, basic: 'Сливочный удар',
+    rarity: 'rare', role: 'allround', hp: 22, attack: 5, speed: 4, basic: 'Сливочный удар',
     skill: { name: 'Сливочный соус', cost: 2, power: 2, heal: 3 },
     trait: { name: 'Сливочное спокойствие', steady: true },
   },
   'dodo-margherita': {
-    rarity: 'rare', role: 'guard', hp: 21, attack: 5, basic: 'Лист базилика',
+    rarity: 'rare', role: 'guard', hp: 21, attack: 5, speed: 5, basic: 'Лист базилика',
     skill: { name: 'Итальянская классика', cost: 2, heal: 2, shield: 5 },
     trait: { name: 'Свежий базилик', regen: 2 },
   },
   'dodo-bbq': {
-    rarity: 'rare', role: 'allround', hp: 20, attack: 5, basic: 'Копчёный ломтик',
+    rarity: 'rare', role: 'allround', hp: 20, attack: 5, speed: 5, basic: 'Копчёный ломтик',
     skill: { name: 'Дымок барбекю', cost: 2, power: -1, burn: { dmg: 1, turns: 4 }, weaken: 2 },
     trait: { name: 'Копчёная злость', rage: 1 },
   },
   'dodo-hawaiian': {
-    rarity: 'common', role: 'allround', hp: 20, attack: 4, basic: 'Ананасный кубик',
+    rarity: 'common', role: 'allround', hp: 20, attack: 4, speed: 4, basic: 'Ананасный кубик',
     skill: { name: 'Сладкий ананас', cost: 2, power: 1, heal: 2 },
   },
   'dodo-cheese': {
-    rarity: 'common', role: 'guard', hp: 19, attack: 3, basic: 'Тянучка',
+    rarity: 'common', role: 'guard', hp: 19, attack: 3, speed: 5, basic: 'Тянучка',
     skill: { name: 'Тянущийся сыр', cost: 2, power: 1, shield: 6 },
   },
   'dodo-oven-potatoes': {
-    rarity: 'common', role: 'striker', hp: 16, attack: 4, basic: 'Печёный удар',
+    rarity: 'common', role: 'striker', hp: 16, attack: 4, speed: 6, basic: 'Печёный удар',
     skill: { name: 'Румяная корочка', cost: 1, power: 1, burn: { dmg: 1, turns: 4 } },
   },
   'dodo-cheesecake': {
-    rarity: 'common', role: 'allround', hp: 18, attack: 4, basic: 'Нежный удар',
+    rarity: 'common', role: 'allround', hp: 18, attack: 4, speed: 2, basic: 'Нежный удар',
     skill: { name: 'Сладкая пауза', cost: 1, heal: 6 },
   },
 };
