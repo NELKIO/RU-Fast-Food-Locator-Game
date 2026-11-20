@@ -169,7 +169,7 @@ function table() {
  *   weights  evaluation weights, default WEIGHTS
  *   info     an object that receives { depth, nodes, score, ms } of the finished search
  */
-export function smartMove(state, side = state.turn, { timeMs = 120, nodes = null, maxDepth = 48, random = Math.random, weights = WEIGHTS, info = null } = {}) {
+export function smartMove(state, side = state.turn, { timeMs = 120, nodes = null, maxDepth = 48, random = Math.random, weights = WEIGHTS, info = null, slack = 0 } = {}) {
   const moves = legalMoves(state);
   if (moves.length <= 1) return moves[0];
   const T = table(), gen = generation;
@@ -246,8 +246,10 @@ export function smartMove(state, side = state.turn, { timeMs = 120, nodes = null
   let rootOrder = [...moves];
   for (let depth = 1; depth <= maxDepth; depth++) {
     // Every move that ties the best one is searched exactly, so the tie-break can pick among them.
+    // With `slack`, a move at most that much worse than the best is good enough too, and the choice
+    // falls on any of them: a human-like spread among close options, never a move that clearly loses.
     let best = -Infinity, ties = [], complete = 0;
-    const scored = [];
+    const scored = [], near = [];
     for (const m of rootOrder) {
       const next = applyMove(state, side, m);
       let v;
@@ -255,6 +257,11 @@ export function smartMove(state, side = state.turn, { timeMs = 120, nodes = null
       else {
         v = search(next, depth - 1, best - 1e-9, best + 1e-9, 1);
         if (v >= best + 1e-9 && !stopped) v = search(next, depth - 1, best, Infinity, 1);
+        else if (slack > 0 && v > best - slack && !stopped) {
+          // Is it within the slack? A null window at the threshold answers that cheaply.
+          const t = best - slack, w = search(next, depth - 1, t - 1e-9, t + 1e-9, 1);
+          if (w >= t + 1e-9 && !stopped) near.push([m, Math.min(w, v)]);
+        }
       }
       if (stopped) break;
       complete++;
@@ -263,7 +270,8 @@ export function smartMove(state, side = state.turn, { timeMs = 120, nodes = null
     }
     // A cut-short depth still counts when the previous best move has been searched in it.
     if (complete > 0) {
-      choice = ties[Math.floor(random() * ties.length)] ?? ties[0];
+      const pool = slack > 0 ? [...ties, ...near.filter(([m, v]) => !ties.includes(m) && v >= best - slack).map(([m]) => m)] : ties;
+      choice = pool[Math.floor(random() * pool.length)] ?? ties[0];
       score = best;
       if (complete === rootOrder.length) done = depth;
     }

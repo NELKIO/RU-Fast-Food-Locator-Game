@@ -146,6 +146,20 @@ test('a node budget gives the same move every time; more time searches deeper', 
   assert.equal(evaluate(s, 0, older), evaluate(s, 0));
 });
 
+test('noise (slack) varies the trainer among close moves but never takes a move that loses', () => {
+  // Proven positions: with a real budget the trainer still avoids every losing move, even with slack.
+  for (const p of POSITIONS) {
+    let s = startBattle(p.teams.map(t => t.map(stats)), p.first, { tempo: false });
+    for (const m of p.moves.split(' ')) s = applyMove(s, s.turn, m);
+    for (let k = 1; k <= 4; k++) assert.ok(p.win.includes(smartMove(s, s.turn, { nodes: 20000, random: seq(k), slack: 0.2 })), 'slack 0.2, seed ' + k);
+  }
+  // In an open position more slack gives more different moves over many seeds; none gives the same play.
+  const s = startBattle([['bk-whopper', 'bk-big-king', 'bk-cola-08'].map(stats), ['dodo-pepperoni', 'bk-double-whopper', 'bk-wet-wipe'].map(stats)], 0, { tempo: false });
+  const spread = slack => new Set(Array.from({ length: 24 }, (_, k) => smartMove(s, 0, { nodes: 4000, random: seq(k + 1), slack }))).size;
+  assert.ok(spread(0.3) > spread(0), `${spread(0)} → ${spread(0.3)}`);
+  assert.equal(smartMove(s, 0, { nodes: 4000, random: seq(3), slack: 0 }), smartMove(s, 0, { nodes: 4000, random: seq(3) }), 'no slack is the default');
+});
+
 test('a trainer brings fighters of the same rarities and levels, from its own chain when it can', () => {
   const team = ['bk-whopper', 'dodo-pepperoni', 'vkusno-nuggets'].map(id => cardFor(menu.find(m => m.id === id), 4));
   for (const trainer of TRAINERS.filter(t => t.brand)) {
