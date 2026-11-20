@@ -111,7 +111,7 @@ function chips(fighter) {
 }
 
 export function mountDuels(container, options) {
-  const { read, initialMode, award, onBack, onStateChange, onTeamChange, onShowCard, onFightChange } = options;
+  const { read, initialMode, award, onBack, onStateChange, onTeamChange, onShowCard, onFightChange, sound } = options;
   let wildFighting = false;
   let data, catalog, owned;
   let selected = [];
@@ -374,6 +374,8 @@ export function mountDuels(container, options) {
   }
 
   function empty() {
+    // Opened before the menu has loaded: the fighters are on their way, not missing.
+    if (data.loading) return `<section class="duel-box" aria-busy="true"><h3>Загружаем бойцов…</h3><p>Ещё секунда — подтягиваем меню и твою коллекцию.</p></section>`;
     return `<section class="duel-box"><h3>Нет бойцов</h3>
       <p>Отметься у любого заведения на карте — там выпадет первый боец.</p>
       <div class="duel-buttons">${button('map', 'К карте', { primary: true, icon: 'pin' })}</div></section>`;
@@ -535,6 +537,8 @@ export function mountDuels(container, options) {
     rewardState = 'saving';
     if (mode === 'online') forgetInvite();
     const won = state.winner === side, drawn = state.winner === 'draw';
+    // The fanfare once the last blow has played out.
+    sfx(drawn ? 'draw' : won ? 'win' : 'lose', Math.max(0, fxUntil - performance.now()) + 250);
     const result = mode === 'wild'
       ? { mode: 'wild', encounterId: wildId, fought: wildFought, won, draw: drawn, teamIds: state.teams[side].map(f => f.id), matchId: localMatchId }
       : mode === 'trainer'
@@ -612,6 +616,32 @@ export function mountDuels(container, options) {
     return plan;
   }
 
+  // Sounds on the beats of the animation: the swing, every strike, the effect, the losses after.
+  const sfx = (name, delay = 0, strength) => { try { sound?.(name, delay, strength); } catch {} };
+  const EFFECT_SOUNDS = [['freeze', 'freeze'], ['sleep', 'sleep'], ['burn', 'burn'], ['toxic', 'toxic'], ['leech', 'leech'],
+    ['shield', 'shield'], ['buff', 'buff'], ['charge', 'buff'], ['cleanse', 'heal'], ['sap', 'debuff'], ['weaken', 'debuff'], ['purge', 'debuff']];
+  function moveSounds(event, { hit, after, strikes, landed }) {
+    if (event.command.startsWith('switch:')) {
+      sfx('switch');
+      if (event.intimidated?.includes(event.target)) sfx('growl', 300);
+    } else if (event.command === 'guard') sfx('guard', 120);
+    else {
+      if (event.command === 'ultimate') sfx('ultimate');
+      else if (event.command === 'special') sfx('whoosh', Math.max(0, hit - 220));
+      if (event.effects.includes('shatter')) sfx('shatter', Math.max(0, hit - 120));
+      const strength = Math.min(1, (event.damage ?? 0) / 14);
+      if (event.damage) {
+        for (const t of strikes.slice(0, -1)) sfx('strike', t);
+        sfx('hit', landed, strength);
+      }
+      if (event.blocked || (event.absorbed && !event.damage)) sfx('blocked', hit);
+      // At most two effect sounds, so a busy move does not turn into noise.
+      EFFECT_SOUNDS.filter(([effect]) => event.effects.includes(effect)).slice(0, 2).forEach(([, name], i) => sfx(name, after + i * 160));
+      if (event.heal || event.saved) sfx('heal', after + 120);
+    }
+    if (event.burned || event.poisoned || event.leeched) sfx('tick', after + 340);
+  }
+
   // The actor lunges, the canvas plays the move, and the target flinches when the blow lands.
   function animate(state, side, plan) {
     const event = state.last;
@@ -638,6 +668,7 @@ export function mountDuels(container, options) {
     };
     if (!event) {
       if (motion) { mark('me', 'act-enter'); mark('foe', 'act-enter'); }
+      sfx('start');
       return;
     }
     const actor = event.side === side ? 'me' : 'foe', other = actor === 'me' ? 'foe' : 'me';
@@ -646,6 +677,7 @@ export function mountDuels(container, options) {
     const strikes = plan?.strikes ?? [hit];
     const landed = strikes.at(-1);
     if (plan) effects().play(plan.steps, plan.alias);
+    moveSounds(event, { hit, after, strikes, landed });
     if (event.command.startsWith('switch:')) {
       mark(actor, 'act-enter');
       if (event.intimidated?.includes(event.target)) { pop(actor, 'Грозный вид', 'info', 300, true); pop(other, 'Атака ↓', 'info', 640); }
@@ -691,6 +723,7 @@ export function mountDuels(container, options) {
     // A status put on by this very move already has its label, so its skip only gets the ending.
     (plan?.skips ?? []).forEach((shown, i) => {
       const skip = event.skips[i], who = shown.at === 'src' ? actor : other, drinker = who === 'me' ? 'foe' : 'me';
+      sfx('skip', shown.start);
       if (!(i === 0 && who === other && event.effects.includes(shown.kind))) pop(who, 'Пропуск хода', shown.kind, shown.start);
       if (skip.burned) pop(who, '−' + skip.burned, 'burn', shown.start + 300, true);
       if (skip.poisoned) pop(who, '−' + skip.poisoned, 'toxic', shown.start + 380, true);
@@ -741,7 +774,10 @@ export function mountDuels(container, options) {
       // A knocked-out fighter stays on screen for a moment before the next one comes in.
       for (const s of [0, 1]) {
         const before = lastDrawn.active[s];
-        if (state.active[s] !== before && state.teams[s][before].hp <= 0) hold[s] = before;
+        if (state.active[s] !== before && state.teams[s][before].hp <= 0) {
+          hold[s] = before;
+          sfx('faint', (plan?.strikes?.at(-1) ?? plan?.impact ?? 0) + 250);
+        }
       }
       if (hold.some(i => i !== null)) {
         clearTimeout(holdTimer);
