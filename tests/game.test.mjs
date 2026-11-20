@@ -314,7 +314,7 @@ test('the login week: one reward a day, seven days in a row, a missed day starts
 test('the day-7 legend is one the player does not have yet, while there is one', () => {
   const legends = realMenu.filter(item => cardFor(item).rarity === 'legendary').map(item => item.id);
   const owned = Object.fromEntries(legends.slice(1).map(id => [id, { copies: 1, xp: 0 }]));
-  const p = normalizeProfile({ ...freshProfile(), collection: owned, team: [legends[1]], login: { day: '2026-11-19', streak: 6 } });
+  const p = normalizeProfile({ ...freshProfile(), collection: owned, team: [legends[1]], login: { day: '2026-11-19', streak: 6, v: 2 } });
   const r = claimDaily(p, realMenu, { now: new Date(2026, 10, 20, 9).getTime(), rng: seq(7) });
   assert.equal(r.day, 7);
   assert.equal(r.got[0].card.id, legends[0]);
@@ -334,4 +334,27 @@ test('wild fighters: new dishes come first and the last five do not repeat while
   }
   for (let i = 5; i < seen.length; i++) assert.ok(!seen.slice(i - 5, i).includes(seen[i]), 'no repeat within five: ' + seen[i]);
   assert.ok(new Set(seen).size >= 30, 'mostly different fighters, got ' + new Set(seen).size);
+});
+
+test('a login reward claimed before the roulette version is reset once and can be claimed again', () => {
+  const old = normalizeProfile({ ...freshProfile(), login: { day: '2026-11-20', streak: 1 } });
+  assert.deepEqual(old.login, { day: '', streak: 0 });
+  assert.equal(dailyStatus(old, new Date(2026, 10, 20, 18).getTime()).claimable, true);
+  const r = claimDaily(old, realMenu, { now: new Date(2026, 10, 20, 18).getTime(), rng: seq(4) });
+  assert.equal(r.profile.login.v, 2);
+  assert.equal(dailyStatus(r.profile, new Date(2026, 10, 20, 19).getTime()).claimable, false, 'the new claim sticks');
+});
+
+test('login spins favour dishes the player does not have yet', () => {
+  let newOnes = 0, total = 0;
+  for (let k = 0; k < 60; k++) {
+    let p = grantStarter(freshProfile(), realMenu, { rng: seq(900 + k) }).profile;
+    // Own half of every chain's menu, so both new and old dishes can come.
+    const owned = Object.fromEntries(realMenu.filter((_, i) => i % 2 === 0).map(item => [item.id, { copies: 1, xp: 0 }]));
+    p = normalizeProfile({ ...p, collection: { ...p.collection, ...owned }, login: { day: '2026-11-20', streak: 4, v: 2 } });
+    const r = claimDaily(p, realMenu, { now: new Date(2026, 10, 21, 10).getTime(), rng: seq(5000 + k) });
+    assert.equal(r.day, 5);
+    for (const g of r.got) { total++; if (g.isNew) newOnes++; }
+  }
+  assert.ok(newOnes / total > 0.65, `new fighters in ${newOnes} of ${total} spins`);
 });

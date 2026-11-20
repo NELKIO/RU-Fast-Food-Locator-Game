@@ -69,9 +69,14 @@ export function freshProfile() {
   };
 }
 
+// Version 2: spins with the roulette. Claims made before it are dropped once, so everyone can
+// claim the day again the new way.
+const LOGIN_VERSION = 2;
 function cleanLogin(value) {
-  if (!record(value) || typeof value.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.day)) return {day: '', streak: 0};
-  return {day: value.day, streak: Math.min(DAILY_DAYS, Math.max(1, count(value.streak)))};
+  if (!record(value) || value.v !== LOGIN_VERSION || typeof value.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.day)) {
+    return {day: '', streak: 0};
+  }
+  return {day: value.day, streak: Math.min(DAILY_DAYS, Math.max(1, count(value.streak))), v: LOGIN_VERSION};
 }
 
 // Encounter ids look like `<time in base36>-<sequence>`; newer ones sort later.
@@ -588,6 +593,27 @@ function dayBefore(day) {
   return localDay(new Date(y, m - 1, d - 1, 12).getTime());
 }
 
+// A login spin: a random chain's roulette with the usual rarity odds, but within the rarity a dish
+// the player does not have yet comes 3 times out of 4.
+const DAILY_NEW_ODDS = 0.75;
+function dailySpin(saved, items, rng) {
+  const brand = choose([...BRANDS], rng);
+  const groups = RARITIES.map(() => []);
+  for (const item of items) if (item.brand === brand) groups[RARITIES.indexOf(cardFor(item).rarity)].push(item);
+  const total = groups.reduce((sum, group, i) => sum + (group.length ? LOOT_WEIGHTS[i] : 0), 0);
+  if (!total) return null;
+  let draw = unit(rng) * total;
+  for (let i = 0; i < groups.length; i++) {
+    if (!groups[i].length) continue;
+    if (draw < LOOT_WEIGHTS[i]) {
+      const missing = groups[i].filter(item => !Object.hasOwn(saved.collection, String(item.id)));
+      return choose(missing.length && unit(rng) < DAILY_NEW_ODDS ? missing : groups[i], rng);
+    }
+    draw -= LOOT_WEIGHTS[i];
+  }
+  return null;
+}
+
 // The rare fighter of the week, the same for everyone: rares in a fixed order, one per calendar week.
 export function featuredFighter(menu, now = Date.now()) {
   const rares = menuItems(menu).filter(item => fighterFor(item.id).rarity === 'rare').sort((a, b) => (String(a.id) < String(b.id) ? -1 : 1));
@@ -621,8 +647,7 @@ export function claimDaily(profile, menu, {now = Date.now(), rng = Math.random} 
   };
   if (reward.kind === 'spins') {
     for (let i = 0; i < reward.count; i++) {
-      const brand = choose([...BRANDS], rng);
-      const item = visitReward(items, brand, rng);
+      const item = dailySpin(saved, items, rng);
       if (item) giveItem(item);
     }
   } else if (reward.kind === 'featured') {
@@ -641,7 +666,7 @@ export function claimDaily(profile, menu, {now = Date.now(), rng = Math.random} 
     const item = choose(missing.length ? missing : legends, rng);
     if (item) giveItem(item);
   }
-  saved.login = {day: localDay(now), streak: status.today};
+  saved.login = {day: localDay(now), streak: status.today, v: LOGIN_VERSION};
   return {ok: true, reason: 'claimed', profile: saved, day: status.today, reward, got};
 }
 
