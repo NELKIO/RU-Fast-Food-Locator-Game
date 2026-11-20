@@ -193,15 +193,19 @@ try {
   const wildBefore = (await saved(laptop)).encounter?.id;
   assert.ok(wildBefore, 'a wild fighter is waiting');
   assert.equal((await saved(phone)).encounter?.id, wildBefore, 'the same one on both devices');
+  await laptop.locator('.main-nav [data-nav="radar"]').click();
   await fightWild(phone);
   await phone.locator('.duel-result').waitFor({ timeout: 60_000 });
   await phone.waitForTimeout(1500);
-  await laptop.getByRole('button', { name: 'Сразиться' }).first().click();
-  await laptop.locator('.duel-alert', { hasText: 'уже победили на другом устройстве' }).waitFor({ timeout: 20_000 });
-  assert.equal(await laptop.locator('.duel-stage').count(), 0, 'no second fight with the same wild fighter');
+  // Opening the arena syncs in the background, nothing waits for it: the caught fighter just leaves.
+  await laptop.locator('.main-nav [data-nav="arena"]').click();
+  assert.equal(await laptop.locator('.duel-alert').count(), 0, 'no blocking check before a fight');
+  await laptop.waitForFunction(({ key, id }) => { const p = JSON.parse(localStorage.getItem(key)); return p.encounter?.id !== id && p.retired?.[id]; }, { key: profileKey, id: wildBefore }, { timeout: 20_000 });
+  await laptop.waitForTimeout(300);
+  assert.equal(await laptop.locator('.duel-wild [data-duel-action="wild"]').count(), 0, 'the caught fighter is not offered again');
   await phone.locator('.main-nav [data-nav="radar"]').click();
   await laptop.locator('.main-nav [data-nav="radar"]').click();
-  console.log('PASS a wild fighter caught on the phone is not offered for a second fight on the laptop');
+  console.log('PASS a wild fighter caught on the phone leaves the laptop arena by itself, no blocking check');
 
   // Reload: still linked, no prompt, same profile.
   const before = counters(await saved(phone));

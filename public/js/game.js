@@ -568,10 +568,15 @@ function finishBattle(saved, outcome, playerXp, cardIds, cardXp) {
   return leveledIds;
 }
 
-export function resolveEncounter(profile, encounterId, won, menu, {teamIds, draw = false, now = Date.now()} = {}) {
+export function resolveEncounter(profile, encounterId, won, menu, {teamIds, draw = false, now = Date.now(), fought = null, matchId = null} = {}) {
   const saved = normalizeProfile(profile);
-  const encounter = saved.encounter;
-  if (!encounter || encounter.id !== encounterId) return {ok: false, reason: 'no-encounter', profile: saved};
+  if (matchId && Object.hasOwn(saved.battleIds, matchId)) return {ok: false, reason: 'already-recorded', profile: saved};
+  const current = saved.encounter?.id === encounterId ? saved.encounter : null;
+  // A finished fight is never lost. If a sync took this wild fighter away meanwhile (another device
+  // caught it), the fight still counts against the fighter that was fought: a rare double reward is
+  // fine, a lost one is not. The fight's own ID keeps it from counting twice on this device.
+  const encounter = current ?? (fought && fought.id === encounterId && typeof fought.enemyId === 'string' ? fought : null);
+  if (!encounter) return {ok: false, reason: 'no-encounter', profile: saved};
   const outcome = battleOutcome(won, draw);
   if (!outcome) return {ok: false, reason: 'invalid-result', profile: saved};
   const enemy = menuItems(menu).find(item => String(item.id) === encounter.enemyId);
@@ -584,8 +589,9 @@ export function resolveEncounter(profile, encounterId, won, menu, {teamIds, draw
   const leveledIds = finishBattle(saved, outcome, playerXp, party, partyXp);
   // Win or lose, the wild fighter leaves and the next one appears after the pause.
   retire(saved, encounter);
-  saved.encounter = null;
-  if (timestamp(now) !== null) saved.lastScoutAt = timestamp(now);
+  if (current) saved.encounter = null;
+  if (matchId) saved.battleIds[matchId] = true;
+  if (timestamp(now) !== null) saved.lastScoutAt = Math.max(saved.lastScoutAt ?? 0, timestamp(now));
   return {
     ok: true, reason: outcome, profile: saved, encounter, card: won ? ownedCard(enemy, saved.collection[enemy.id]) : null,
     playerXp, partyXp, isNew: reward.isNew, leveledUp: reward.leveledUp || leveledIds.length > 0, leveledIds,

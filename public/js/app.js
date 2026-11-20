@@ -1374,7 +1374,7 @@ function arenaData() {
     cards: strongCards(),
     owned: owned(),
     team: [...profile.team],
-    wild: e && { id: e.id, opponent: (team) => wildFighter(e, menu, team) },
+    wild: e && { id: e.id, encounter: { ...e }, opponent: (team) => wildFighter(e, menu, team) },
     wildWaitMs: wildWait(),
     // The trainer of this visit, picked once when the page opens; its team is stable for the
     // visit too (the same team and level give the same line-up).
@@ -1427,6 +1427,9 @@ function switchTab(next, options = {}) {
   } else if (next === 'collection') renderCollection();
   else {
     ensureWild();
+    // Fresh news from other devices in the background: a wild fighter already caught there leaves the
+    // lobby. Nothing waits for it: a fight never depends on the connection.
+    if (profile.sync?.key) sync.syncNow();
     duelCleanup = mountDuels($('arena-view'), {
       read: arenaData,
       initialMode: options.initialMode || 'lobby',
@@ -1436,15 +1439,6 @@ function switchTab(next, options = {}) {
         wildFightActive = active;
         // The result of a wild fight is shared at once, so another device cannot fight the same one.
         if (ended && profile.sync?.key) sync.syncNow();
-      },
-      // A linked device checks with the others before a wild fight, so one wild fighter cannot be
-      // caught twice (once on each device).
-      beforeWild: async () => {
-        if (!profile.sync?.key) return { ok: true };
-        if (!(await syncedBeforeClaim())) {
-          return { ok: false, message: 'Нет связи с другими устройствами. Бой с диким бойцом станет доступен, когда синхронизация пройдёт.' };
-        }
-        return currentWild() ? { ok: true } : { ok: false, message: 'Этого дикого бойца уже победили на другом устройстве.' };
       },
       onStateChange: (active) => {
         onlineActive = active;
@@ -1459,6 +1453,8 @@ function switchTab(next, options = {}) {
                   teamIds: result.teamIds,
                   draw: result.draw,
                   now: Date.now(),
+                  fought: result.fought,
+                  matchId: result.matchId,
                 }),
               )
             : result.mode === 'trainer'
