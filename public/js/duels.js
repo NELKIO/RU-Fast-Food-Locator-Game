@@ -9,6 +9,8 @@ import { intimidateFx, movePlan } from './fx-moves.js';
 
 const LABELS = { wild: 'Дикий боец', trainer: 'Бой с тренером', online: 'Сетевая дуэль' };
 // How long the computer thinks per move: the trainer plays at full strength, a wild fighter a little lighter.
+// A trainer goes by a funny job and a name: «Курьер Андрей».
+const fullName = coach => (coach.role ? `${coach.role} ${coach.name}` : coach.name);
 const THINK_MS = { wild: 90, easy: 60, normal: 350, hard: 900, lord: 1200 };
 const LEVELS = [['easy', 'Разминка'], ['normal', 'Всерьёз'], ['hard', 'Без пощады']];
 const plural = new Intl.PluralRules('ru');
@@ -350,7 +352,7 @@ export function mountDuels(container, options) {
           `<button type="button" class="duel-level" data-duel-action="trainer-level:${id}" aria-pressed="${id === level}">${label}</button>`).join('')}</div>`;
     return `<section class="duel-trainer${coach.lord ? ' is-lord' : ''}" style="--team-color:${coach.brand ? color(coach.brand) : coach.lord ? '#ffd76a' : '#c7b1f5'}" aria-labelledby="duel-trainer-title">
       <div class="duel-trainer-head"><span class="duel-label">Тренер · ${esc(coach.title ?? brands[coach.brand]?.name ?? '')}</span>
-        <h3 id="duel-trainer-title">${coach.lord ? icon('trophy', 18) + ' ' : ''}${esc(coach.name)}</h3>
+        <h3 id="duel-trainer-title">${coach.lord ? icon('trophy', 18) + ' ' : ''}${esc(fullName(coach))}</h3>
         <p>Бой 3 на 3 в любое время. Тренер просчитывает ходы вперёд, меняет бойцов и бережёт энергию на суперприём.</p></div>
       ${levels}
       <div class="duel-trainer-team">${faces}</div>
@@ -531,7 +533,7 @@ export function mountDuels(container, options) {
     }
     if (mode === 'trainer') {
       const coach = trainer?.trainer;
-      const who = coach?.name ?? 'Тренер', she = coach?.she;
+      const who = coach ? fullName(coach) : 'Тренер', she = coach?.she;
       const xp = info.playerXp ? ` Ты +${info.playerXp} опыта, каждый боец команды +${info.partyXp}.` : '';
       const line = state.winner === side ? (coach?.lord ? 'Лорд тренеров повержен!' : `${who} ${she ? 'побеждена' : 'побеждён'}!`)
         : state.winner === 'draw' ? 'Ничья с тренером.' : `${who} ${she ? 'оказалась' : 'оказался'} сильнее.`;
