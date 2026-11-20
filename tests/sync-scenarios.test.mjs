@@ -504,3 +504,27 @@ test('reported bug: after the pause both devices meet the same wild fighter, and
   assert.equal(resolveEncounter(b.profile, id, true, menu, { now: later + 300_000 }).reason, 'no-encounter', 'no second catch');
   assertExact([a, b]);
 });
+
+test('a fight is never lost: the wild fighter caught on another device during the fight still counts here', () => {
+  const { devices: [a, b], relays } = linked(2, 43);
+  const at = T0 + 3 * HOUR;
+  a.act(p => wildEncounter(p, menu, { now: at, rng: a.random }));
+  settleAll([a, b], relays, at);
+  const fought = { ...b.profile.encounter };
+  // The phone starts its fight; meanwhile the laptop catches the same fighter and the phone syncs.
+  a.act(p => resolveEncounter(p, fought.id, true, menu, { now: at + 60_000, teamIds: p.team }));
+  settleAll([a, b], relays, at + 90_000);
+  assert.equal(b.profile.encounter, null, 'the sync took the fighter away mid-fight');
+  const copiesBefore = b.profile.collection[fought.enemyId]?.copies ?? 0;
+  const winsBefore = b.profile.battles.wins;
+  // The phone's fight ends with a win: it counts against the fighter it fought, once.
+  const done = b.act(p => resolveEncounter(p, fought.id, true, menu, { now: at + 120_000, teamIds: p.team, fought, matchId: 'phone-fight-1' }));
+  assert.equal(done.ok, true, done.reason);
+  assert.equal(b.profile.battles.wins, winsBefore + 1);
+  assert.equal(b.profile.collection[fought.enemyId].copies, copiesBefore + 1);
+  assert.equal(resolveEncounter(b.profile, fought.id, true, menu, { now: at + 130_000, fought, matchId: 'phone-fight-1' }).reason, 'already-recorded');
+  // Both catches stay after the sync: more than one is fine, fewer never.
+  settleAll([a, b], relays, at + 200_000);
+  for (const d of [a, b]) assert.ok(d.profile.collection[fought.enemyId].copies >= 2, d.name);
+  assertExact([a, b]);
+});

@@ -111,7 +111,7 @@ function chips(fighter) {
 }
 
 export function mountDuels(container, options) {
-  const { read, initialMode, award, onBack, onStateChange, onTeamChange, onShowCard, onFightChange, beforeWild } = options;
+  const { read, initialMode, award, onBack, onStateChange, onTeamChange, onShowCard, onFightChange } = options;
   let wildFighting = false;
   let data, catalog, owned;
   let selected = [];
@@ -125,7 +125,7 @@ export function mountDuels(container, options) {
   }
   sync();
   let mode = initialMode === 'online' ? 'online' : 'lobby';
-  let local = null, localMatchId = null, wildId = null, room = null, transport = null, controller = null;
+  let local = null, localMatchId = null, wildId = null, wildFought = null, room = null, transport = null, controller = null;
   let thinking = null, pulse = null, waitingHint = null, holdTimer = null, fxTimer = null, fx = null, fxUntil = 0;
   let disposed = false, rewardState = 'idle', rewardInfo = null, quitPrompt = false, slow = false;
   let inviteVisible = false, copyStatus = '', connectionError = '', feedback = '', currentPath = '';
@@ -182,21 +182,7 @@ export function mountDuels(container, options) {
     if (selected.length) onTeamChange?.([...selected]);
   }
 
-  // A linked device first checks with the others that this wild fighter is still free.
-  let wildChecking = false;
-  async function startWild() {
-    if (wildChecking) return;
-    if (beforeWild) {
-      wildChecking = true;
-      feedback = 'Сверяем прогресс с другими устройствами…';
-      draw();
-      const check = await beforeWild().catch(() => ({ ok: false, message: 'Не удалось сверить прогресс.' }));
-      wildChecking = false;
-      feedback = '';
-      if (disposed) return;
-      sync();
-      if (!check.ok) { feedback = check.message; draw(); return; }
-    }
+  function startWild() {
     const wild = data.wild;
     if (!wild || !selected.length) { draw(); return; }
     const enemy = wild.opponent(selected.map(id => catalog.get(id)));
@@ -206,6 +192,7 @@ export function mountDuels(container, options) {
     local = startBattle(teams, opener(teams, 0), { tempo: false });
     localMatchId = newRoomCode() + newRoomCode();
     wildId = wild.id;
+    wildFought = wild.encounter ?? null;
     rewardState = 'idle';
     rewardInfo = null;
     quitPrompt = false;
@@ -549,7 +536,7 @@ export function mountDuels(container, options) {
     if (mode === 'online') forgetInvite();
     const won = state.winner === side, drawn = state.winner === 'draw';
     const result = mode === 'wild'
-      ? { mode: 'wild', encounterId: wildId, won, draw: drawn, teamIds: state.teams[side].map(f => f.id), matchId: localMatchId }
+      ? { mode: 'wild', encounterId: wildId, fought: wildFought, won, draw: drawn, teamIds: state.teams[side].map(f => f.id), matchId: localMatchId }
       : mode === 'trainer'
       ? { mode: 'trainer', won, draw: drawn, teamIds: state.teams[side].map(f => f.id), matchId: localMatchId, difficulty: trainer?.difficulty ?? 'normal' }
       : { mode: 'online', won, draw: drawn, xp: drawn ? ONLINE_XP.draw : won ? ONLINE_XP.won : ONLINE_XP.lost,
