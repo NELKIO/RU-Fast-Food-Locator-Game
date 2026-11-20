@@ -13,6 +13,7 @@
 //   wild fighter           the first one still waiting that appeared after the latest fight
 //   lastScoutAt, sequence  the latest / largest
 //   daily route            the later day; on the same day the visited points are united
+//   login week             the latest claimed day
 //   battleIds              stay on the device that played the match
 import {
   CARD_XP_CAP, MAX_TEAM_SIZE, WILD_COOLDOWN_MS, cleanContribution, encounterTime, keepNewestRetired, normalizeProfile,
@@ -114,7 +115,7 @@ export function cleanDoc(value) {
     sync: {device: 'documentreader', devices: value.devices, team: value.team, teamAt: value.teamAt},
     daily: value.daily, encounter: value.encounter,
     retired: Array.isArray(value.retired) ? Object.fromEntries(value.retired.slice(0, 500).map(id => [String(id), true])) : {},
-    lastScoutAt: value.lastScoutAt, encounterSequence: value.encounterSequence,
+    lastScoutAt: value.lastScoutAt, encounterSequence: value.encounterSequence, login: value.login,
     visits: record(value.visitsAt)
       ? Object.fromEntries(Object.entries(value.visitsAt).map(([id, lastAt]) => [id, {lastAt, count: 1}])) : {},
   });
@@ -128,6 +129,7 @@ export function cleanDoc(value) {
     retired: Object.keys(profile.retired),
     lastScoutAt: profile.lastScoutAt,
     encounterSequence: profile.encounterSequence,
+    login: profile.login,
     visitsAt: Object.fromEntries(Object.entries(profile.visits).map(([id, visit]) => [id, visit.lastAt])),
   };
 }
@@ -186,6 +188,8 @@ export function mergeProfile(local, docs = [], {now = Date.now(), device} = {}) 
 
   // 3. The rest by meaning.
   merged.daily = clean.reduce((route, doc) => laterRoute(route, doc.daily), {...base.daily, pointIds: [...base.daily.pointIds].sort()});
+  // The login week: the latest claimed day wins, so a reward taken on one device is taken everywhere.
+  merged.login = clean.reduce((a, doc) => (doc.login.day > a.day || (doc.login.day === a.day && doc.login.streak > a.streak) ? doc.login : a), base.login);
   merged.lastScoutAt = Math.max(base.lastScoutAt ?? -1, ...clean.map(doc => doc.lastScoutAt ?? -1));
   if (merged.lastScoutAt < 0) merged.lastScoutAt = null;
   merged.encounterSequence = Math.max(base.encounterSequence, ...clean.map(doc => doc.encounterSequence));
@@ -239,6 +243,7 @@ export function docOf(profile) {
     retired: Object.keys(saved.retired),
     lastScoutAt: saved.lastScoutAt,
     encounterSequence: saved.encounterSequence,
+    login: saved.login,
     visitsAt: Object.fromEntries(Object.entries(saved.visits).map(([id, visit]) => [id, visit.lastAt])),
   };
 }

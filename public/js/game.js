@@ -64,7 +64,14 @@ export function freshProfile() {
     battles: {wins: 0, losses: 0, draws: 0},
     battleIds: {},
     retired: {},
+    recentWild: [],
+    login: {day: '', streak: 0},
   };
+}
+
+function cleanLogin(value) {
+  if (!record(value) || typeof value.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.day)) return {day: '', streak: 0};
+  return {day: value.day, streak: Math.min(DAILY_DAYS, Math.max(1, count(value.streak)))};
 }
 
 // Encounter ids look like `<time in base36>-<sequence>`; newer ones sort later.
@@ -187,6 +194,8 @@ export function normalizeProfile(value) {
     profile.retired = keepNewestRetired(Object.entries(value.retired).filter(([, gone]) => gone === true).map(([id]) => id));
   }
   if (profile.encounter && Object.hasOwn(profile.retired, profile.encounter.id)) profile.encounter = null;
+  profile.recentWild = uniqueIds(value.recentWild).slice(0, RECENT_WILD);
+  profile.login = cleanLogin(value.login);
   const sync = cleanSync(value.sync);
   if (sync) profile.sync = sync;
   return profile;
@@ -386,12 +395,20 @@ function giveCard(saved, item) {
   return {isNew: false, leveledUp: levelForXp(entry.xp) > oldLevel};
 }
 
-// Wild fighters prefer dishes the player has not found yet.
+// Wild fighters prefer dishes the player has not found yet (9 times out of 10), and the last few
+// dishes met do not come back while there is anything else to meet.
+const NEW_WILD_ODDS = 0.9;
+const RECENT_WILD = 5;
 function spawnWild(saved, items, now, rng, brand = null, visit = false) {
   const pool = brand ? items.filter(item => item.brand === brand) : items;
   if (!pool.length) return null;
+  const fresh = list => {
+    const left = list.filter(item => !saved.recentWild.includes(String(item.id)));
+    return left.length ? left : list;
+  };
   const unseen = pool.filter(item => !Object.hasOwn(saved.collection, item.id));
-  const enemy = choose(unseen.length && unit(rng) < 0.75 ? unseen : pool, rng);
+  const enemy = choose(fresh(unseen.length && unit(rng) < NEW_WILD_ODDS ? unseen : pool), rng);
+  saved.recentWild = [String(enemy.id), ...saved.recentWild.filter(id => id !== String(enemy.id))].slice(0, RECENT_WILD);
   retire(saved, saved.encounter);
   saved.encounterSequence += 1;
   saved.encounter = {
@@ -551,6 +568,81 @@ export function recordBattle(profile, {xp, won, draw = false, cardId, mode, matc
   const playerXp = count(xp);
   const leveledIds = finishBattle(saved, outcome, playerXp, selected ? [selected] : [], playerXp);
   return {ok: true, reason: 'recorded', profile: saved, cardId: selected ?? null, playerXp, partyXp: selected ? playerXp : 0, leveledUp: leveledIds.length > 0, leveledIds};
+}
+
+// Daily login: seven days in a row, then the week starts over. Missing a day starts it over too.
+// Spins use the roulette of a random chain; day 3 is a fighter announced for the whole week.
+export const DAILY_DAYS = 7;
+export const DAILY_REWARDS = Object.freeze([
+  {day: 1, kind: 'spins', count: 1},
+  {day: 2, kind: 'spins', count: 2},
+  {day: 3, kind: 'featured'},
+  {day: 4, kind: 'player-xp', amount: 100},
+  {day: 5, kind: 'spins', count: 3},
+  {day: 6, kind: 'team-xp', amount: 40},
+  {day: 7, kind: 'legendary'},
+]);
+
+function dayBefore(day) {
+  const [y, m, d] = day.split('-').map(Number);
+  return localDay(new Date(y, m - 1, d - 1, 12).getTime());
+}
+
+// The rare fighter of the week, the same for everyone: rares in a fixed order, one per calendar week.
+export function featuredFighter(menu, now = Date.now()) {
+  const rares = menuItems(menu).filter(item => fighterFor(item.id).rarity === 'rare').sort((a, b) => (String(a.id) < String(b.id) ? -1 : 1));
+  if (!rares.length) return null;
+  const date = new Date(now);
+  const week = Math.floor((Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000 + 3) / 7);
+  return rares[week % rares.length];
+}
+
+// Where the player stands this week: which day can be claimed now (or was claimed today).
+export function dailyStatus(profile, now = Date.now()) {
+  const saved = normalizeProfile(profile);
+  const today = localDay(now);
+  const {day, streak} = saved.login;
+  if (day === today) return {claimable: false, today: streak, claimed: streak};
+  const next = day && day === dayBefore(today) ? streak % DAILY_DAYS + 1 : 1;
+  return {claimable: true, today: next, claimed: next - 1};
+}
+
+export function claimDaily(profile, menu, {now = Date.now(), rng = Math.random} = {}) {
+  const saved = normalizeProfile(profile);
+  const items = menuItems(menu);
+  if (!items.length) return {ok: false, reason: 'empty-menu', profile: saved};
+  const status = dailyStatus(saved, now);
+  if (!status.claimable) return {ok: false, reason: 'claimed', profile: saved};
+  const reward = DAILY_REWARDS[status.today - 1];
+  const got = [];
+  const giveItem = item => {
+    const result = giveCard(saved, item);
+    got.push({kind: 'card', card: ownedCard(item, saved.collection[String(item.id)]), isNew: result.isNew});
+  };
+  if (reward.kind === 'spins') {
+    for (let i = 0; i < reward.count; i++) {
+      const brand = choose([...BRANDS], rng);
+      const item = visitReward(items, brand, rng);
+      if (item) giveItem(item);
+    }
+  } else if (reward.kind === 'featured') {
+    const item = featuredFighter(items, now);
+    if (item) giveItem(item);
+  } else if (reward.kind === 'player-xp') {
+    saved.xp = count(saved.xp + reward.amount);
+    got.push({kind: 'player-xp', amount: reward.amount});
+  } else if (reward.kind === 'team-xp') {
+    const ids = saved.team.filter(id => saved.collection[id]);
+    for (const id of ids) saved.collection[id].xp = count(saved.collection[id].xp + reward.amount, CARD_XP_CAP);
+    got.push({kind: 'team-xp', amount: reward.amount, ids});
+  } else if (reward.kind === 'legendary') {
+    const legends = items.filter(item => fighterFor(item.id).rarity === 'legendary');
+    const missing = legends.filter(item => !Object.hasOwn(saved.collection, String(item.id)));
+    const item = choose(missing.length ? missing : legends, rng);
+    if (item) giveItem(item);
+  }
+  saved.login = {day: localDay(now), streak: status.today};
+  return {ok: true, reason: 'claimed', profile: saved, day: status.today, reward, got};
 }
 
 export function createProfileStore({storage, key = 'fast-food-locator.profile.v1', locks} = {}) {

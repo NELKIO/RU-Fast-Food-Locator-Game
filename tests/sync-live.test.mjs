@@ -66,7 +66,7 @@ function add(total, delta, sign = 1) {
   for (const f of ['cards', 'cardXp', 'visits']) for (const [id, n] of Object.entries(delta[f])) total[f][id] = (total[f][id] ?? 0) + sign * n;
   return total;
 }
-const view = p => { const s = normalizeProfile(p); delete s.battleIds; delete s.sync.device; delete s.sync.key; return stableJson(s); };
+const view = p => { const s = normalizeProfile(p); delete s.battleIds; delete s.recentWild; delete s.sync.device; delete s.sync.key; return stableJson(s); };
 
 for (let seed = 1; seed <= 8; seed++) {
   test(`live chaos (seed ${seed}): play during syncs, two tabs, late and lost relay answers, a fast clock`, async () => {

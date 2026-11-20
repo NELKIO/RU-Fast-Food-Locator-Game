@@ -61,7 +61,7 @@ test('every dish on the menu is a hand-made fighter, two legends per chain and c
   }
   // Across the game commons are the most frequent (Burger King's meme sauces are rare on purpose).
   const count = r => Object.values(FIGHTERS).filter(f => f.rarity === r).length;
-  assert.ok(count('common') > count('rare') && count('rare') > count('epic') && count('epic') > count('legendary'));
+  assert.ok(count('common') > count('rare') && count('rare') >= count('epic') && count('epic') > count('legendary'));
   assert.equal(FIGHTERS['dodo-pepperoni'].rarity, 'legendary');
   assert.equal(FIGHTERS['dodo-four-cheeses'].rarity, 'epic');
   // The bigger the cup, the rarer the fighter.

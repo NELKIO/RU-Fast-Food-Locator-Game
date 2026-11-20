@@ -1493,3 +1493,66 @@ dialog[open]::backdrop { animation: fade-in 0.25s ease-out; }
 @keyframes rise-in { from { opacity: 0; transform: translateY(8px); } }
 @keyframes card-reveal { from { opacity: 0; transform: scale(0.7) rotate(-6deg); } }
 .skill-box p + small { margin-top: 8px; }
+
+/* Daily login week: a card on the radar and a calendar in the dialog */
+.quest-daily { min-height: 0; padding: 0; margin: 0 0 14px; }
+.quest-daily[hidden] { display: none; }
+.daily-teaser {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  width: 100%;
+  padding: 13px 20px;
+  cursor: pointer;
+  color: inherit;
+}
+.daily-teaser:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; border-radius: inherit; }
+.daily-teaser .quest-icon { width: 42px; height: 42px; }
+.daily-teaser.is-ready .quest-icon { color: var(--action-ink, #191107); background: var(--action, var(--accent)); border-color: transparent; animation: wild-call 2.4s ease-in-out infinite; }
+.daily-teaser.is-ready .round-btn { color: var(--accent); }
+.daily-week {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 6px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+.daily-day {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 4px;
+  padding: 8px 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  text-align: center;
+  min-width: 0;
+}
+.daily-day small { font-size: 10.5px; color: var(--muted); }
+.daily-day b { font-size: 11px; line-height: 1.15; font-weight: 650; overflow-wrap: anywhere; }
+.daily-art { display: grid; place-items: center; width: 40px; height: 36px; color: var(--accent); }
+.daily-art img { width: 100%; height: 100%; object-fit: contain; }
+.daily-day.is-today { border-color: var(--active-line, var(--accent)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+.daily-day.is-done { opacity: 0.55; }
+.daily-day.is-legend { border-color: #c9a227; background: color-mix(in srgb, #ffd76a 10%, var(--panel)); }
+.daily-day.is-legend .daily-art { color: #ffd76a; }
+.daily-check { position: absolute; bottom: 4px; right: 4px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: var(--bg, #000); }
+.daily-got { margin-top: 12px; display: grid; gap: 8px; }
+.daily-got h3 { font-size: 15px; }
+.daily-card { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.daily-card img { width: 52px; height: 46px; object-fit: contain; flex: none; }
+.daily-card span { display: grid; gap: 3px; justify-items: start; min-width: 0; }
+.daily-card strong { font-size: 14px; }
+.daily-card small { font-size: 12px; color: var(--muted); }
+.daily-card .daily-new { color: var(--accent); font-weight: 650; }
+.daily-xp { display: flex; align-items: center; gap: 8px; color: var(--accent) !important; font-weight: 650; }
+.daily-next { color: var(--muted) !important; }
+@media (max-width: 700px) {
+  .daily-week { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .daily-day.is-legend { grid-column: span 1; }
+}

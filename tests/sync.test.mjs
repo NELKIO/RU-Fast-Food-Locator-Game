@@ -125,6 +125,7 @@ function firstDifference(a, b) {
 function comparable(p) {
   const saved = normalizeProfile(p);
   delete saved.battleIds;
+  delete saved.recentWild;
   delete saved.sync.device;
   delete saved.sync.key;
   return stableJson(saved);

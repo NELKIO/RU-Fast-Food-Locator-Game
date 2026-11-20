@@ -106,7 +106,7 @@ export const FIGHTERS = {
   'bk-cola-08': {
     rarity: 'epic', role: 'guard', hp: 23, attack: 6, speed: 3, basic: 'Ледяной всплеск',
     skill: { name: 'Ледяной фонтан', cost: 1, power: 2, weaken: 1, cleanse: true },
-    ultimate: { name: 'Ледниковый период', cost: 3, power: 3, freeze: true, shield: 3 },
+    ultimate: { name: 'Ледниковый период', cost: 3, power: 3, sap: true, shield: 3 },
     trait: { name: 'Холодная голова', steady: true },
   },
   'bk-cola-05': {
@@ -137,15 +137,9 @@ export const FIGHTERS = {
     ultimate: { name: 'Освежающая чистота', cost: 3, power: 3, purge: true, heal: 6, cleanse: true },
     trait: { name: 'Стерильность', pure: true },
   },
-  'bk-sauce-xxl-chili-cheese': {
-    rarity: 'epic', role: 'guard', hp: 25, attack: 4, speed: 2, basic: 'XXL плюх',
-    skill: { name: 'Двойная порция соуса', cost: 2, power: 2, leech: 3 },
-    ultimate: { name: 'Чили-взрыв', cost: 3, power: 3, toxic: true, shield: 4 },
-    trait: { name: 'Бездонная банка', regen: 1 },
-  },
   'bk-brownie-ice-cream': {
-    rarity: 'epic', role: 'allround', hp: 23, attack: 4, speed: 4, basic: 'Ложка мороженого',
-    skill: { name: 'Горячее и холодное', cost: 1, power: 1, freeze: true },
+    rarity: 'epic', role: 'allround', hp: 25, attack: 5, speed: 4, basic: 'Ложка мороженого',
+    skill: { name: 'Горячее и холодное', cost: 2, power: 1, freeze: true },
     ultimate: { name: 'Шоколадная лавина', cost: 3, power: 6, heal: 2 },
     trait: { name: 'Сладкое спокойствие', steady: true },
   },
@@ -159,35 +153,17 @@ export const FIGHTERS = {
     skill: { name: 'Сахарный взрыв', cost: 2, power: 0, charge: 2 },
     trait: { name: 'Шоколадный азарт', rage: 2 },
   },
-  'bk-sauce-sweet-sour': {
-    rarity: 'rare', role: 'allround', hp: 19, attack: 6, speed: 4, basic: 'Кисло-сладкий плевок',
-    skill: { name: 'Тягучая сладость', cost: 2, power: -1, leech: 2 },
-    trait: { name: 'Сладкое послевкусие', vamp: 1 },
+  'bk-sauce-xxl-chili-cheese': {
+    rarity: 'epic', role: 'guard', hp: 25, attack: 4, speed: 2, basic: 'XXL плюх',
+    skill: { name: 'Двойная порция соуса', cost: 2, power: 2, leech: 3 },
+    ultimate: { name: 'Чили-взрыв', cost: 3, power: 3, toxic: true, shield: 4 },
+    trait: { name: 'Бездонная банка', regen: 1 },
   },
-  'bk-sauce-garlic': {
-    rarity: 'rare', role: 'guard', hp: 22, attack: 4, speed: 3, basic: 'Чесночный выдох',
-    skill: { name: 'Чесночный дух', cost: 1, power: 0, toxic: true },
-    trait: { name: 'Отпугивающий запах', thorns: 1 },
-  },
-  'bk-sauce-ketchup': {
-    rarity: 'rare', role: 'striker', hp: 19, attack: 5, speed: 6, basic: 'Капля кетчупа',
-    skill: { name: 'Брызги кетчупа', cost: 1, power: 2, hits: 2 },
-    trait: { name: 'Томатная ярость', rage: 1 },
-  },
-  'bk-sauce-mustard': {
-    rarity: 'rare', role: 'striker', hp: 21, attack: 4, speed: 9, basic: 'Горчичный щелчок',
-    skill: { name: 'Ядрёная горчица', cost: 1, power: 1, pierce: true, weaken: 1 },
-    trait: { name: 'Острый старт', quick: 1 },
-  },
-  'bk-sauce-curry': {
-    rarity: 'rare', role: 'allround', hp: 20, attack: 6, speed: 5, basic: 'Пряный мазок',
-    skill: { name: 'Индийский жар', cost: 1, power: 1, burn: { dmg: 3, turns: 4 } },
-    trait: { name: 'Привычка к специям', fireproof: true },
-  },
-  'bk-sauce-1000-islands': {
-    rarity: 'rare', role: 'guard', hp: 23, attack: 5, speed: 2, basic: 'Островной всплеск',
-    skill: { name: 'Архипелаг', cost: 1, power: -1, team: 3 },
-    trait: { name: 'Тихая гавань', regen: 1 },
+  'bk-six-sauces': {
+    rarity: 'epic', role: 'allround', hp: 25, attack: 7, speed: 5, basic: 'Соусный залп',
+    skill: { name: 'Соусный сет', cost: 2, power: 1, hits: 3, weaken: 1 },
+    ultimate: { name: 'Все шесть разом', cost: 3, power: 6, hits: 4, toxic: true },
+    trait: { name: 'На любой вкус', regen: 1 },
   },
   'bk-cheeseburger-classic': {
     rarity: 'common', role: 'allround', hp: 18, attack: 5, speed: 4, basic: 'Сырный шлепок',
@@ -288,9 +264,8 @@ export const FIGHTERS = {
     trait: { name: 'Острая начинка', thorns: 2 },
   },
   'rostics-basket': {
-    rarity: 'epic', role: 'guard', hp: 25, attack: 5, speed: 4, basic: 'Удар корзиной',
+    rarity: 'rare', role: 'guard', hp: 25, attack: 5, speed: 4, basic: 'Удар корзиной',
     skill: { name: 'На всю компанию', cost: 1, power: 0, team: 3 },
-    ultimate: { name: 'Баскет на всех', cost: 3, power: 3, team: 5 },
     trait: { name: 'Плетёные стенки', armor: 2 },
   },
   'rostics-strips': {
@@ -315,14 +290,15 @@ export const FIGHTERS = {
   },
   'rostics-ice-cream-cone': {
     rarity: 'common', role: 'guard', hp: 20, attack: 4, speed: 2, basic: 'Холодок',
-    skill: { name: 'Заморозка', cost: 2, power: 0, freeze: true },
-  },
-  'rostics-i-roll': {
-    rarity: 'rare', role: 'allround', hp: 20, attack: 6, speed: 9, basic: 'Ролл в дорогу',
-    skill: { name: 'Двойной заворот', cost: 1, power: -1, hits: 2 },
-    trait: { name: 'Быстрый перекус', quick: 1 },
+    skill: { name: 'Заморозка', cost: 1, power: 1, sap: true, cleanse: true },
   },
 
+  'rostics-i-roll': {
+    rarity: 'epic', role: 'allround', hp: 24, attack: 6, speed: 9, basic: 'Ролл в дорогу',
+    skill: { name: 'Двойной заворот', cost: 1, power: -1, hits: 2 },
+    ultimate: { name: 'Ай-Ролл на вынос', cost: 3, power: 6, hits: 3 },
+    trait: { name: 'Быстрый перекус', quick: 1 },
+  },
   // Додо Пицца — печь и сыр
   'dodo-pepperoni': {
     rarity: 'legendary', role: 'striker', hp: 24, attack: 7, speed: 7, basic: 'Острый ломтик',
@@ -398,10 +374,20 @@ export const FIGHTERS = {
     rarity: 'common', role: 'striker', hp: 17, attack: 5, speed: 7, basic: 'Тычок клювом',
     skill: { name: 'Клевок-клевок-клевок', cost: 1, power: 0, hits: 2 },
   },
+  'dodo-muffin': {
+    rarity: 'common', role: 'guard', hp: 19, attack: 4, speed: 4, basic: 'Шоколадный кусь',
+    skill: { name: 'Три шоколада', cost: 2, heal: 4, charge: 1 },
+  },
 };
 
 // Ids that earlier versions could save in a profile, mapped to their replacements.
 export const RENAMED = {
+  'bk-sauce-sweet-sour': 'bk-six-sauces',
+  'bk-sauce-garlic': 'bk-six-sauces',
+  'bk-sauce-ketchup': 'bk-six-sauces',
+  'bk-sauce-mustard': 'bk-six-sauces',
+  'bk-sauce-curry': 'bk-six-sauces',
+  'bk-sauce-1000-islands': 'bk-six-sauces',
   'bk-cheeseburger': 'bk-chicken-parmesan',
   'vkusno-fries': 'vkusno-nuggets',
 };

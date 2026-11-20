@@ -983,6 +983,45 @@ const SHAPES = {
     ctx.ellipse(-s * 0.35, -s * 0.45, s * 0.22, s * 0.14, -0.5, 0, TAU);
     ctx.fill();
   },
+  // A chocolate muffin: a ribbed paper case and a cracked dome with chunks.
+  muffin(ctx, s) {
+    ctx.fillStyle = '#5a3018';
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.8, -s * 0.05);
+    ctx.lineTo(s * 0.8, -s * 0.05);
+    ctx.lineTo(s * 0.62, s * 0.85);
+    ctx.lineTo(-s * 0.62, s * 0.85);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.25)';
+    ctx.lineWidth = s * 0.06;
+    for (let i = -3; i <= 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * s * 0.22, -s * 0.02);
+      ctx.lineTo(i * s * 0.17, s * 0.83);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#4a2412';
+    ctx.beginPath();
+    ctx.ellipse(0, -s * 0.12, s * 0.98, s * 0.72, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.fillStyle = '#2a1006';
+    for (const [x, y] of [[-0.45, -0.35], [0.1, -0.6], [0.5, -0.3], [-0.1, -0.25]]) {
+      ctx.save();
+      ctx.translate(x * s, y * s);
+      ctx.rotate(x);
+      roundRect(ctx, -s * 0.12, -s * 0.09, s * 0.24, s * 0.18, s * 0.04);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.fillStyle = '#e9c38f';
+    roundRect(ctx, s * 0.62, -s * 0.48, s * 0.2, s * 0.16, s * 0.04);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.22)';
+    ctx.beginPath();
+    ctx.ellipse(-s * 0.3, -s * 0.6, s * 0.28, s * 0.1, -0.3, 0, TAU);
+    ctx.fill();
+  },
   // A molten chocolate cake with its glossy crack.
   brownie(ctx, s) {
     ctx.fillStyle = '#4a2412';
@@ -1317,7 +1356,7 @@ const NATURAL = new Set(['seed', 'cube', 'fry', 'cheese', 'leaf', 'nugget', 'mac
   'wedge', 'onion', 'pepperoni', 'slice', 'patty', 'bun', 'strip', 'wing', 'drumstick', 'shrimp', 'cherry', 'pie',
   'roll', 'medallion', 'crown', 'basket', 'potato', 'pizza', 'chili', 'glove', 'grill', 'toque', 'burger', 'tram', 'sachet',
   'cloth', 'dip', 'spoon', 'scoop', 'brownie', 'fish', 'pickle', 'beak', 'feather', 'syrnik', 'envelope', 'wrap', 'garlic',
-  'island', 'moon', 'glare', 'cloche', 'mound']);
+  'island', 'moon', 'glare', 'cloche', 'mound', 'muffin']);
 function paint(shape, colors) {
   if (colors) return pick(colors);
   return NATURAL.has(shape) ? undefined : '#fff';
