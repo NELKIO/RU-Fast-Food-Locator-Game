@@ -33,7 +33,9 @@ function stat(label, value) {
   return `<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`;
 }
 
-export function rewardMarkup(result, wildName = '') {
+// `daily` turns the card into a login reward: a note instead of the visit XP, and one button that
+// goes to the next spin.
+export function rewardMarkup(result, wildName = '', daily = null) {
   const { card } = result;
   const brand = brands[card.brand]?.name ?? card.brand;
   const rarity = rarityNames[card.rarity] ?? card.rarity;
@@ -57,12 +59,17 @@ export function rewardMarkup(result, wildName = '') {
         ${stat('Атака', card.attack)}${stat('Здоровье', health)}${stat('Скорость', card.speed ?? 5)}${stat('Уровень', card.level)}
       </dl>
       ${skill ? `<p class="find-effect"><strong>«${esc(skill.name)}»</strong> ${esc(describeSkill(skill, card.attack))}</p>` : ''}
-      <p class="find-xp">${icon(result.routeCompleted ? 'route' : 'spark', 16)}<span><strong>+${esc(result.playerXp)} опыта</strong> ${xp}</span></p>
+      ${daily
+        ? `<p class="find-xp">${icon('star', 16)}<span>${esc(daily.note)}</span></p>
+      <div class="find-actions">
+        <button type="button" class="primary" data-daily-next>${icon(daily.next === 'Готово' ? 'check' : 'spark', 18)} ${esc(daily.next)}</button>
+      </div>`
+        : `<p class="find-xp">${icon(result.routeCompleted ? 'route' : 'spark', 16)}<span><strong>+${esc(result.playerXp)} опыта</strong> ${xp}</span></p>
       ${wildName ? `<p class="find-wild">${icon('battle', 16)}<span>${result.spawned ? 'Рядом появился дикий боец' : 'Тебя ждёт дикий боец'} — <strong>${esc(wildName)}</strong>. Победи его на арене.</span></p>` : ''}
       <div class="find-actions">
         <button type="button" class="primary" data-close>${icon('check', 18)} Забрать</button>
         <button type="button" class="outline-btn" data-wild>${icon('battle', 17)} На арену</button>
-      </div>
+      </div>`}
     </div>
   </article>`;
 }

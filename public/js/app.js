@@ -619,6 +619,24 @@ function cardStats(card) {
     '</strong><small>Уровень</small></div></div>'
   );
 }
+// The roulette: the reel spins and stops on the card already won. False if the player closed it.
+async function playReel(pool, card, label) {
+  const run = openDialog('Рулетка находок', reelMarkup(pool, card, label));
+  const strip = $('dialog-body').querySelector('.reel-strip');
+  const final = 'translateX(-' + (14 * 82 + 41) + 'px)';
+  const duration = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1500;
+  if (duration && strip.animate) {
+    const a = strip.animate([{ transform: 'translateX(-41px)' }, { transform: final }], {
+      duration,
+      easing: 'cubic-bezier(.15,.7,.15,1)',
+      fill: 'forwards',
+    });
+    try {
+      await a.finished;
+    } catch {}
+  } else strip.style.transform = final;
+  return dialogRun === run && $('dialog').open;
+}
 async function spinReward() {
   if (!target || claimPending) return;
   const point = target;
@@ -636,21 +654,7 @@ async function spinReward() {
   }
   const card = result.card;
   const pool = menu.filter((c) => c.brand === point.brand);
-  const run = openDialog('Рулетка находок', reelMarkup(pool, card, brands[point.brand].name));
-  const strip = $('dialog-body').querySelector('.reel-strip');
-  const final = 'translateX(-' + (14 * 82 + 41) + 'px)';
-  const duration = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1500;
-  if (duration && strip.animate) {
-    const a = strip.animate([{ transform: 'translateX(-41px)' }, { transform: final }], {
-      duration,
-      easing: 'cubic-bezier(.15,.7,.15,1)',
-      fill: 'forwards',
-    });
-    try {
-      await a.finished;
-    } catch {}
-  } else strip.style.transform = final;
-  if (dialogRun !== run || !$('dialog').open) return;
+  if (!(await playReel(pool, card, brands[point.brand].name))) return;
   openDialog(
     'Награда · ' + card.name,
     rewardMarkup(result, result.encounter ? menuById.get(result.encounter.enemyId)?.name : ''),
@@ -708,10 +712,10 @@ function dailyDialog(result = null) {
       reward.day +
       '</small><span class="daily-art">' +
       art +
+      (done ? '<i class="daily-check">' + icon('check', 14) + '</i>' : '') +
       '</span><b>' +
       esc(reward.kind === 'featured' && featured ? featured.name : dailyLabel(reward)) +
       '</b>' +
-      (done ? '<i class="daily-check">' + icon('check', 14) + '</i>' : '') +
       '</li>'
     );
   }).join('');
@@ -738,13 +742,42 @@ function dailyDialog(result = null) {
         : '<p class="daily-next">Следующая награда завтра.</p>'),
   );
 }
+// Cards from the login reward come out of the roulette one by one: a chain's reel for a spin,
+// the rares for the fighter of the week, the legends on day 7.
+let dailyRun = null;
 async function claimDailyReward() {
   const result = await store.update((p) => claimDaily(p, menu));
-  if (result.ok) {
-    dailyDialog(result);
-    renderDaily();
-    if (tab === 'collection') renderCollection();
-  } else dailyDialog();
+  if (!result.ok) return dailyDialog();
+  renderDaily();
+  if (tab === 'collection') renderCollection();
+  dailyRun = { result, cards: result.got.filter((g) => g.kind === 'card'), index: 0 };
+  if (!dailyRun.cards.length) return dailyDialog(result);
+  showDailySpin();
+}
+async function showDailySpin() {
+  const run = dailyRun;
+  const g = run.cards[run.index];
+  const kind = run.result.reward.kind;
+  const pool =
+    kind === 'legendary'
+      ? menu.filter((c) => cardFor(c).rarity === 'legendary')
+      : kind === 'featured'
+        ? menu.filter((c) => cardFor(c).rarity === 'rare')
+        : menu.filter((c) => c.brand === g.card.brand);
+  const label = kind === 'legendary' ? 'Легенда седьмого дня' : kind === 'featured' ? 'Боец недели' : brands[g.card.brand].name;
+  if (!(await playReel(pool, g.card, label)) || dailyRun !== run) return;
+  const last = run.index === run.cards.length - 1;
+  openDialog(
+    'Награда · ' + g.card.name,
+    rewardMarkup(
+      { card: g.card, isNew: g.isNew, leveledUp: false },
+      '',
+      {
+        note: 'Награда за вход · день ' + run.result.day + (run.cards.length > 1 ? ' · крутка ' + (run.index + 1) + ' из ' + run.cards.length : ''),
+        next: last ? 'Готово' : 'Следующая крутка',
+      },
+    ),
+  );
 }
 $('daily-card').addEventListener('click', (e) => {
   if (e.target.closest('[data-daily-open]')) dailyDialog();
@@ -1233,6 +1266,18 @@ $('dialog-body').addEventListener('click', async (e) => {
   if (!b) return;
   if (b.hasAttribute('data-daily-open')) {
     dailyDialog();
+    return;
+  }
+  if (b.hasAttribute('data-daily-next')) {
+    if (!dailyRun) return closeDialog();
+    if (dailyRun.index < dailyRun.cards.length - 1) {
+      dailyRun.index++;
+      showDailySpin();
+    } else {
+      const { result } = dailyRun;
+      dailyRun = null;
+      dailyDialog(result);
+    }
     return;
   }
   if (b.hasAttribute('data-daily-claim')) {
