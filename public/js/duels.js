@@ -1,12 +1,15 @@
 import { brands, countdown, esc, icon, rarityNames } from './ui.js';
-import { applyMove, battleStats, botMove, currentFighter, legalMoves, MAX_ENERGY, opener, startBattle } from './duel-engine.js';
+import { applyMove, battleStats, currentFighter, legalMoves, MAX_ENERGY, opener, startBattle } from './duel-engine.js';
+import { smartMove } from './duel-ai.js';
 import { describeSkill, describeTrait } from './fighters.js';
 import { DuelRoom, newRoomCode, parseRoomCode, RECONNECT_MS } from './duel-room.js';
 import { connectDuel } from './duel-transport.js';
 import { createFx } from './battle-fx.js';
 import { intimidateFx, movePlan } from './fx-moves.js';
 
-const LABELS = { wild: 'Дикий боец', online: 'Сетевая дуэль' };
+const LABELS = { wild: 'Дикий боец', trainer: 'Бой с тренером', online: 'Сетевая дуэль' };
+// How long the computer thinks per move: the trainer plays at full strength, a wild fighter a little lighter.
+const THINK_MS = { trainer: 350, wild: 90 };
 const plural = new Intl.PluralRules('ru');
 const MOVES = { one: 'ход', few: 'хода', many: 'ходов', other: 'хода' };
 const ONLINE_XP = { won: 24, draw: 6, lost: 4 };
@@ -206,8 +209,35 @@ export function mountDuels(container, options) {
   function botTurn() {
     if (disposed || !local || local.winner !== null || local.turn !== 1) return;
     if (hold.some(index => index !== null) || busy()) { thinking = setTimeout(botTurn, Math.max(120, fxUntil - performance.now() + 250)); return; }
-    local = applyMove(local, 1, botMove(local));
+    local = applyMove(local, 1, smartMove(local, 1, { timeMs: THINK_MS[mode] ?? 90 }));
     draw();
+    queueBot();
+  }
+
+  // The trainer on offer matches the current team; a new one only when asked or when the team changes.
+  let trainer = null, trainerKey = '';
+  function trainerFor(fresh = false) {
+    const key = selected.join(',');
+    if (!data.trainer || !selected.length) return null;
+    if (fresh || !trainer || trainerKey !== key) {
+      trainer = data.trainer(selected.map(id => catalog.get(id)), { avoid: fresh ? trainer?.trainer.id : null });
+      trainerKey = key;
+    }
+    return trainer;
+  }
+
+  function startTrainer() {
+    const offer = trainerFor();
+    if (!offer) { draw(); return; }
+    const teams = [selected.map(id => battleStats(catalog.get(id))), offer.team.map(card => battleStats(card))];
+    local = startBattle(teams, opener(teams, 0), { tempo: false });
+    localMatchId = newRoomCode() + newRoomCode();
+    rewardState = 'idle';
+    rewardInfo = null;
+    quitPrompt = false;
+    mode = 'trainer';
+    draw();
+    window.scrollTo({ top: 0, behavior: 'instant' });
     queueBot();
   }
 
@@ -287,6 +317,20 @@ export function mountDuels(container, options) {
       <div class="duel-roster">${items}</div></section>`;
   }
 
+  function trainerBox() {
+    const offer = trainerFor();
+    if (!offer) return '';
+    const faces = offer.team.map(card => `<span class="duel-trainer-fighter" style="--team-color:${color(card.brand)}" title="${esc(card.name)}">${artwork(card)}
+      <small><span class="rarity ${esc(card.rarity)}">${esc((rarityNames[card.rarity] ?? '').slice(0, 1))}</span> ур. ${card.level}</small></span>`).join('');
+    return `<section class="duel-trainer" style="--team-color:${color(offer.trainer.brand)}" aria-labelledby="duel-trainer-title">
+      <div class="duel-trainer-head"><span class="duel-label">Тренер · ${esc(brands[offer.trainer.brand]?.name ?? '')}</span>
+        <h3 id="duel-trainer-title">${esc(offer.trainer.name)}</h3>
+        <p>Бой 3 на 3 в любое время. Тренер просчитывает ходы вперёд, меняет бойцов и бережёт энергию на суперприём.</p></div>
+      <div class="duel-trainer-team">${faces}</div>
+      <div class="duel-buttons">${button('trainer', 'Вызвать на бой', { primary: true, icon: 'battle', disabled: !selected.length })}${button('trainer-new', 'Другой тренер', { quiet: true })}</div>
+    </section>`;
+  }
+
   function wildBox() {
     const wild = data.wild;
     if (!wild) {
@@ -322,7 +366,7 @@ export function mountDuels(container, options) {
   function lobby() {
     if (!owned.length) return `<header class="duel-heading"><h2>Арена</h2></header>${empty()}`;
     // The friend duel sits right under the wild fighter: with a big collection the team list is long.
-    return `<header class="duel-heading"><h2>Арена</h2></header>${wildBox()}
+    return `<header class="duel-heading"><h2>Арена</h2></header>${wildBox()}${trainerBox()}
       <section class="duel-friend"><span>${icon('route', 20)}</span><p><strong>С другом по ссылке</strong><small>Честный бой на базовых характеристиках</small></p>
         ${button('online', 'Дуэль с другом')}</section>${teamPicker()}${rules}`;
   }
@@ -406,7 +450,7 @@ export function mountDuels(container, options) {
         data-fighter="${esc(fighter.id)}" style="--team-color:${color(card?.brand)}" aria-label="${mine ? 'Твой боец' : 'Боец соперника'}: ${esc(card?.name)}">
       <div class="duel-portrait">${artwork(card)}</div>
       <div class="duel-info">
-        <div class="duel-name-row"><span class="duel-owner">${mine ? 'Ты' : data.wild && mode === 'wild' ? 'Дикий' : 'Соперник'}</span>
+        <div class="duel-name-row"><span class="duel-owner">${mine ? 'Ты' : mode === 'wild' ? 'Дикий' : mode === 'trainer' ? 'Тренер' : 'Соперник'}</span>
           <span class="duel-roster-dots" aria-label="В строю ${state.teams[side].filter(m => m.hp > 0).length} из ${state.teams[side].length}">${roster}</span></div>
         <h3>${esc(card?.name)}</h3>
         <div class="duel-hp"><span style="width:${pct}%"></span></div>
@@ -454,6 +498,11 @@ export function mountDuels(container, options) {
       }
       return `<p>${esc(enemy)} ушёл.${esc(xp)} Новый дикий боец появится через 15 минут — или сразу после отметки у заведения.</p>`;
     }
+    if (mode === 'trainer') {
+      const who = trainer?.trainer.name ?? 'Тренер';
+      const xp = info.playerXp ? ` Ты +${info.playerXp} опыта, каждый боец команды +${info.partyXp}.` : '';
+      return `<p><strong>${state.winner === side ? esc(who) + ' побеждён!' : state.winner === 'draw' ? 'Ничья с тренером.' : esc(who) + ' оказался сильнее.'}</strong>${esc(xp)}</p>`;
+    }
     const xp = state.winner === 'draw' ? ONLINE_XP.draw : state.winner === side ? ONLINE_XP.won : ONLINE_XP.lost;
     return `<p><strong>+${xp} опыта</strong> первому бойцу команды.</p>`;
   }
@@ -465,6 +514,8 @@ export function mountDuels(container, options) {
     const won = state.winner === side, drawn = state.winner === 'draw';
     const result = mode === 'wild'
       ? { mode: 'wild', encounterId: wildId, won, draw: drawn, teamIds: state.teams[side].map(f => f.id), matchId: localMatchId }
+      : mode === 'trainer'
+      ? { mode: 'trainer', won, draw: drawn, teamIds: state.teams[side].map(f => f.id), matchId: localMatchId }
       : { mode: 'online', won, draw: drawn, xp: drawn ? ONLINE_XP.draw : won ? ONLINE_XP.won : ONLINE_XP.lost,
           cardId: state.teams[side][0].id, teamIds: state.teams[side].map(f => f.id), matchId: room?.matchId };
     Promise.resolve().then(() => award?.(result)).then(saved => {
@@ -499,7 +550,7 @@ export function mountDuels(container, options) {
         ${fighterPanel(state, side, true)}</div>
       ${!connected ? '<p class="duel-alert">Ходы на паузе. Ждём повторного подключения до ' + (RECONNECT_MS / 1000) + ' секунд.</p>' : ''}
       ${final ? `<div class="duel-result">${resultText(state, side)}
-          <div class="duel-buttons">${button('lobby', 'На арену', { primary: true, icon: 'arrow' })}${mode === 'wild' ? button('map', 'К карте', { icon: 'pin' }) : ''}</div></div>`
+          <div class="duel-buttons">${mode === 'trainer' ? button('trainer-again', 'Новый тренер', { primary: true, icon: 'battle' }) + button('lobby', 'На арену', { icon: 'arrow' }) : button('lobby', 'На арену', { primary: true, icon: 'arrow' })}${mode === 'wild' ? button('map', 'К карте', { icon: 'pin' }) : ''}</div></div>`
         : settled ? '<p class="duel-note" role="status">Записываем результат…</p>'
         : state.winner !== null ? ''
         : controls(state, side, enabled) + (quitPrompt ?
@@ -744,6 +795,9 @@ export function mountDuels(container, options) {
     } else if (action.startsWith('card:')) onShowCard?.(action.slice(5));
     else if (action.startsWith('move:')) play(action.slice(5));
     else if (action === 'wild') startWild();
+    else if (action === 'trainer') startTrainer();
+    else if (action === 'trainer-new') { trainerFor(true); draw(); }
+    else if (action === 'trainer-again') { trainerFor(true); startTrainer(); }
     else if (action === 'online') reset('online');
     else if (action === 'create') openRoom('host', newRoomCode());
     else if (action === 'ready') room?.ready(selected);
