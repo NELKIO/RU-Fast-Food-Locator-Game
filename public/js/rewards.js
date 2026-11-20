@@ -50,7 +50,6 @@ export function rewardMarkup(result, wildName = '', daily = null) {
       <div class="find-stage-copy">
         <span class="find-rarity">${icon('star', 14)} ${esc(rarity)}</span>
         <h2 id="find-card-title">${esc(card.name)}</h2>
-        ${card.role ? '<span class="find-class">' + esc(card.role) + '</span>' : ''}
       </div>
     </div>
     <div class="find-body">

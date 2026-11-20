@@ -143,6 +143,7 @@
 .find-track::before { top: 0; clip-path: polygon(0 0, 100% 0, 50% 100%); }
 .find-track::after { bottom: 0; clip-path: polygon(50% 0,100% 100%,0 100%); }
 .find-reel .roulette {
+  overflow: hidden;
   height: clamp(89px, 25vw, 110px);
   border: 1px solid var(--find-art-line);
   border-radius: 12px;
@@ -246,8 +247,6 @@
   --find-art-muted: var(--muted);
   --find-art-line: var(--line);
 }
-:root:is([data-theme='black'],[data-theme='white']) .find-stage img,
-:root:is([data-theme='black'],[data-theme='white']) .find-reel img { filter: grayscale(1); }
 :root:is([data-theme='black'],[data-theme='white']) .find-stage,
 :root:is([data-theme='black'],[data-theme='white']) .find-reel .roulette { border-bottom: 1px solid var(--line); }
 :root:is([data-theme='black'],[data-theme='white']) .find-rarity svg,
@@ -259,7 +258,6 @@
 :root[data-theme='black'] .find-stage { border-left: 4px solid var(--brand-color, var(--accent)); }
 :root[data-theme='black'] .find-art { outline: 1px solid var(--line); outline-offset: -4px; }
 :root[data-theme='black'] .find-stage h2 { font-weight: 800; letter-spacing: -.067em; }
-:root[data-theme='black'] .find-reel .roulette, :root[data-theme='black'] .find-reel .roulette::after { border-radius: 0; }
 
 /* White: a receipt with the photograph at left, a perforation rule and tabular figures. */
 :root[data-theme='white'] .find-stage {
