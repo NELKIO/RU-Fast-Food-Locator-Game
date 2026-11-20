@@ -107,6 +107,17 @@ function ownEntry(profile, device, devices) {
   return larger(Object.hasOwn(devices, device) ? devices[device] : cleanContribution(null), own);
 }
 
+// What this browser itself has added to the profile: the whole profile when it never synced,
+// otherwise its own ledger entries (the current device id and any earlier ids it had before a
+// rollback). Linked devices each report only their own part, so nothing is counted twice.
+export function ownContribution(profile, earlierIds = []) {
+  const saved = normalizeProfile(profile);
+  if (!saved.sync) return totalsOf(saved);
+  const devices = saved.sync.devices;
+  const earlier = [...new Set(earlierIds)].filter(id => id !== saved.sync.device && Object.hasOwn(devices, id)).map(id => devices[id]);
+  return sumEntries([ownEntry(saved, saved.sync.device, devices), ...earlier]);
+}
+
 // The shared document: the ledger plus the fields that are not counters.
 export function cleanDoc(value) {
   if (!record(value) || !Number.isSafeInteger(value.v) || value.v < 1) return null;
