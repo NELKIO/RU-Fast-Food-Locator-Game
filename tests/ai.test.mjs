@@ -37,6 +37,24 @@ test('the trainer finishes a fighter it can knock out', () => {
   assert.equal(smartMove(s, 0, { nodes: 4000, random: seq(1) }), 'special');
 });
 
+test('a trainer that cannot win fights on instead of stalling with guard', () => {
+  // A lone fighter whose skill it can never afford, against a strong team: guard only delays the
+  // end (13 HP lasts three guarded blows but two plain ones), while two blows deal 8 damage.
+  const me = fighter('me', { hp: 13, attack: 4, skill: { name: 'x', cost: 9, power: 0 } });
+  const foes = ['a', 'b', 'c'].map(id => fighter(id, { hp: 30, attack: 12 }));
+  for (let k = 1; k <= 4; k++) {
+    let s = startBattle([[me], foes], 0, { tempo: false });
+    let guards = 0;
+    while (s.winner === null) {
+      const m = smartMove(s, s.turn, { nodes: 20000, random: seq(k) });
+      if (s.turn === 0 && m === 'guard') guards++;
+      s = applyMove(s, s.turn, m);
+    }
+    assert.equal(guards, 0, 'seed ' + k);
+    assert.equal(s.teams[1][0].hp, 22, 'two blows landed');
+  }
+});
+
 test('the evaluation prefers more health, more attack and fewer booked losses', () => {
   const base = startBattle([[fighter('a')], [fighter('b')]], 0, { tempo: false });
   const hurt = structuredClone(base); hurt.teams[1][0].hp = 10;
