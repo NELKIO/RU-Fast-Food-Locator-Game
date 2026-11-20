@@ -1382,8 +1382,8 @@ function arenaData() {
     wildWaitMs: wildWait(),
     // The trainer of this visit, picked once when the page opens; its team is stable for the
     // visit too (the same team and level give the same line-up).
-    trainer: (cards) => {
-      const seed = trainerSeed + '|' + trainerId + '|' + trainerLevel + '|' + cards.map((c) => c.id + ':' + c.level).join(',');
+    trainer: (cards, roll = 0) => {
+      const seed = trainerSeed + '|' + trainerId + '|' + trainerLevel + '|' + roll + '|' + cards.map((c) => c.id + ':' + c.level).join(',');
       return trainerOffer(menu, cards, { trainer: trainerId, difficulty: trainerLevel, rng: seededRandom(seed) });
     },
     trainerId: () => trainerId,

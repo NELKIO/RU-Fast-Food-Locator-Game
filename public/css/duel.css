@@ -120,6 +120,11 @@
 .duel-trainer-fighter .duel-art { width: 64px; height: 54px; }
 .duel-trainer-fighter small { font: 600 .74rem/1.2 var(--mono, ui-monospace, monospace); color: var(--duel-muted); display: inline-flex; gap: 4px; align-items: center; }
 .duel-trainer-fighter .rarity { font-family: inherit; padding: 0 5px; }
+/* The challenge across the full width, the two re-rolls as an equal pair under it. */
+.duel-trainer-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.duel-trainer-actions > .duel-primary { grid-column: 1 / -1; justify-content: center; }
+.duel-page .duel-trainer-actions .duel-quiet { border-color: var(--duel-line, rgba(255,255,255,.14)); padding-inline: 8px; justify-content: center; }
+.duel-trainer.is-lord .duel-trainer-actions .duel-quiet { grid-column: 1 / -1; }
 .duel-friend { display: flex; align-items: center; gap: 12px; padding-block: 12px; }
 .duel-friend > span { color: var(--duel-accent); display: grid; }
 .duel-friend p { flex: 1; display: grid; gap: 2px; min-width: 0; }

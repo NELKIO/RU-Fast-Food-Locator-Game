@@ -223,13 +223,22 @@ export function mountDuels(container, options) {
   }
 
   // The trainer on offer matches the current team; a new one only when asked or when the team changes.
-  let trainer = null, trainerKey = '';
+  // The trainer prepares for the player's three strongest fighters, not for the team on the bench
+  // right now: reordering or swapping the own team never changes the trainer's line-up (and a weak
+  // team cannot lure a weak trainer). «Новая команда» rolls a new line-up for the same trainer.
+  let trainer = null, trainerKey = '', trainerRoll = 0;
+  const power = card => card.maxHp * card.attack;
+  function trainerBase() {
+    return owned.map(id => catalog.get(id)).filter(Boolean)
+      .sort((a, b) => power(b) - power(a) || (a.id < b.id ? -1 : 1)).slice(0, 3);
+  }
   function trainerFor(fresh = false) {
     if (!data.trainer || !selected.length) return null;
-    if (fresh) data.nextTrainer?.();
-    const key = selected.join(',') + '|' + data.trainerLevel?.() + '|' + data.trainerId?.();
+    if (fresh) { data.nextTrainer?.(); trainerRoll = 0; }
+    const base = trainerBase();
+    const key = base.map(c => c.id + ':' + c.level).join(',') + '|' + data.trainerLevel?.() + '|' + data.trainerId?.() + '|' + trainerRoll;
     if (fresh || !trainer || trainerKey !== key) {
-      trainer = data.trainer(selected.map(id => catalog.get(id)));
+      trainer = data.trainer(base, trainerRoll);
       trainerKey = key;
     }
     return trainer;
@@ -340,10 +349,10 @@ export function mountDuels(container, options) {
     return `<section class="duel-trainer${coach.lord ? ' is-lord' : ''}" style="--team-color:${coach.brand ? color(coach.brand) : coach.lord ? '#ffd76a' : '#c7b1f5'}" aria-labelledby="duel-trainer-title">
       <div class="duel-trainer-head"><span class="duel-label">Тренер · ${esc(coach.title ?? brands[coach.brand]?.name ?? '')}</span>
         <h3 id="duel-trainer-title">${coach.lord ? icon('trophy', 18) + ' ' : ''}${esc(fullName(coach))}</h3>
-        <p>Бой 3 на 3 в любое время. Тренер просчитывает ходы вперёд, меняет бойцов и бережёт энергию на суперприём.</p></div>
+        <p>Бой 3 на 3 в любое время. Тренер просчитывает ходы вперёд, меняет бойцов и бережёт энергию на суперприём.${coach.lord ? '' : ' Его команда собрана против трёх твоих сильнейших бойцов — свою можно переставлять.'}</p></div>
       ${levels}
       <div class="duel-trainer-team">${faces}</div>
-      <div class="duel-buttons">${button('trainer', 'Вызвать на бой', { primary: true, icon: 'battle', disabled: !selected.length })}${button('trainer-new', 'Другой тренер', { quiet: true })}</div>
+      <div class="duel-buttons duel-trainer-actions">${button('trainer', 'Вызвать на бой', { primary: true, icon: 'battle', disabled: !selected.length })}${button('trainer-new', 'Другой тренер', { quiet: true })}${coach.lord ? '' : button('trainer-roll', 'Новая команда', { quiet: true })}</div>
     </section>`;
   }
 
@@ -856,6 +865,7 @@ export function mountDuels(container, options) {
     else if (action === 'wild') startWild();
     else if (action === 'trainer') startTrainer();
     else if (action === 'trainer-new') { trainerFor(true); draw(); }
+    else if (action === 'trainer-roll') { trainerRoll++; trainerFor(); draw(); }
     else if (action.startsWith('trainer-level:')) { data.setTrainerLevel?.(action.slice(14)); trainerFor(); draw(); }
     else if (action === 'trainer-again') { trainerFor(true); startTrainer(); }
     else if (action === 'online') reset('online');
