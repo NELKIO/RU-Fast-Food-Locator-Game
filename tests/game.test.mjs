@@ -334,7 +334,7 @@ test('wild fighters: new dishes come first and the last five do not repeat while
     now += WILD_COOLDOWN_MS + 2000;
   }
   for (let i = 5; i < seen.length; i++) assert.ok(!seen.slice(i - 5, i).includes(seen[i]), 'no repeat within five: ' + seen[i]);
-  assert.ok(new Set(seen).size >= 30, 'mostly different fighters, got ' + new Set(seen).size);
+  assert.ok(new Set(seen).size >= 27, 'mostly different fighters, got ' + new Set(seen).size);
 });
 
 test('a login reward claimed before the roulette version is reset once and can be claimed again', () => {

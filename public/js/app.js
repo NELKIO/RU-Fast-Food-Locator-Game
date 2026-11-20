@@ -16,10 +16,12 @@ import {
   claimDaily,
   trainerOffer,
   recordTrainer,
+  TRAINERS,
   dailyStatus,
   featuredFighter,
   DAILY_REWARDS,
   grantStarter,
+  ensureWildSeed,
   resolveEncounter,
   recordBattle,
   WILD_COOLDOWN_MS,
@@ -1356,6 +1358,16 @@ listen('about', () => {
   );
 });
 
+// A small seeded random generator, so a seed string always gives the same choices.
+function seededRandom(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  let x = h >>> 0 || 1;
+  return () => ((x = (Math.imul(x, 48271) % 2147483647 + 2147483647) % 2147483647) || 1) / 2147483647;
+}
+const trainerSeed = Math.random().toString(36).slice(2);
+let trainerId = TRAINERS[Math.floor(Math.random() * TRAINERS.length)].id;
+let trainerLevel = ['easy', 'normal', 'hard'].includes(prefs.trainerLevel) ? prefs.trainerLevel : 'normal';
 function arenaData() {
   const e = currentWild();
   return {
@@ -1364,13 +1376,22 @@ function arenaData() {
     team: [...profile.team],
     wild: e && { id: e.id, opponent: (team) => wildFighter(e, menu, team) },
     wildWaitMs: wildWait(),
-    // A trainer for the current team; asking again gives a different one.
-    trainer: (cards, { avoid } = {}) => {
-      for (let i = 0; i < 6; i++) {
-        const offer = trainerOffer(menu, cards);
-        if (offer && offer.trainer.id !== avoid) return offer;
-      }
-      return trainerOffer(menu, cards);
+    // The trainer of this visit, picked once when the page opens; its team is stable for the
+    // visit too (the same team and level give the same line-up).
+    trainer: (cards) => {
+      const seed = trainerSeed + '|' + trainerId + '|' + trainerLevel + '|' + cards.map((c) => c.id + ':' + c.level).join(',');
+      return trainerOffer(menu, cards, { trainer: trainerId, difficulty: trainerLevel, rng: seededRandom(seed) });
+    },
+    trainerId: () => trainerId,
+    nextTrainer: () => {
+      const others = TRAINERS.filter((t) => t.id !== trainerId);
+      trainerId = others[Math.floor(Math.random() * others.length)].id;
+    },
+    trainerLevel: () => trainerLevel,
+    setTrainerLevel: (level) => {
+      if (!['easy', 'normal', 'hard'].includes(level)) return;
+      trainerLevel = level;
+      savePref('trainerLevel', level);
     },
   };
 }
@@ -1411,7 +1432,19 @@ function switchTab(next, options = {}) {
       initialMode: options.initialMode || 'lobby',
       onBack: () => switchTab('radar'),
       onFightChange: (active) => {
+        const ended = wildFightActive && !active;
         wildFightActive = active;
+        // The result of a wild fight is shared at once, so another device cannot fight the same one.
+        if (ended && profile.sync?.key) sync.syncNow();
+      },
+      // A linked device checks with the others before a wild fight, so one wild fighter cannot be
+      // caught twice (once on each device).
+      beforeWild: async () => {
+        if (!profile.sync?.key) return { ok: true };
+        if (!(await syncedBeforeClaim())) {
+          return { ok: false, message: 'Нет связи с другими устройствами. Бой с диким бойцом станет доступен, когда синхронизация пройдёт.' };
+        }
+        return currentWild() ? { ok: true } : { ok: false, message: 'Этого дикого бойца уже победили на другом устройстве.' };
       },
       onStateChange: (active) => {
         onlineActive = active;
@@ -1526,6 +1559,8 @@ async function init() {
   const starter = invitedKey && !Object.keys(store.read().collection).length
     ? { ok: false }
     : await store.update((p) => grantStarter(p, menu));
+  // Older profiles get their wild stream now, so linked devices agree on it at the first sync.
+  await store.update((p) => (p.wildSeed ? { ok: false, profile: p } : { ok: true, profile: ensureWildSeed(p) }));
   await ensureWild();
   if (/^#duel=/i.test(location.hash)) switchTab('arena', { initialMode: 'online' });
   else if (starter.ok) welcome(starter.card);

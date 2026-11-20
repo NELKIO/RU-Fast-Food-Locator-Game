@@ -115,7 +115,7 @@ export function cleanDoc(value) {
     sync: {device: 'documentreader', devices: value.devices, team: value.team, teamAt: value.teamAt},
     daily: value.daily, encounter: value.encounter,
     retired: Array.isArray(value.retired) ? Object.fromEntries(value.retired.slice(0, 500).map(id => [String(id), true])) : {},
-    lastScoutAt: value.lastScoutAt, encounterSequence: value.encounterSequence, login: value.login,
+    lastScoutAt: value.lastScoutAt, encounterSequence: value.encounterSequence, login: value.login, wildSeed: value.wildSeed,
     visits: record(value.visitsAt)
       ? Object.fromEntries(Object.entries(value.visitsAt).map(([id, lastAt]) => [id, {lastAt, count: 1}])) : {},
   });
@@ -130,6 +130,7 @@ export function cleanDoc(value) {
     lastScoutAt: profile.lastScoutAt,
     encounterSequence: profile.encounterSequence,
     login: profile.login,
+    wildSeed: profile.wildSeed,
     visitsAt: Object.fromEntries(Object.entries(profile.visits).map(([id, visit]) => [id, visit.lastAt])),
   };
 }
@@ -188,6 +189,8 @@ export function mergeProfile(local, docs = [], {now = Date.now(), device} = {}) 
 
   // 3. The rest by meaning.
   merged.daily = clean.reduce((route, doc) => laterRoute(route, doc.daily), {...base.daily, pointIds: [...base.daily.pointIds].sort()});
+  // One wild-fighter stream for the account: every device ends up with the same (smallest) seed.
+  merged.wildSeed = [base.wildSeed, ...clean.map(doc => doc.wildSeed)].filter(Boolean).sort()[0] ?? '';
   // The login week: the latest claimed day wins, so a reward taken on one device is taken everywhere.
   merged.login = clean.reduce((a, doc) => (doc.login.day > a.day || (doc.login.day === a.day && doc.login.streak > a.streak) ? doc.login : a), base.login);
   merged.lastScoutAt = Math.max(base.lastScoutAt ?? -1, ...clean.map(doc => doc.lastScoutAt ?? -1));
@@ -201,7 +204,9 @@ export function mergeProfile(local, docs = [], {now = Date.now(), device} = {}) 
   // the other is a duplicate of a device that had not synced yet.
   const fought = merged.lastScoutAt ?? -Infinity;
   const stale = e => e.startedAt < fought || (!e.visit && e.startedAt < fought + WILD_COOLDOWN_MS);
-  const all = [base.encounter, ...clean.map(doc => doc.encounter)].filter(e => e && !retired.has(e.id));
+  // The same wild fighter met on two devices has the same id: keep one copy of it.
+  const all = [...new Map([base.encounter, ...clean.map(doc => doc.encounter)].filter(e => e && !retired.has(e.id))
+    .sort((a, b) => a.startedAt - b.startedAt || (a.enemyId < b.enemyId ? -1 : 1)).reverse().map(e => [e.id, e])).values()];
   for (const e of all.filter(stale)) retired.add(e.id);
   const candidates = all.filter(e => !stale(e));
   candidates.sort((a, b) => a.startedAt - b.startedAt || encounterTime(a.id) - encounterTime(b.id) || (a.id < b.id ? -1 : 1));
@@ -244,6 +249,7 @@ export function docOf(profile) {
     lastScoutAt: saved.lastScoutAt,
     encounterSequence: saved.encounterSequence,
     login: saved.login,
+    wildSeed: saved.wildSeed,
     visitsAt: Object.fromEntries(Object.entries(saved.visits).map(([id, visit]) => [id, visit.lastAt])),
   };
 }

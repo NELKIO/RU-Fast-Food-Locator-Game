@@ -426,7 +426,8 @@ test('reported bug: the laptop fights its wild fighter while the phone spawned a
   phone.profile = normalizeProfile({ ...phone.profile, encounter: null });
   phone.act(p => wildEncounter(p, menu, { now: T0 + 2 * HOUR, rng: phone.random }));
   const phoneWild = phone.profile.encounter;
-  assert.ok(phoneWild && phoneWild.id !== laptop.profile.encounter.id);
+  // The account's wild stream gives it the very same fighter as the laptop, not a second one.
+  assert.ok(phoneWild && phoneWild.id === laptop.profile.encounter.id && phoneWild.enemyId === laptop.profile.encounter.enemyId);
   sync(phone, relays, T0 + 2 * HOUR);
   // Meanwhile the laptop fights the one it had and wins.
   const laptopWild = laptop.profile.encounter;
@@ -481,5 +482,25 @@ test('the login week syncs: a reward taken on one device cannot be taken again o
   settleAll([a, b], relays, today + 60_000);
   assert.equal(dailyStatus(b.profile, today + 120_000).claimable, false, 'already taken today');
   assert.equal(dailyStatus(b.profile, today + 86_400_000).today, 2, 'tomorrow continues the week on either device');
+  assertExact([a, b]);
+});
+
+test('reported bug: after the pause both devices meet the same wild fighter, and it can be caught only once', async () => {
+  const { devices: [a, b], relays } = linked(2, 41);
+  // Both devices wait out the pause offline and spawn the next wild fighter by themselves.
+  const later = T0 + 3 * HOUR;
+  a.act(p => wildEncounter(p, menu, { now: later, rng: a.random }));
+  b.act(p => wildEncounter(p, menu, { now: later + 60_000, rng: b.random }));
+  assert.equal(a.profile.wildSeed, b.profile.wildSeed, 'one wild stream for the account');
+  assert.equal(a.profile.encounter.id, b.profile.encounter.id, 'the same wild fighter, not two');
+  assert.equal(a.profile.encounter.enemyId, b.profile.encounter.enemyId);
+  settleAll([a, b], relays, later + 120_000);
+  assert.equal(a.profile.encounter.id, b.profile.encounter.id);
+  // The laptop catches it; once the phone has synced, the same fighter is gone there too.
+  const id = a.profile.encounter.id;
+  a.act(p => resolveEncounter(p, id, true, menu, { now: later + 180_000, teamIds: p.team }));
+  settleAll([a, b], relays, later + 240_000);
+  assert.equal(b.profile.encounter, null);
+  assert.equal(resolveEncounter(b.profile, id, true, menu, { now: later + 300_000 }).reason, 'no-encounter', 'no second catch');
   assertExact([a, b]);
 });
