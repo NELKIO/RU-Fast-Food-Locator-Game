@@ -100,6 +100,16 @@
     var(--duel-panel);
 }
 .duel-trainer-head { display: grid; gap: 4px; }
+.duel-trainer-head h3 { display: flex; align-items: center; gap: 6px; }
+.duel-trainer.is-lord { border-color: #c9a227; box-shadow: 0 0 0 1px color-mix(in srgb, #ffd76a 30%, transparent), 0 10px 30px -18px #ffd76a; }
+.duel-trainer.is-lord h3 { color: #ffd76a; }
+.duel-trainer-lord { font-size: .84rem; line-height: 1.4; color: #ffd76a; }
+.duel-trainer-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.duel-level {
+  min-height: 38px; border-radius: 10px; font: inherit; font-size: .84rem; font-weight: 650; cursor: pointer;
+  border: 1px solid var(--duel-line); background: transparent; color: var(--duel-muted);
+}
+.duel-level[aria-pressed='true'] { color: var(--duel-ink); background: var(--duel-accent); border-color: var(--duel-accent); }
 .duel-trainer-head h3 { font-size: 1.2rem; letter-spacing: -.03em; }
 .duel-trainer-head p { color: var(--duel-muted); font-size: .86rem; line-height: 1.4; }
 .duel-trainer-team { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }

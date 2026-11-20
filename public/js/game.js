@@ -66,7 +66,19 @@ export function freshProfile() {
     retired: {},
     recentWild: [],
     login: {day: '', streak: 0},
+    wildSeed: '',
   };
+}
+
+// A profile's own random stream for wild fighters, like the fixed chest order of some games: the
+// n-th wild fighter of a profile is decided by its seed and n, so linked devices meet the same one
+// under the same id instead of two different fighters after the same pause.
+const WILD_SEED = /^[a-z0-9]{6,16}$/;
+function streamRandom(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  let x = (h >>> 0) % 2147483646 + 1;
+  return () => (x = (x * 48271) % 2147483647) / 2147483647;
 }
 
 // Version 2: spins with the roulette. Claims made before it are dropped once, so everyone can
@@ -201,6 +213,7 @@ export function normalizeProfile(value) {
   if (profile.encounter && Object.hasOwn(profile.retired, profile.encounter.id)) profile.encounter = null;
   profile.recentWild = uniqueIds(value.recentWild).slice(0, RECENT_WILD);
   profile.login = cleanLogin(value.login);
+  profile.wildSeed = typeof value.wildSeed === 'string' && WILD_SEED.test(value.wildSeed) ? value.wildSeed : '';
   const sync = cleanSync(value.sync);
   if (sync) profile.sync = sync;
   return profile;
@@ -407,6 +420,9 @@ const RECENT_WILD = 5;
 function spawnWild(saved, items, now, rng, brand = null, visit = false) {
   const pool = brand ? items.filter(item => item.brand === brand) : items;
   if (!pool.length) return null;
+  ensureWildSeed(saved, rng);
+  const sequence = saved.encounterSequence + 1;
+  rng = streamRandom(saved.wildSeed + ':' + sequence + ':' + (brand ?? ''));
   const fresh = list => {
     const left = list.filter(item => !saved.recentWild.includes(String(item.id)));
     return left.length ? left : list;
@@ -415,9 +431,9 @@ function spawnWild(saved, items, now, rng, brand = null, visit = false) {
   const enemy = choose(fresh(unseen.length && unit(rng) < NEW_WILD_ODDS ? unseen : pool), rng);
   saved.recentWild = [String(enemy.id), ...saved.recentWild.filter(id => id !== String(enemy.id))].slice(0, RECENT_WILD);
   retire(saved, saved.encounter);
-  saved.encounterSequence += 1;
+  saved.encounterSequence = sequence;
   saved.encounter = {
-    id: `${now.toString(36)}-${saved.encounterSequence.toString(36)}`,
+    id: `${saved.wildSeed}-${sequence.toString(36)}`,
     enemyId: String(enemy.id), kind: 'recruit', startedAt: now, ...(visit && {visit: true}),
   };
   return saved.encounter;
@@ -428,6 +444,13 @@ function hasCurrentEncounter(saved, items) {
 }
 
 // Every new player starts with one random common fighter, so the arena is never empty.
+// The account's own wild stream: every device of a linked profile spawns the same fighters in the
+// same order (like chests in a fixed cycle), so one encounter cannot be rolled twice.
+export function ensureWildSeed(profile, rng = Math.random) {
+  if (!profile.wildSeed) profile.wildSeed = Math.floor(unit(rng) * 36 ** 8).toString(36).padStart(8, '0');
+  return profile;
+}
+
 export function grantStarter(profile, menu, {rng = Math.random} = {}) {
   const saved = normalizeProfile(profile);
   if (Object.keys(saved.collection).length) return {ok: false, reason: 'has-fighters', profile: saved};
@@ -435,6 +458,7 @@ export function grantStarter(profile, menu, {rng = Math.random} = {}) {
   const item = choose(commons.length ? commons : menuItems(menu), rng);
   if (!item) return {ok: false, reason: 'empty-menu', profile: saved};
   giveCard(saved, item);
+  ensureWildSeed(saved, rng);
   return {ok: true, reason: 'starter', profile: saved, card: ownedCard(item, saved.collection[item.id])};
 }
 
@@ -572,45 +596,72 @@ export function resolveEncounter(profile, encounterId, won, menu, {teamIds, draw
 // works for one chain and brings fighters of the same rarities and levels as the player's team,
 // from that chain when it has them. Only experience is at stake, and modestly so.
 export const TRAINERS = Object.freeze([
-  {id: 'bk-grill', name: 'Мастер гриля Артём', brand: 'bk'},
-  {id: 'bk-cashier', name: 'Кассир Валя', brand: 'bk'},
-  {id: 'vkusno-manager', name: 'Менеджер смены Олег', brand: 'vkusno'},
-  {id: 'vkusno-mccafe', name: 'Бариста Соня', brand: 'vkusno'},
-  {id: 'rostics-chef', name: 'Шеф Марина', brand: 'rostics'},
-  {id: 'rostics-courier', name: 'Курьер Тимур', brand: 'rostics'},
-  {id: 'dodo-pizzaiolo', name: 'Пиццамейкер Лёша', brand: 'dodo'},
-  {id: 'dodo-baker', name: 'Пекарь Настя', brand: 'dodo'},
+  {id: 'artem', name: 'Артём', brand: 'bk'},
+  {id: 'misha', name: 'Миша', brand: 'bk'},
+  {id: 'andrey', name: 'Андрей', brand: 'vkusno'},
+  {id: 'sasha', name: 'Саша', brand: 'vkusno', she: true},
+  {id: 'danya', name: 'Даня', brand: 'rostics'},
+  {id: 'yaroslav', name: 'Ярослав', brand: 'rostics'},
+  {id: 'mark', name: 'Марк', brand: 'dodo'},
+  {id: 'lev-s', name: 'Лев С', brand: 'dodo'},
+  {id: 'lev-b', name: 'Лев Б', brand: null, title: 'Сборная солянка'},
+  // The lord of trainers: the three strongest legends, a level above the player's best, full strength.
+  {id: 'luka', name: 'Лука', brand: null, title: 'Лорд тренеров', lord: true},
 ]);
+export const LORD_TEAM = Object.freeze(['vkusno-big-hit', 'dodo-cheesy-chicken', 'bk-burger-box']);
+// Difficulty: how the trainer picks and levels its team, and what a battle pays.
+export const TRAINER_LEVELS = Object.freeze({
+  easy: {name: 'Разминка', levels: -1, xp: 0.6},
+  normal: {name: 'Всерьёз', levels: 0, xp: 1},
+  hard: {name: 'Без пощады', levels: 1, xp: 1.5, strongest: true},
+});
 export const TRAINER_XP = Object.freeze({won: {player: 12, party: 8}, draw: {player: 4, party: 3}, lost: {player: 3, party: 2}});
+const LORD_XP = 2;
 
-export function trainerOffer(menu, playerCards, {rng = Math.random, trainer = null} = {}) {
+const levelCap = level => Math.min(XP_THRESHOLDS.length, Math.max(1, level));
+
+export function trainerOffer(menu, playerCards, {rng = Math.random, trainer = null, difficulty = 'normal'} = {}) {
   const items = menuItems(menu);
   const members = (Array.isArray(playerCards) ? playerCards : []).filter(Boolean).slice(0, MAX_TEAM_SIZE);
   if (!items.length || !members.length) return null;
-  const coach = trainer ? TRAINERS.find(t => t.id === trainer) ?? TRAINERS[0] : choose(TRAINERS, rng);
+  const coach = (trainer && TRAINERS.find(t => t.id === trainer)) || choose(TRAINERS, rng);
+  const level = TRAINER_LEVELS[difficulty] ?? TRAINER_LEVELS.normal;
+  if (coach.lord) {
+    const top = Math.max(...members.map(c => c.level ?? 1));
+    const team = LORD_TEAM.map(id => items.find(item => String(item.id) === id)).filter(Boolean)
+      .map(item => cardFor(item, levelCap(top + 1)));
+    return {trainer: coach, team, difficulty: 'lord'};
+  }
   const taken = new Set(members.map(c => String(c.id)));
+  const power = card => card.maxHp * card.attack;
   const team = members.map(card => {
     const rarity = card.rarity ?? 'common';
+    const lvl = levelCap((card.level ?? 1) + level.levels);
     const fits = items.filter(item => !taken.has(String(item.id)) && fighterFor(item.id).rarity === rarity);
-    const home = fits.filter(item => item.brand === coach.brand);
-    const item = choose(home.length ? home : fits.length ? fits : items.filter(i => !taken.has(String(i.id))), rng);
+    const home = coach.brand ? fits.filter(item => item.brand === coach.brand) : fits;
+    let pool = home.length ? home : fits.length ? fits : items.filter(i => !taken.has(String(i.id)));
+    // Without mercy the trainer takes the strongest of the rarity (one of the top two).
+    if (level.strongest) pool = [...pool].sort((x, y) => power(cardFor(y, lvl)) - power(cardFor(x, lvl))).slice(0, 2);
+    const item = choose(pool, rng);
     taken.add(String(item.id));
-    return cardFor(item, Math.max(1, card.level ?? 1));
+    return cardFor(item, lvl);
   });
-  return {trainer: coach, team};
+  return {trainer: coach, team, difficulty: TRAINER_LEVELS[difficulty] ? difficulty : 'normal'};
 }
 
-export function recordTrainer(profile, {won, draw = false, teamIds, matchId} = {}) {
+export function recordTrainer(profile, {won, draw = false, teamIds, matchId, difficulty = 'normal'} = {}) {
   const saved = normalizeProfile(profile);
   const outcome = battleOutcome(won, draw);
   const id = validId(matchId);
   if (!outcome || !id) return {ok: false, reason: 'invalid-battle', profile: saved};
   if (Object.hasOwn(saved.battleIds, id)) return {ok: false, reason: 'already-recorded', profile: saved};
   saved.battleIds[id] = true;
-  const reward = TRAINER_XP[outcome];
+  const factor = difficulty === 'lord' ? LORD_XP : (TRAINER_LEVELS[difficulty] ?? TRAINER_LEVELS.normal).xp;
+  const playerXp = Math.max(1, Math.round(TRAINER_XP[outcome].player * factor));
+  const partyXp = Math.max(1, Math.round(TRAINER_XP[outcome].party * factor));
   const party = uniqueIds(teamIds).filter(card => Object.hasOwn(saved.collection, card)).slice(0, MAX_TEAM_SIZE);
-  const leveledIds = finishBattle(saved, outcome, reward.player, party, reward.party);
-  return {ok: true, reason: outcome, profile: saved, playerXp: reward.player, partyXp: reward.party, leveledUp: leveledIds.length > 0, leveledIds};
+  const leveledIds = finishBattle(saved, outcome, playerXp, party, partyXp);
+  return {ok: true, reason: outcome, profile: saved, playerXp, partyXp, leveledUp: leveledIds.length > 0, leveledIds};
 }
 
 export function recordBattle(profile, {xp, won, draw = false, cardId, mode, matchId} = {}) {

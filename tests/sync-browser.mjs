@@ -164,6 +164,7 @@ try {
   await phone.keyboard.press('Escape');
   console.log('PASS the login reward taken on the phone is not offered again on the laptop');
 
+
   // A change on the phone reaches the laptop: the team.
   await phone.keyboard.press('Escape');
   await phone.locator('.main-nav [data-nav="collection"]').click();
@@ -175,6 +176,32 @@ try {
   await laptop.locator('[data-sync-now]').click();
   await laptop.waitForFunction(({ key, team }) => JSON.stringify(JSON.parse(localStorage.getItem(key)).team) === JSON.stringify(team), { key: profileKey, team }, { timeout: 15_000 });
   console.log('PASS a team change on the phone syncs by itself and reaches the laptop');
+  await laptop.keyboard.press('Escape');
+  // A wild fighter caught on the phone cannot be fought again on the laptop.
+  async function fightWild(page) {
+    await page.locator('.main-nav [data-nav="arena"]').click();
+    await page.getByRole('button', { name: 'Сразиться' }).first().click();
+    for (let i = 0; i < 120 && !(await page.locator('.duel-result').count()); i++) {
+      const move = page.locator('[data-duel-action^="move:"]:enabled').first();
+      if (await move.count()) await move.click().catch(() => {});
+      await page.waitForTimeout(250);
+    }
+  }
+  await openSync(laptop); await laptop.locator('[data-sync-now]').click(); await laptop.keyboard.press('Escape');
+  await laptop.locator('.main-nav [data-nav="arena"]').click();
+  await laptop.getByRole('button', { name: 'Сразиться' }).first().waitFor();
+  const wildBefore = (await saved(laptop)).encounter?.id;
+  assert.ok(wildBefore, 'a wild fighter is waiting');
+  assert.equal((await saved(phone)).encounter?.id, wildBefore, 'the same one on both devices');
+  await fightWild(phone);
+  await phone.locator('.duel-result').waitFor({ timeout: 60_000 });
+  await phone.waitForTimeout(1500);
+  await laptop.getByRole('button', { name: 'Сразиться' }).first().click();
+  await laptop.locator('.duel-alert', { hasText: 'уже победили на другом устройстве' }).waitFor({ timeout: 20_000 });
+  assert.equal(await laptop.locator('.duel-stage').count(), 0, 'no second fight with the same wild fighter');
+  await phone.locator('.main-nav [data-nav="radar"]').click();
+  await laptop.locator('.main-nav [data-nav="radar"]').click();
+  console.log('PASS a wild fighter caught on the phone is not offered for a second fight on the laptop');
 
   // Reload: still linked, no prompt, same profile.
   const before = counters(await saved(phone));

@@ -186,7 +186,8 @@ export function createSync({ store, relays = SYNC_RELAYS, Socket = globalThis.We
     const k = key();
     if (!k) { set({ state: 'off' }); return status; }
     // A fight in progress keeps its wild fighter: the merge waits until the result is saved.
-    if (paused()) { schedule(3000); return status; }
+    // The caller learns that nothing was checked (the shown status stays as it was).
+    if (paused()) { schedule(3000); return { ...status, state: 'paused' }; }
     set({ state: 'syncing', error: null });
     try {
       const acc = await accountFor(k);

@@ -9,7 +9,8 @@ import { intimidateFx, movePlan } from './fx-moves.js';
 
 const LABELS = { wild: 'Дикий боец', trainer: 'Бой с тренером', online: 'Сетевая дуэль' };
 // How long the computer thinks per move: the trainer plays at full strength, a wild fighter a little lighter.
-const THINK_MS = { trainer: 350, wild: 90 };
+const THINK_MS = { wild: 90, easy: 60, normal: 350, hard: 900, lord: 1200 };
+const LEVELS = [['easy', 'Разминка'], ['normal', 'Всерьёз'], ['hard', 'Без пощады']];
 const plural = new Intl.PluralRules('ru');
 const MOVES = { one: 'ход', few: 'хода', many: 'ходов', other: 'хода' };
 const ONLINE_XP = { won: 24, draw: 6, lost: 4 };
@@ -108,7 +109,7 @@ function chips(fighter) {
 }
 
 export function mountDuels(container, options) {
-  const { read, initialMode, award, onBack, onStateChange, onTeamChange, onShowCard, onFightChange } = options;
+  const { read, initialMode, award, onBack, onStateChange, onTeamChange, onShowCard, onFightChange, beforeWild } = options;
   let wildFighting = false;
   let data, catalog, owned;
   let selected = [];
@@ -179,7 +180,21 @@ export function mountDuels(container, options) {
     if (selected.length) onTeamChange?.([...selected]);
   }
 
-  function startWild() {
+  // A linked device first checks with the others that this wild fighter is still free.
+  let wildChecking = false;
+  async function startWild() {
+    if (wildChecking) return;
+    if (beforeWild) {
+      wildChecking = true;
+      feedback = 'Сверяем прогресс с другими устройствами…';
+      draw();
+      const check = await beforeWild().catch(() => ({ ok: false, message: 'Не удалось сверить прогресс.' }));
+      wildChecking = false;
+      feedback = '';
+      if (disposed) return;
+      sync();
+      if (!check.ok) { feedback = check.message; draw(); return; }
+    }
     const wild = data.wild;
     if (!wild || !selected.length) { draw(); return; }
     const enemy = wild.opponent(selected.map(id => catalog.get(id)));
@@ -209,7 +224,11 @@ export function mountDuels(container, options) {
   function botTurn() {
     if (disposed || !local || local.winner !== null || local.turn !== 1) return;
     if (hold.some(index => index !== null) || busy()) { thinking = setTimeout(botTurn, Math.max(120, fxUntil - performance.now() + 250)); return; }
-    local = applyMove(local, 1, smartMove(local, 1, { timeMs: THINK_MS[mode] ?? 90 }));
+    const level = mode === 'trainer' ? trainer?.difficulty ?? 'normal' : 'wild';
+    const moves = legalMoves(local);
+    // At the warm-up level the trainer sometimes slips; everywhere else it plays its best.
+    const slip = level === 'easy' && Math.random() < 0.25;
+    local = applyMove(local, 1, slip ? moves[Math.floor(Math.random() * moves.length)] : smartMove(local, 1, { timeMs: THINK_MS[level] ?? 90 }));
     draw();
     queueBot();
   }
@@ -217,10 +236,11 @@ export function mountDuels(container, options) {
   // The trainer on offer matches the current team; a new one only when asked or when the team changes.
   let trainer = null, trainerKey = '';
   function trainerFor(fresh = false) {
-    const key = selected.join(',');
     if (!data.trainer || !selected.length) return null;
+    if (fresh) data.nextTrainer?.();
+    const key = selected.join(',') + '|' + data.trainerLevel?.() + '|' + data.trainerId?.();
     if (fresh || !trainer || trainerKey !== key) {
-      trainer = data.trainer(selected.map(id => catalog.get(id)), { avoid: fresh ? trainer?.trainer.id : null });
+      trainer = data.trainer(selected.map(id => catalog.get(id)));
       trainerKey = key;
     }
     return trainer;
@@ -322,10 +342,17 @@ export function mountDuels(container, options) {
     if (!offer) return '';
     const faces = offer.team.map(card => `<span class="duel-trainer-fighter" style="--team-color:${color(card.brand)}" title="${esc(card.name)}">${artwork(card)}
       <small><span class="rarity ${esc(card.rarity)}">${esc((rarityNames[card.rarity] ?? '').slice(0, 1))}</span> ур. ${card.level}</small></span>`).join('');
-    return `<section class="duel-trainer" style="--team-color:${color(offer.trainer.brand)}" aria-labelledby="duel-trainer-title">
-      <div class="duel-trainer-head"><span class="duel-label">Тренер · ${esc(brands[offer.trainer.brand]?.name ?? '')}</span>
-        <h3 id="duel-trainer-title">${esc(offer.trainer.name)}</h3>
+    const coach = offer.trainer;
+    const level = data.trainerLevel?.() ?? 'normal';
+    const levels = coach.lord
+      ? '<p class="duel-trainer-lord">Лука всегда играет в полную силу: три сильнейшие легенды на уровень выше твоего лучшего бойца. Опыт за бой ×2.</p>'
+      : `<div class="duel-trainer-levels" role="group" aria-label="Сложность">${LEVELS.map(([id, label]) =>
+          `<button type="button" class="duel-level" data-duel-action="trainer-level:${id}" aria-pressed="${id === level}">${label}</button>`).join('')}</div>`;
+    return `<section class="duel-trainer${coach.lord ? ' is-lord' : ''}" style="--team-color:${coach.brand ? color(coach.brand) : coach.lord ? '#ffd76a' : '#c7b1f5'}" aria-labelledby="duel-trainer-title">
+      <div class="duel-trainer-head"><span class="duel-label">Тренер · ${esc(coach.title ?? brands[coach.brand]?.name ?? '')}</span>
+        <h3 id="duel-trainer-title">${coach.lord ? icon('trophy', 18) + ' ' : ''}${esc(coach.name)}</h3>
         <p>Бой 3 на 3 в любое время. Тренер просчитывает ходы вперёд, меняет бойцов и бережёт энергию на суперприём.</p></div>
+      ${levels}
       <div class="duel-trainer-team">${faces}</div>
       <div class="duel-buttons">${button('trainer', 'Вызвать на бой', { primary: true, icon: 'battle', disabled: !selected.length })}${button('trainer-new', 'Другой тренер', { quiet: true })}</div>
     </section>`;
@@ -366,7 +393,7 @@ export function mountDuels(container, options) {
   function lobby() {
     if (!owned.length) return `<header class="duel-heading"><h2>Арена</h2></header>${empty()}`;
     // The friend duel sits right under the wild fighter: with a big collection the team list is long.
-    return `<header class="duel-heading"><h2>Арена</h2></header>${wildBox()}${trainerBox()}
+    return `<header class="duel-heading"><h2>Арена</h2></header>${wildBox()}${feedback && mode === 'lobby' ? '<p class="duel-alert" role="status">' + esc(feedback) + '</p>' : ''}${trainerBox()}
       <section class="duel-friend"><span>${icon('route', 20)}</span><p><strong>С другом по ссылке</strong><small>Честный бой на базовых характеристиках</small></p>
         ${button('online', 'Дуэль с другом')}</section>${teamPicker()}${rules}`;
   }
@@ -488,7 +515,11 @@ export function mountDuels(container, options) {
   }
 
   function resultText(state, side) {
-    if (rewardState === 'failed') return '<p role="status">Не удалось записать результат в профиль.</p>';
+    if (rewardState === 'failed') {
+      return rewardInfo?.reason === 'no-encounter'
+        ? '<p role="status">Этого дикого бойца уже победили на другом устройстве, поэтому бой не засчитан.</p>'
+        : '<p role="status">Не удалось записать результат в профиль.</p>';
+    }
     const info = rewardInfo ?? {};
     if (mode === 'wild') {
       const enemy = name(state.teams[1][0].id);
@@ -499,9 +530,12 @@ export function mountDuels(container, options) {
       return `<p>${esc(enemy)} ушёл.${esc(xp)} Новый дикий боец появится через 15 минут — или сразу после отметки у заведения.</p>`;
     }
     if (mode === 'trainer') {
-      const who = trainer?.trainer.name ?? 'Тренер';
+      const coach = trainer?.trainer;
+      const who = coach?.name ?? 'Тренер', she = coach?.she;
       const xp = info.playerXp ? ` Ты +${info.playerXp} опыта, каждый боец команды +${info.partyXp}.` : '';
-      return `<p><strong>${state.winner === side ? esc(who) + ' побеждён!' : state.winner === 'draw' ? 'Ничья с тренером.' : esc(who) + ' оказался сильнее.'}</strong>${esc(xp)}</p>`;
+      const line = state.winner === side ? (coach?.lord ? 'Лорд тренеров повержен!' : `${who} ${she ? 'побеждена' : 'побеждён'}!`)
+        : state.winner === 'draw' ? 'Ничья с тренером.' : `${who} ${she ? 'оказалась' : 'оказался'} сильнее.`;
+      return `<p><strong>${esc(line)}</strong>${esc(xp)}</p>`;
     }
     const xp = state.winner === 'draw' ? ONLINE_XP.draw : state.winner === side ? ONLINE_XP.won : ONLINE_XP.lost;
     return `<p><strong>+${xp} опыта</strong> первому бойцу команды.</p>`;
@@ -515,7 +549,7 @@ export function mountDuels(container, options) {
     const result = mode === 'wild'
       ? { mode: 'wild', encounterId: wildId, won, draw: drawn, teamIds: state.teams[side].map(f => f.id), matchId: localMatchId }
       : mode === 'trainer'
-      ? { mode: 'trainer', won, draw: drawn, teamIds: state.teams[side].map(f => f.id), matchId: localMatchId }
+      ? { mode: 'trainer', won, draw: drawn, teamIds: state.teams[side].map(f => f.id), matchId: localMatchId, difficulty: trainer?.difficulty ?? 'normal' }
       : { mode: 'online', won, draw: drawn, xp: drawn ? ONLINE_XP.draw : won ? ONLINE_XP.won : ONLINE_XP.lost,
           cardId: state.teams[side][0].id, teamIds: state.teams[side].map(f => f.id), matchId: room?.matchId };
     Promise.resolve().then(() => award?.(result)).then(saved => {
@@ -797,6 +831,7 @@ export function mountDuels(container, options) {
     else if (action === 'wild') startWild();
     else if (action === 'trainer') startTrainer();
     else if (action === 'trainer-new') { trainerFor(true); draw(); }
+    else if (action.startsWith('trainer-level:')) { data.setTrainerLevel?.(action.slice(14)); trainerFor(); draw(); }
     else if (action === 'trainer-again') { trainerFor(true); startTrainer(); }
     else if (action === 'online') reset('online');
     else if (action === 'create') openRoom('host', newRoomCode());

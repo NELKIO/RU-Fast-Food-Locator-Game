@@ -73,7 +73,7 @@ test('the trainer beats the simple bot clearly over many even battles, swapping 
 
 test('a trainer brings fighters of the same rarities and levels, from its own chain when it can', () => {
   const team = ['bk-whopper', 'dodo-pepperoni', 'vkusno-nuggets'].map(id => cardFor(menu.find(m => m.id === id), 4));
-  for (const trainer of TRAINERS) {
+  for (const trainer of TRAINERS.filter(t => t.brand)) {
     const offer = trainerOffer(menu, team, { trainer: trainer.id, rng: seq(7) });
     assert.equal(offer.trainer.id, trainer.id);
     assert.deepEqual(offer.team.map(c => c.rarity), team.map(c => c.rarity));
