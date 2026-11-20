@@ -596,15 +596,15 @@ export function resolveEncounter(profile, encounterId, won, menu, {teamIds, draw
 // works for one chain and brings fighters of the same rarities and levels as the player's team,
 // from that chain when it has them. Only experience is at stake, and modestly so.
 export const TRAINERS = Object.freeze([
-  {id: 'artem', name: 'Артём', brand: 'bk'},
-  {id: 'misha', name: 'Миша', brand: 'bk'},
-  {id: 'andrey', name: 'Андрей', brand: 'vkusno'},
-  {id: 'sasha', name: 'Саша', brand: 'vkusno', she: true},
-  {id: 'danya', name: 'Даня', brand: 'rostics'},
-  {id: 'yaroslav', name: 'Ярослав', brand: 'rostics'},
-  {id: 'mark', name: 'Марк', brand: 'dodo'},
-  {id: 'lev-s', name: 'Лев С', brand: 'dodo'},
-  {id: 'lev-b', name: 'Лев Б', brand: null, title: 'Сборная солянка'},
+  {id: 'artem', name: 'Артём', role: 'Мастер гриля', brand: 'bk'},
+  {id: 'misha', name: 'Миша', role: 'Хранитель короны', brand: 'bk'},
+  {id: 'andrey', name: 'Андрей', role: 'Курьер', brand: 'vkusno'},
+  {id: 'sasha', name: 'Саша', role: 'Бариста', brand: 'vkusno', she: true},
+  {id: 'danya', name: 'Даня', role: 'Повелитель крылышек', brand: 'rostics'},
+  {id: 'yaroslav', name: 'Ярослав', role: 'Кассир-ниндзя', brand: 'rostics'},
+  {id: 'mark', name: 'Марк', role: 'Пиццамейкер', brand: 'dodo'},
+  {id: 'lev-s', name: 'Лев С', role: 'Укротитель теста', brand: 'dodo'},
+  {id: 'lev-b', name: 'Лев Б', role: 'Дегустатор', brand: null, title: 'Сборная солянка'},
   // The lord of trainers: the three strongest legends, a level above the player's best, full strength.
   {id: 'luka', name: 'Лука', brand: null, title: 'Лорд тренеров', lord: true},
 ]);

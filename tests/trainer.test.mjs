@@ -11,6 +11,10 @@ const team = (ids, level) => ids.map(id => cardFor(menu.find(m => m.id === id), 
 test('ten trainers by name, one mixed team, one lord', () => {
   assert.deepEqual(TRAINERS.map(t => t.name), ['Артём', 'Миша', 'Андрей', 'Саша', 'Даня', 'Ярослав', 'Марк', 'Лев С', 'Лев Б', 'Лука']);
   assert.equal(TRAINERS.find(t => t.name === 'Саша').she, true);
+  // Everyone but the lord has a funny job in front of the name, all different.
+  const roles = TRAINERS.filter(t => !t.lord).map(t => t.role);
+  assert.ok(roles.every(Boolean) && new Set(roles).size === roles.length);
+  assert.equal(TRAINERS.find(t => t.name === 'Андрей').role, 'Курьер');
   assert.equal(TRAINERS.find(t => t.id === 'luka').lord, true);
   for (const brand of ['bk', 'vkusno', 'rostics', 'dodo']) assert.equal(TRAINERS.filter(t => t.brand === brand).length, 2, brand);
 });
