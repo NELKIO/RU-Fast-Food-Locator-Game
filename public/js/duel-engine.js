@@ -10,7 +10,20 @@ const SKILL_KEYS = ['name', 'cost', 'power', 'pierce', 'hits', 'burn', 'heal', '
 // Talents work on their own, without a move: one per rare, epic and legendary fighter.
 // Immunities stay rare on purpose: with three fighters a team cannot prepare for many of them,
 // so only fireproof (a few fighters) and sterile (one meme fighter) exist.
-export const TRAIT_KEYS = ['armor', 'thorns', 'regen', 'rage', 'fireproof', 'steady', 'quick', 'vamp', 'laststand', 'pure', 'intimidate'];
+export const TRAIT_KEYS = ['armor', 'thorns', 'regen', 'rage', 'fireproof', 'steady', 'quick', 'vamp', 'laststand', 'pure', 'intimidate',
+  // Passives with a clear trigger (no chances):
+  //   moxie    attack +N after it knocks out an opposing fighter
+  //   refresh  restores N HP when it leaves the field
+  //   fresh    takes half damage while at full health
+  //   parting  when knocked out by a blow, the attacker loses N HP (never knocks it out)
+  //   opener   its first blow after coming onto the field is N stronger
+  //   snack    once per battle, on dropping to half health or below, restores N HP
+  //   breaker  plain hits go through guard
+  'moxie', 'refresh', 'fresh', 'parting', 'opener', 'snack', 'breaker'];
+// Transformation: once per battle, for energy, the fighter takes another form for the rest of the
+// battle. The form changes stats (added to the current ones), may replace the skill, super move and
+// talent, and the change itself does something at once (`effect`, like a skill without a cost).
+const TRANSFORM_KEYS = ['name', 'cost', 'hp', 'attack', 'speed', 'skill', 'ultimate', 'trait', 'effect', 'look'];
 const MAX_TOXIC = 4;
 
 export function validTeam(ids, catalog) {
@@ -40,6 +53,18 @@ function cleanTrait(trait) {
   return out;
 }
 
+function cleanTransform(t) {
+  if (!t || typeof t !== 'object') return null;
+  const out = { name: String(t.name ?? 'Трансформация'), cost: Math.min(MAX_ENERGY, Math.max(0, t.cost ?? 2)) };
+  for (const key of ['hp', 'attack', 'speed']) if (Number.isSafeInteger(t[key])) out[key] = t[key];
+  if (t.skill) out.skill = cleanSkill(t.skill);
+  if (t.ultimate) out.ultimate = cleanSkill(t.ultimate);
+  if (t.trait) out.trait = cleanTrait(t.trait);
+  if (t.effect) out.effect = { ...cleanSkill(t.effect), cost: 0 };
+  if (typeof t.look === 'string') out.look = t.look;
+  return out;
+}
+
 export function battleStats(card, competitive = false) {
   const stats = {
     id: card.id,
@@ -50,6 +75,7 @@ export function battleStats(card, competitive = false) {
   };
   if (card.ultimate) stats.ultimate = cleanSkill(card.ultimate);
   if (card.trait && Object.keys(cleanTrait(card.trait)).length) stats.trait = cleanTrait(card.trait);
+  if (card.transform) stats.transform = cleanTransform(card.transform);
   return stats;
 }
 
@@ -65,6 +91,10 @@ function newFighter(card) {
     // status: frozen or asleep, the fighter misses its turns; rested: it has just come round and
     // cannot be frozen or put to sleep again before its own next action.
     status: null, rested: false, toxic: 0, leech: 0,
+    // primed: its first blow since it came onto the field is still to come. snacked: the one-time
+    // snack is eaten.
+    primed: true, snacked: false,
+    transform: cleanTransform(card.transform), transformed: false,
   };
 }
 
@@ -113,6 +143,7 @@ export function legalMoves(state) {
   if (!fighter.guarding) moves.push('guard');
   if (fighter.energy >= fighter.skill.cost) moves.push('special');
   if (fighter.ultimate && fighter.energy >= fighter.ultimate.cost) moves.push('ultimate');
+  if (fighter.transform && !fighter.transformed && fighter.energy >= fighter.transform.cost) moves.push('transform');
   state.teams[state.turn].forEach((reserve, index) => {
     if (index !== state.active[state.turn] && reserve.hp > 0) moves.push('switch:' + index);
   });
@@ -140,6 +171,17 @@ function strike(event, attacker, target, amount, pierce) {
   if (attacker.trait.rage && attacker.hp * 2 <= attacker.maxHp) {
     damage += attacker.trait.rage;
     event.rage = true;
+  }
+  // Opener: the first blow since the fighter came onto the field.
+  if (attacker.primed && attacker.trait.opener && damage > 0) {
+    damage += attacker.trait.opener;
+    event.opener = true;
+  }
+  attacker.primed = false;
+  // Fresh: a fighter at full health takes half.
+  if (target.trait.fresh && target.hp === target.maxHp && damage > 0) {
+    damage = Math.ceil(damage / 2);
+    event.fresh = true;
   }
   if (target.guarding && !pierce) {
     damage = Math.ceil(damage / 2);
@@ -176,7 +218,23 @@ function strike(event, attacker, target, amount, pierce) {
     attacker.hp -= prick;
     event.thorns += prick;
   }
+  // Parting gift: knocked out, the fighter still bites the one who did it.
+  if (target.hp <= 0 && target.trait.parting && attacker.hp > 1) {
+    const bite = Math.min(target.trait.parting, attacker.hp - 1);
+    attacker.hp -= bite;
+    event.parting = (event.parting ?? 0) + bite;
+  }
+  snack(target, event, 1 - event.side);
   return dealt;
+}
+
+// Snack: once per battle, at half health or below, the fighter eats and restores some HP.
+function snack(fighter, record, side) {
+  if (!fighter.trait.snack || fighter.snacked || fighter.hp <= 0 || fighter.hp * 2 > fighter.maxHp) return;
+  fighter.snacked = true;
+  record.snack = (record.snack ?? 0) + heal(fighter, fighter.trait.snack);
+  // Who ate: the side of each fighter that had its snack in this event.
+  (record.snackSides ??= []).push(side);
 }
 
 // Frozen or asleep, a fighter misses its turns. A fighter that has just come round is alert
@@ -213,6 +271,7 @@ function tick(state, side, fighter, record) {
     const drinker = currentFighter(state, 1 - side);
     if (drinker.hp > 0) record.leechHeal += heal(drinker, loss);
   }
+  snack(fighter, record, side);
   if (fighter.hp <= 0 && currentFighter(state, side) === fighter) settleKnockout(state, side);
 }
 
@@ -225,6 +284,7 @@ function settleKnockout(state, side) {
   else {
     state.active[side] = next;
     state.last.entered[side] = state.teams[side][next].id;
+    state.teams[side][next].primed = true;
     intimidate(state, side, state.last);
   }
 }
@@ -325,6 +385,34 @@ function useSkill(state, event, fighter, target, skill) {
   }
 }
 
+// Transformation: the fighter takes its other form for the rest of the battle. Stats are added
+// to the current ones (the extra health heals too), a new skill, super move or talent replaces the
+// old one, and the change itself acts at once like a free skill.
+function transform(state, event, fighter, target) {
+  const form = fighter.transform;
+  fighter.energy -= form.cost;
+  fighter.transformed = true;
+  event.transformed = form.name;
+  event.effects.push('transform');
+  if (form.hp) {
+    fighter.maxHp = Math.max(1, fighter.maxHp + form.hp);
+    fighter.hp = Math.max(1, Math.min(fighter.maxHp, fighter.hp + Math.max(0, form.hp)));
+  }
+  if (form.attack) {
+    fighter.baseAttack = Math.max(1, fighter.baseAttack + form.attack);
+    fighter.attack = Math.max(1, fighter.attack + form.attack);
+  }
+  if (form.speed) fighter.speed = cleanSpeed(fighter.speed + form.speed);
+  // New objects even when unchanged: the computer player caches per skill object.
+  fighter.skill = { ...(form.skill ?? fighter.skill) };
+  if (form.ultimate) fighter.ultimate = { ...form.ultimate };
+  if (form.trait) fighter.trait = { ...form.trait };
+  if (form.effect) {
+    useSkill(state, event, fighter, target, form.effect);
+    event.skill = form.name;
+  }
+}
+
 // A move is a command, never a damage value or a remote state snapshot.
 export function applyMove(previous, side, command) {
   if (side !== previous.turn || !legalMoves(previous).includes(command)) return null;
@@ -350,8 +438,12 @@ export function applyMove(previous, side, command) {
     // Heartburn and draining stay behind with the fighter who leaves.
     fighter.toxic = 0;
     fighter.leech = 0;
+    // Refresh: a fighter that leaves the field catches its breath.
+    if (fighter.trait.refresh && fighter.hp > 0) event.refresh = heal(fighter, fighter.trait.refresh);
     state.active[side] = Number(command.slice(7));
-    event.target = currentFighter(state, side).id;
+    const incoming = currentFighter(state, side);
+    incoming.primed = true;
+    event.target = incoming.id;
     event.entered[side] = event.target;
     intimidate(state, side, event);
   } else if (command === 'guard') {
@@ -359,12 +451,21 @@ export function applyMove(previous, side, command) {
     fighter.energy = Math.min(MAX_ENERGY, fighter.energy + 1);
   } else if (command === 'special' || command === 'ultimate') {
     useSkill(state, event, fighter, target, command === 'special' ? fighter.skill : fighter.ultimate);
+  } else if (command === 'transform') {
+    transform(state, event, fighter, target);
   } else {
-    event.damage = strike(event, fighter, target, fighter.attack, false);
+    // Breaker: plain hits go through guard.
+    event.damage = strike(event, fighter, target, fighter.attack, Boolean(fighter.trait.breaker));
     if (fighter.trait.vamp && event.damage > 0) event.heal += heal(fighter, fighter.trait.vamp);
     fighter.energy = Math.min(MAX_ENERGY, fighter.energy + 1);
   }
+  const before = event.ko.length;
   settleKnockout(state, other);
+  // Moxie: knocking out an opposing fighter raises the fighter's attack.
+  if (fighter.trait.moxie && event.ko.length > before && fighter.hp > 0) {
+    const raised = Math.min(fighter.baseAttack + MAX_BUFF, fighter.attack + fighter.trait.moxie);
+    if (raised > fighter.attack) { fighter.attack = raised; event.moxie = true; }
+  }
   // Regeneration follows the fighter's own action; a burning fighter does not regenerate.
   if (fighter.trait.regen && fighter.hp > 0 && !fighter.burn && !command.startsWith('switch:') && state.winner === null) {
     event.regen = heal(fighter, fighter.trait.regen);

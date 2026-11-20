@@ -1,5 +1,5 @@
 import { makeSfx } from './sfx.js';
-import { brands, icon, brandMark, esc, rarityNames, formatDistance, formatWait, formatCountdown, countdown } from './ui.js';
+import { brands, icon, brandMark, esc, rarityNames, formatDistance, formatWait, formatCountdown, countdown, transformBadge } from './ui.js';
 import { makeMap, MOSCOW } from './map.js';
 import { applyAppearance, normalizeTheme, themeOptions, themes } from './themes.js';
 import {
@@ -28,7 +28,7 @@ import {
   WILD_COOLDOWN_MS,
   GPS_RULES,
 } from './game.js';
-import { describeSkill, describeTrait } from './fighters.js';
+import { describeSkill, describeTrait, describeTransform } from './fighters.js';
 import { mountDuels } from './duels.js';
 import { reelMarkup, rewardMarkup } from './rewards.js';
 import { createSync, formatSyncKey, newSyncKey, parseSyncKey } from './sync.js';
@@ -613,6 +613,21 @@ function skillBox(card) {
     ' урона и +1 энергия</small></div>'
   );
 }
+// The transformation: once per battle, for energy, the fighter takes its other form.
+function transformBox(card) {
+  if (!card.transform) return '';
+  return (
+    '<section class="tf-box" aria-label="Трансформация"><small>' +
+    icon('transform', 14) +
+    ' Трансформация · ' +
+    esc(card.transform.cost) +
+    ' энерг. · раз за бой</small><strong>«' +
+    esc(card.transform.name) +
+    '»</strong><p>' +
+    esc(describeTransform(card.transform, card.attack)) +
+    '</p></section>'
+  );
+}
 function cardStats(card) {
   return (
     '<div class="stat-grid"><div><strong>' +
@@ -930,6 +945,7 @@ function renderCollection() {
         '"><span class="deck-num">' +
         (n + 1) +
         '</span>' +
+        (c.transform ? transformBadge(11) : '') +
         cardImage(c) +
         '<strong>' +
         esc(c.name) +
@@ -977,6 +993,7 @@ function renderCollection() {
         esc(c.id) +
         '">' +
         rarityTag(c) +
+        (c.transform ? transformBadge(14) : '') +
         cardImage(c) +
         '<small>' +
         esc(brands[c.brand].name) +
@@ -1077,11 +1094,13 @@ function showCard(id, { readOnly = false } = {}) {
       '</div><div class="reward-stage">' +
       cardImage(card, 'reward-img') +
       rarityTag(card) +
+      (card.transform ? transformBadge(16) : '') +
       '</div><h2>' +
       esc(card.name) +
       '</h2>' +
       cardStats(card) +
       skillBox(card) +
+      transformBox(card) +
       (entry
         ? '<p class="card-xp">Опыт бойца · ' +
           esc(card.xp) +

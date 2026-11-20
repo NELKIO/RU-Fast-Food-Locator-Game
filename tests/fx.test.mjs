@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FIGHTERS } from '../public/js/fighters.js';
 import { SHAPE_NAMES, fxTiming } from '../public/js/battle-fx.js';
-import { intimidateFx, movePlan, RECIPE_IDS, RECIPES } from '../public/js/fx-moves.js';
+import { intimidateFx, movePlan, RECIPE_IDS, RECIPES, TRANSFORM_FLASH } from '../public/js/fx-moves.js';
 
 const STEP_TYPES = new Set(['burst', 'charge', 'projectile', 'beam', 'ring', 'flash', 'shake', 'rain', 'rise', 'bubble', 'slash', 'stamp', 'orbit', 'bolt',
   'slam', 'spot', 'dim', 'pillar', 'glide', 'chomp', 'encase']);
@@ -239,4 +239,55 @@ test('fxTiming finds the first blow and the end', () => {
   assert.equal(fxTiming([{ type: 'chomp', t: 100, dur: 400, close: 0.5, hit: true }]).impact, 300);
   assert.equal(fxTiming([{ type: 'glide', t: 100, dur: 1000, path: [[0, 0], [1, 0], [2, 0]], contact: [1], hit: true }]).impact, 600);
   assert.equal(fxTiming([{ type: 'encase', t: 0, dur: 800, crack: true }]).end, 1520);
+});
+
+// The event the engine reports for a transformation, with the form's effect on.
+function transformEvent(id) {
+  const form = FIGHTERS[id].transform, effect = form.effect ?? {};
+  const effects = ['transform', ...EFFECT_KEYS.filter(k => effect[k])];
+  const kind = effect.freeze ? 'freeze' : effect.sleep ? 'sleep' : null;
+  return event(id, 'transform', { transformed: form.name, skill: form.effect ? form.name : null, effects,
+    damage: Number.isFinite(effect.power) ? 3 : 0, heal: effect.heal || effect.team ? 3 : 0, hits: effect.hits ?? 0,
+    skips: kind ? [{ side: 1, id: 'x', kind, burned: 0, poisoned: 0, leeched: 0, leechHeal: 0, recovered: true }] : [] });
+}
+
+test('a transformation has its violet scene, then the form\'s effect plays like a skill', () => {
+  const forms = Object.keys(FIGHTERS).filter(id => FIGHTERS[id].transform);
+  assert.ok(forms.length >= 5, 'fighters with a transformation');
+  for (const id of forms) {
+    const effect = FIGHTERS[id].transform.effect;
+    const plan = movePlan(transformEvent(id), { brand: id.split('-')[0], energyFor: effect });
+    checkSteps(plan.steps, id + ' transform');
+    // The flash on the fighter itself is the moment its picture changes.
+    assert.ok(plan.steps.some(s => s.type === 'flash' && s.at === 'src' && s.t === TRANSFORM_FLASH), id + ': flash at the change');
+    assert.ok(plan.steps.some(s => s.type === 'burst' && s.at === 'src' && [].concat(s.shape).includes('star')), id + ': stars burst out');
+    assert.ok(plan.impact > TRANSFORM_FLASH, `${id}: the effect comes after the change, not at ${plan.impact}`);
+    assert.ok(plan.end <= 2600 && plan.impact < plan.end, `${id}: ${plan.impact} / ${plan.end}`);
+    if (Number.isFinite(effect?.power)) assert.ok(plan.steps.some(s => s.hit && s.type === 'projectile' && s.t >= TRANSFORM_FLASH), id + ': the blow flies after the change');
+    if (effect?.hits > 1) assert.equal(plan.strikes.length, effect.hits, id + ': one impact per strike');
+    // The effect's statuses use the usual layers: ice, sleep, healing…
+    if (effect?.freeze) assert.ok(plan.steps.some(s => s.type === 'encase' && s.at === 'tgt'), id + ': freeze');
+    if (effect?.heal) assert.ok(plan.steps.some(s => s.type === 'rise' && s.shape === 'plus' && s.at === 'src' && s.t >= plan.impact), id + ': heal');
+  }
+  // Without an effect it is the scene alone, and it does not lunge at the other side.
+  const bare = movePlan(event('bk-fries', 'transform', { transformed: 'Форма', damage: 0, effects: ['transform'] }), { brand: 'bk' });
+  checkSteps(bare.steps, 'bare transform');
+  assert.ok(!bare.steps.some(s => s.at === 'tgt' || s.to === 'tgt'), 'nothing reaches the target');
+  assert.ok(bare.impact > TRANSFORM_FLASH && bare.end <= 2600);
+});
+
+test('the new talents show up on the move', () => {
+  const base = { id: 'bk-fries', command: 'hit', options: { brand: 'bk' } };
+  assert.ok(added(base, { opener: true }).some(s => s.type === 'charge' && s.at === 'src'), 'opener');
+  assert.ok(added(base, { fresh: true }).some(s => s.type === 'bubble' && s.at === 'tgt'), 'fresh');
+  assert.ok(added(base, { parting: 2, ko: ['x'] }).some(s => s.type === 'chomp' && s.at === 'src'), 'parting gift bites the attacker');
+  assert.ok(added(base, { moxie: true }).some(s => s.type === 'rise' && s.shape === 'arrowUp' && s.at === 'src'), 'moxie');
+  const snackAt = (at) => movePlan(event('bk-fries', 'hit', { snack: 3 }), { brand: 'bk', snack: at }).steps.filter(s => s.shape === 'crumb');
+  assert.equal(snackAt('tgt')[0]?.at, 'tgt');
+  assert.equal(snackAt('src')[0]?.at, 'src');
+  const refresh = movePlan(event('bk-fries', 'switch:1', { refresh: 2 }), { brand: 'bk' });
+  assert.ok(refresh.steps.some(s => s.type === 'rise' && s.shape === 'plus' && s.at === 'src'), 'refresh');
+  const skipSnack = movePlan(event('bk-fries', 'hit', { skips: [{ side: 1, kind: 'sleep', snack: 3 }] }), { brand: 'bk' });
+  assert.ok(skipSnack.steps.some(s => s.type === 'rise' && s.shape === 'plus' && s.at === 'tgt' && s.t >= skipSnack.skips[0].start), 'snack while asleep');
+  for (const extra of [{ opener: true }, { fresh: true }, { parting: 2 }, { moxie: true }, { snack: 2 }]) checkSteps(added(base, extra), JSON.stringify(extra));
 });

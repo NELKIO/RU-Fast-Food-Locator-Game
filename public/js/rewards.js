@@ -1,5 +1,5 @@
-import { brands, esc, icon, rarityNames } from './ui.js';
-import { describeSkill } from './fighters.js';
+import { brands, esc, icon, rarityNames, transformBadge } from './ui.js';
+import { describeSkill, describeTransform } from './fighters.js';
 
 const REEL_SIZE = 17;
 const WINNING_INDEX = 14;
@@ -46,7 +46,7 @@ export function rewardMarkup(result, wildName = '', daily = null) {
   return `<article class="find-sheet find-card" aria-labelledby="find-card-title">
     ${banner(card.brand, brand)}
     <div class="find-stage">
-      <div class="find-art"><img src="${esc(card.image)}" alt="${esc(card.name)}" decoding="async" draggable="false"></div>
+      <div class="find-art"><img src="${esc(card.image)}" alt="${esc(card.name)}" decoding="async" draggable="false">${card.transform ? transformBadge(16) : ''}</div>
       <div class="find-stage-copy">
         <span class="find-rarity">${icon('star', 14)} ${esc(rarity)}</span>
         <h2 id="find-card-title">${esc(card.name)}</h2>
@@ -58,6 +58,7 @@ export function rewardMarkup(result, wildName = '', daily = null) {
         ${stat('Атака', card.attack)}${stat('Здоровье', health)}${stat('Скорость', card.speed ?? 5)}${stat('Уровень', card.level)}
       </dl>
       ${skill ? `<p class="find-effect"><strong>«${esc(skill.name)}»</strong> ${esc(describeSkill(skill, card.attack))}</p>` : ''}
+      ${card.transform ? `<p class="find-effect tf-effect">${icon('transform', 15)}<span><strong>Трансформация «${esc(card.transform.name)}»</strong> ${esc(describeTransform(card.transform, card.attack))}</span></p>` : ''}
       ${daily
         ? `<p class="find-xp">${icon('star', 16)}<span>${esc(daily.note)}</span></p>
       <div class="find-actions">

@@ -36,6 +36,10 @@ function fighterStrength(f, active, w) {
   let hp = Math.max(1, f.hp - booked(f)) + f.shield;
   if (f.trait.laststand && !f.saved) hp += Math.min(w.laststand, f.attack);
   if (f.trait.regen) hp += f.trait.regen * w.regen;
+  // Passives: health still to come (a snack, fresh skin) and a sting on the way out.
+  if (f.trait.snack && !f.snacked) hp += f.trait.snack;
+  if (f.trait.fresh && f.hp === f.maxHp) hp += f.hp * 0.3;
+  if (f.trait.refresh) hp += f.trait.refresh * 0.5;
   let attack = f.attack + (f.trait.rage && f.hp * 2 <= f.maxHp ? f.trait.rage : 0);
   // Energy is a skill or a super move waiting to happen.
   attack += f.energy * w.energy + (f.ultimate && f.energy >= MAX_ENERGY ? w.ultimate : 0);
@@ -150,9 +154,9 @@ function hash(s) {
     for (let i = 0; i < team.length; i++) {
       const f = team[i];
       const w1 = f.hp | f.attack << 10 | f.energy << 18 | (f.guarding ? 1 << 20 : 0) | (f.saved ? 1 << 21 : 0) |
-        (f.rested ? 1 << 22 : 0) | f.toxic << 23 | f.leech << 26;
+        (f.rested ? 1 << 22 : 0) | f.toxic << 23 | f.leech << 26 | (f.transformed ? 1 << 29 : 0) | (f.primed ? 1 << 31 : 0);
       const w2 = f.shield | (f.burn ? f.burn.dmg << 8 | f.burn.turns << 14 : 0) |
-        (f.status ? (f.status.kind === 'freeze' ? 1 : 2) << 18 | f.status.turns << 20 : 0) | (t * 3 + i) << 24;
+        (f.status ? (f.status.kind === 'freeze' ? 1 : 2) << 18 | f.status.turns << 20 : 0) | (t * 3 + i) << 24 | (f.snacked ? 1 << 27 : 0);
       a = Math.imul(a ^ w1, 0x9e3779b1); a ^= a >>> 15; a = Math.imul(a ^ w2, 0x85ebca77); a ^= a >>> 13;
       b = Math.imul(b + w2, 0xc2b2ae3d); b ^= b >>> 16; b = Math.imul(b + w1, 0x27d4eb2f); b ^= b >>> 15;
     }

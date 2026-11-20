@@ -118,13 +118,27 @@ export function makeSfx({ enabled = () => true, context = () => null } = {}) {
     lose: (c, o, t) => notes(c, o, t, [NOTE.G4, NOTE.E4, NOTE.D4, NOTE.C4 * 0.94], { step: 0.18, type: 'triangle', dur: 0.32, gain: 0.12 }),
     draw: (c, o, t) => notes(c, o, t, [NOTE.E5, NOTE.E5], { step: 0.2, type: 'triangle', dur: 0.2, gain: 0.1 }),
     start: (c, o, t) => notes(c, o, t, [NOTE.C5, NOTE.G5], { step: 0.12, type: 'square', dur: 0.12, gain: 0.05 }),
+    // The change of form: a shimmering rise while the sparks gather, a soft boom and a bright
+    // chime at the flash (0.44 s, when the picture changes).
+    transform: (c, o, t) => {
+      voice(c, o, t, { type: 'sawtooth', from: 180, to: 900, dur: 0.44, gain: 0.06, filter: 'lowpass', filterTo: 2200, attack: 0.3 });
+      voice(c, o, t, { type: 'sine', from: 360, to: 1400, dur: 0.44, gain: 0.05, attack: 0.3, detune: 7 });
+      voice(c, o, t + 0.44, { type: 'sine', from: 140, to: 55, dur: 0.3, gain: 0.22 });
+      voice(c, o, t + 0.44, { type: 'noise', from: 6000, to: 2500, filter: 'highpass', dur: 0.25, gain: 0.05 });
+      notes(c, o, t + 0.44, [NOTE.E5, NOTE.G5, NOTE.C6, NOTE.E6], { step: 0.045, type: 'triangle', dur: 0.28, gain: 0.07 });
+    },
+    // A snack: two crunches and a happy gulp.
+    snack: (c, o, t) => {
+      for (let i = 0; i < 2; i++) voice(c, o, t + i * 0.11, { type: 'noise', from: 2600, to: 900, filter: 'bandpass', q: 1.4, dur: 0.06, gain: 0.14 });
+      voice(c, o, t + 0.25, { type: 'sine', from: 300, to: 620, dur: 0.12, gain: 0.12 });
+    },
   };
 
   // Loudness per sound, measured offline (peak of each rendered sound), so that every effect is
   // about as loud as a hit and the quiet beats (swing, tick) sit under it.
   const LEVEL = { hit: 2.6, strike: 3.6, blocked: 6, whoosh: 9, ultimate: 5, guard: 5, switch: 3, burn: 4.5, freeze: 3.5,
     sleep: 3.5, toxic: 3.5, leech: 18, heal: 3.5, buff: 8, debuff: 14, shield: 5, shatter: 6, tick: 6, skip: 3,
-    growl: 4.5, faint: 1.6, win: 2.3, lose: 3.5, draw: 3.5, start: 6 };
+    growl: 4.5, faint: 1.6, win: 2.3, lose: 3.5, draw: 3.5, start: 6, transform: 1.5, snack: 2.8 };
   // One compressor per audio context: sounds that overlap stay clean instead of clipping.
   const buses = new WeakMap();
   function bus(ctx) {

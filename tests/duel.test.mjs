@@ -38,7 +38,7 @@ test('guard halves a hit rounding up and charges energy; the second player in a 
 test('a skill needs its energy, spends it, names itself and pierces guard when it says so', () => {
   const skill = { name: 'Укол', cost: 2, power: 3, pierce: true };
   let fight = duel({ skill }, {}, 1);
-  fight = play(fight, 'guard');
+  fight = play(fight, 'hit');
   assert.ok(!legalMoves(fight).includes('special'));
   fight = play(fight, 'hit', 'guard');
   assert.equal(fighter(fight, 0).energy, 2);
@@ -464,7 +464,7 @@ test('heartburn hurts 1, 2, 3, 4, 4 after each own turn and leaves with the figh
   fight = play(fight, 'special');
   const losses = [];
   for (let i = 0; i < 5; i++) {
-    fight = play(fight, 'guard');
+    fight = play(fight, i % 2 ? 'hit' : 'guard');
     losses.push(fight.last.poisoned);
     fight = play(fight, 'hit');
   }
@@ -546,4 +546,56 @@ test('the new effects keep the engine deterministic and the bot uses them', () =
   assert.deepEqual(run(7), run(7));
   const freezeFirst = duel({ skill: { cost: 1, power: 0, freeze: true } }, {});
   assert.equal(botMove(freezeFirst, () => 0.99), 'special');
+});
+
+test('passives: fresh halves a blow at full health, opener strengthens the first blow after coming on', () => {
+  let fight = play(duel({ trait: { opener: 3 } }, { trait: { fresh: true } }), 'hit');
+  // 5 + 3 opener = 8, halved by fresh to 4.
+  assert.deepEqual([fight.last.damage, fight.last.opener, fight.last.fresh], [4, true, true]);
+  fight = play(fight, 'hit', 'hit');
+  assert.equal(fight.last.damage, 5, 'the opener is spent and the target is no longer fresh');
+});
+
+test('passives: moxie after a knockout, parting gift on the one who did it, refresh when leaving', () => {
+  const team = (id, extra = {}) => ({ id, hp: 20, attack: 5, ...extra });
+  let fight = startBattle([[team('m', { attack: 6, trait: { moxie: 1 } }), team('r', { trait: { refresh: 4 } })],
+    [team('p', { hp: 6, trait: { parting: 2 } }), team('q')]], 0, { tempo: false });
+  fight = play(fight, 'hit');
+  assert.deepEqual([fight.last.ko, fight.last.moxie, fight.last.parting], [['p'], true, 2]);
+  assert.deepEqual([fight.teams[0][0].attack, fight.teams[0][0].hp], [7, 18]);
+  // The refreshing fighter comes on, takes a blow, and leaves again.
+  fight = play(fight, 'hit', 'switch:1', 'hit', 'switch:0');
+  assert.equal(fight.last.refresh, 4, 'the hurt fighter catches its breath on the bench');
+  assert.equal(fight.teams[0][1].hp, 19);
+});
+
+test('passives: snack once at half health, breaker hits through guard', () => {
+  let fight = play(duel({ attack: 11 }, { trait: { snack: 5 } }), 'hit');
+  assert.deepEqual([fighter(fight, 1).hp, fight.last.snack, fight.last.snackSides], [14, 5, [1]]);
+  fight = play(fight, 'hit', 'hit');
+  assert.equal(fighter(fight, 1).hp, 3, 'only once per battle');
+  const breaking = play(duel({ trait: { breaker: true } }, {}, 1), 'guard', 'hit');
+  assert.deepEqual([breaking.last.damage, breaking.last.blocked], [5, false]);
+});
+
+test('transformation: once per battle for energy, new stats and moves, and an effect at once', () => {
+  const form = { name: 'Без мороженого', cost: 2, hp: 4, attack: 2, speed: 2, skill: { name: 'Шоколад', cost: 1, power: 3 },
+    trait: { rage: 2 }, effect: { name: 'Бросок мороженого', power: 0, freeze: true } };
+  let fight = duel({ transform: form, energy: 1 }, { hp: 30 });
+  assert.ok(!legalMoves(fight).includes('transform'), 'needs 2 energy');
+  fight = play(fight, 'hit', 'hit');
+  assert.ok(legalMoves(fight).includes('transform'));
+  const hpBefore = fighter(fight, 0).hp;
+  fight = play(fight, 'transform');
+  const me = fighter(fight, 0);
+  assert.deepEqual([fight.last.transformed, me.transformed, me.attack, me.maxHp, me.hp, me.speed, me.skill.name, me.trait.rage],
+    ['Без мороженого', true, 7, 24, hpBefore + 4, 7, 'Шоколад', 2]);
+  assert.equal(me.energy, 0);
+  assert.ok(fight.last.effects.includes('freeze') && fight.last.damage === 7, 'the thrown ice cream hits (with the new attack) and freezes');
+  // The frozen opponent misses its turn; the form stays and cannot transform again.
+  assert.equal(fight.turn, 0);
+  fight = play(fight, 'hit', 'hit', 'hit');
+  assert.ok(!legalMoves(fight).includes('transform'));
+  // Both duel peers see the same form: battleStats carries it.
+  assert.equal(battleStats({ id: 'x', hp: 10, attack: 3, transform: form }).transform.effect.cost, 0);
 });

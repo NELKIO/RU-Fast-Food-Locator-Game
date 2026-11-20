@@ -33,6 +33,9 @@ const icons = {
   sound: '<path d="M4 9h4l4-4v14l-4-4H4zM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
   muted: '<path d="M4 9h4l4-4v14l-4-4H4zM16 9l5 6m0-6-5 6"/>',
   speed: '<path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/>',
+  // Transformation: two arrows turning around a sparkle.
+  transform:
+    '<path d="M19.6 10.2A8 8 0 0 0 5.8 6.4M4.4 13.8a8 8 0 0 0 13.8 3.8"/><path d="M5.4 2.9v3.8h3.8m9.4 14.4v-3.8h-3.8"/><path d="m12 7.8 1.2 3 3 1.2-3 1.2-1.2 3-1.2-3-3-1.2 3-1.2z" fill="currentColor"/>',
   lock: '<rect x="5.5" y="10" width="13" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
   check: '<path d="m4 12 5 5L20 6"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10h.01"/>',
@@ -62,6 +65,10 @@ export function icon(name, size = 20) {
     (icons[name] || '') +
     '</svg>'
   );
+}
+// The violet corner mark of a fighter that can transform (collection, deck, arena, dialogs).
+export function transformBadge(size = 12) {
+  return '<span class="tf-badge" role="img" aria-label="Есть трансформация" title="Есть трансформация">' + icon('transform', size) + '</span>';
 }
 export function esc(value) {
   return String(value ?? '').replace(

@@ -327,6 +327,7 @@ export function cardFor(item, level = 1) {
     attack: fighter.attack + Math.floor((rank - 1) / 2),
     speed: fighter.speed, role: ROLES[fighter.role], basic: fighter.basic, skill: {...fighter.skill},
     ...(fighter.ultimate && {ultimate: {...fighter.ultimate}}), ...(fighter.trait && {trait: {...fighter.trait}}),
+    ...(fighter.transform && {transform: structuredClone(fighter.transform)}),
   };
 }
 

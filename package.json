@@ -9,7 +9,8 @@
     "test:browser": "node e2e/first-route.mjs",
     "test:duels": "node tests/duel-browser.mjs",
     "test:themes": "node e2e/themes.mjs",
-    "test:sync": "node tests/sync-browser.mjs"
+    "test:sync": "node tests/sync-browser.mjs",
+    "test:transform": "node e2e/transform.mjs"
   },
   "devDependencies": {
     "playwright-core": "1.62.1"
