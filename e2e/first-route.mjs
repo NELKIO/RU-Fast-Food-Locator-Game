@@ -290,11 +290,45 @@ try {
   assert.equal(offlinePlayer.battles.wins + offlinePlayer.battles.losses + offlinePlayer.battles.draws, 1);
   log('320 px screen, denied GPS explained with a retry, and the starter can still fight a wild fighter');
   await denied.close();
+  // The arena opened before the menu has loaded says it is loading, then shows the fighters by itself.
+  const early = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'ru-RU' });
+  await offline(early);
+  const e = await watchPage(early);
+  await e.goto(base);
+  await e.getByRole('button', { name: 'Поехали' }).click();
+  await e.locator('[data-point]').first().waitFor();
+  let release;
+  const held = new Promise((resolve) => (release = resolve));
+  await early.route('**/data/menu.json', async (route) => { await held; await route.continue(); });
+  await e.reload();
+  await e.locator('.main-nav [data-nav="arena"]').click();
+  await e.getByRole('heading', { name: 'Загружаем бойцов…' }).waitFor();
+  assert.equal(await e.getByRole('heading', { name: 'Нет бойцов' }).count(), 0, 'a player with fighters is not told there are none');
+  release();
+  await e.locator('.duel-team, .duel-wild').first().waitFor({ timeout: 10_000 });
+  assert.equal(await e.getByRole('heading', { name: 'Загружаем бойцов…' }).count(), 0);
+  // The map, set up while hidden, still works when the player returns to the radar.
+  await e.waitForTimeout(1200);
+  await e.locator('.main-nav [data-nav="radar"]').click();
+  await e.locator('[data-point]').first().waitFor();
+  assert.deepEqual(errors, [], 'no map errors after starting on the arena');
+  log('Arena opened before the menu loads shows a loading note, then the fighters without switching tabs');
+  await early.close();
   const desktop = await browser.newContext({
     viewport: { width: 1440, height: 960 },
     locale: 'ru-RU',
   });
   await offline(desktop);
+  // Counts the sounds the battle makes (Web Audio voices).
+  await desktop.addInitScript(() => {
+    window.__sounds = 0;
+    const proto = (window.AudioContext || window.webkitAudioContext)?.prototype;
+    if (!proto) return;
+    for (const name of ['createOscillator', 'createBufferSource']) {
+      const original = proto[name];
+      proto[name] = function () { window.__sounds++; return original.call(this); };
+    }
+  });
   const d = await watchPage(desktop);
   await d.goto(base);
   await d.getByRole('button', { name: 'Поехали' }).click();
@@ -340,9 +374,11 @@ try {
   await d.locator('.duel-fx').waitFor({ state: 'attached' });
   assert.ok(await d.locator('[data-duel-action="move:hit"]').isDisabled(), 'controls wait for the animation');
   await battle(d);
+  const sounds = await d.evaluate(() => window.__sounds);
+  assert.ok(sounds >= 10, `the battle has sound (${sounds} voices)`);
   await d.locator('.main-nav [data-nav="radar"]').click();
   assert.equal(await d.locator('.duel-fx').count(), 0, 'the effects layer leaves with the arena');
-  log('Arena tab returns to the lobby, and a full-motion wild fight runs clean');
+  log('Arena tab returns to the lobby, and a full-motion wild fight runs clean, with sound');
   await d.locator('#map-size').click();
   assert.equal(await d.locator('#map-size').getAttribute('aria-pressed'), 'true');
   await d.keyboard.press('Escape');

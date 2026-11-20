@@ -285,8 +285,9 @@ export function makeMap({ onPick, venues }) {
     ({ brand, selected, target, fix } = s);
     if (pathChanged) drawPaths();
     if (options.center) {
-      // The first GPS fix glides there; later ones jump only if the map was never moved.
-      if (centered) map.setView(point(fix || MOSCOW), Math.max(14, map.getZoom()));
+      // The first GPS fix glides there; later ones jump only if the map was never moved. A hidden map
+      // (the arena was opened first) has no size to animate in, so it just jumps.
+      if (centered || !card.offsetWidth) map.setView(point(fix || MOSCOW), centered ? Math.max(14, map.getZoom()) : 15);
       else map.flyTo(point(fix || MOSCOW), 15, { duration: 0.8 });
       centered = true;
     } else if (options.focus && selected && !map.getBounds().pad(-0.15).contains(point(selected)))

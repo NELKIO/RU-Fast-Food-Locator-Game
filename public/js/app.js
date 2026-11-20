@@ -1,3 +1,4 @@
+import { makeSfx } from './sfx.js';
 import { brands, icon, brandMark, esc, rarityNames, formatDistance, formatWait, formatCountdown, countdown } from './ui.js';
 import { makeMap, MOSCOW } from './map.js';
 import { applyAppearance, normalizeTheme, themeOptions, themes } from './themes.js';
@@ -208,7 +209,9 @@ function arrival() {
     osc.stop(start + 0.17);
   }
 }
-document.addEventListener('pointerdown', resumeSound, { once: true });
+// Every tap may wake the audio again: phones suspend it in the background.
+document.addEventListener('pointerdown', resumeSound);
+const sfx = makeSfx({ enabled: () => audioOn, context: () => soundContext });
 function updateSound() {
   $('sound').innerHTML =
     icon(audioOn ? 'sound' : 'muted', 16) +
@@ -1373,6 +1376,7 @@ function arenaData() {
   return {
     cards: strongCards(),
     owned: owned(),
+    loading: !menu.length,
     team: [...profile.team],
     wild: e && { id: e.id, encounter: { ...e }, opponent: (team) => wildFighter(e, menu, team) },
     wildWaitMs: wildWait(),
@@ -1434,6 +1438,7 @@ function switchTab(next, options = {}) {
       read: arenaData,
       initialMode: options.initialMode || 'lobby',
       onBack: () => switchTab('radar'),
+      sound: sfx.play,
       onFightChange: (active) => {
         const ended = wildFightActive && !active;
         wildFightActive = active;
@@ -1541,6 +1546,8 @@ async function init() {
   [venues, menu] = await Promise.all([loadCatalog('venues'), loadCatalog('menu')]);
   venuesById = new Map(venues.map((x) => [x.id, x]));
   menuById = new Map(menu.map((x) => [x.id, x]));
+  // The arena may have been opened while the menu was loading: show the fighters now.
+  if (tab === 'arena') duelCleanup?.refresh?.();
   target = lookup(prefs.target) || null;
   selected = target;
   map = makeMap({ venues, onPick: (p) => pick(p) });
