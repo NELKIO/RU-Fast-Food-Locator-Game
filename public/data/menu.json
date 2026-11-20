@@ -144,6 +144,14 @@
     "imageSource": "https://orderapp-app-static.burgerkingrus.ru/original/catalog/images/dishes/5e31e0af10cbef46f972041cdb8fd370.png"
   },
   {
+    "id": "bk-six-sauces",
+    "brand": "bk",
+    "name": "6 соусов",
+    "image": "media/menu/bk-six-sauces.webp",
+    "source": "https://burgerkingrus.ru/category/60",
+    "imageSource": "https://orderapp-app-static.burgerkingrus.ru/original/catalog/images/dishes/c00137e371f02a7f0377a07ae3083df6.png"
+  },
+  {
     "id": "bk-brownie-ice-cream",
     "brand": "bk",
     "name": "Горячий Брауни с мороженым",
@@ -166,54 +174,6 @@
     "image": "media/menu/bk-brownie.webp",
     "source": "https://burgerkingrus.ru/category/96",
     "imageSource": "https://orderapp-app-static.burgerkingrus.ru/original/catalog/images/dishes/eff444732a955e31bb42887a7d311663.png"
-  },
-  {
-    "id": "bk-sauce-sweet-sour",
-    "brand": "bk",
-    "name": "Соус Кисло-сладкий",
-    "image": "media/menu/bk-sauce-sweet-sour.webp",
-    "source": "https://burgerkingrus.ru/category/60",
-    "imageSource": "https://orderapp-app-static.burgerkingrus.ru/original/catalog/images/dishes/2a20a167e85e3d247f8cd4eea22d140c.png"
-  },
-  {
-    "id": "bk-sauce-garlic",
-    "brand": "bk",
-    "name": "Соус Чесночный",
-    "image": "media/menu/bk-sauce-garlic.webp",
-    "source": "https://burgerkingrus.ru/category/60",
-    "imageSource": "https://orderapp-app-static.burgerkingrus.ru/original/catalog/images/dishes/48eab433468ff3305e0c48d126bfb30b.png"
-  },
-  {
-    "id": "bk-sauce-ketchup",
-    "brand": "bk",
-    "name": "Кетчуп",
-    "image": "media/menu/bk-sauce-ketchup.webp",
-    "source": "https://burgerkingrus.ru/category/60",
-    "imageSource": "https://orderapp-app-static.burgerkingrus.ru/original/catalog/images/dishes/120038f08549f1fec4463212306068ee.png"
-  },
-  {
-    "id": "bk-sauce-mustard",
-    "brand": "bk",
-    "name": "Соус Горчичный",
-    "image": "media/menu/bk-sauce-mustard.webp",
-    "source": "https://burgerkingrus.ru/category/60",
-    "imageSource": "https://orderapp-app-static.burgerkingrus.ru/original/catalog/images/dishes/ec7d7ebf62378c96200e0136f59c5590.png"
-  },
-  {
-    "id": "bk-sauce-curry",
-    "brand": "bk",
-    "name": "Соус Карри",
-    "image": "media/menu/bk-sauce-curry.webp",
-    "source": "https://burgerkingrus.ru/category/60",
-    "imageSource": "https://orderapp-app-static.burgerkingrus.ru/original/catalog/images/dishes/baa95f78e00e497ec05563ae41bc1d19.png"
-  },
-  {
-    "id": "bk-sauce-1000-islands",
-    "brand": "bk",
-    "name": "Соус 1000 островов",
-    "image": "media/menu/bk-sauce-1000-islands.webp",
-    "source": "https://burgerkingrus.ru/category/60",
-    "imageSource": "https://orderapp-app-static.burgerkingrus.ru/original/catalog/images/dishes/bd303677fe47c8aec7149911d298ccac.png"
   },
   {
     "id": "bk-cheeseburger-classic",
@@ -550,5 +510,13 @@
     "image": "media/menu/dodo-beak.webp",
     "source": "https://dodopizza.ru/moscow/product/dodo-kluv",
     "imageSource": "https://media.dodostatic.net/image/0198c34570287236976d1fc216d53bf1.png"
+  },
+  {
+    "id": "dodo-muffin",
+    "brand": "dodo",
+    "name": "Маффин Три шоколада",
+    "image": "media/menu/dodo-muffin.webp",
+    "source": "https://dodopizza.ru/moscow/product/maffin-tri-shokolada",
+    "imageSource": "https://media.dodostatic.net/image/01980cc4cebb707a9b91ba24195fee1d.png"
   }
 ]

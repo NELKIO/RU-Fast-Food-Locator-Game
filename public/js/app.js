@@ -13,6 +13,10 @@ import {
   wildEncounter,
   wildFighter,
   dropChance,
+  claimDaily,
+  dailyStatus,
+  featuredFighter,
+  DAILY_REWARDS,
   grantStarter,
   resolveEncounter,
   recordBattle,
@@ -657,7 +661,97 @@ function strongCards() {
   const got = new Map(collectionCards(profile, menu).map((c) => [c.id, c]));
   return menu.map((item) => got.get(item.id) ?? cardFor(item));
 }
+// The login week: a card on the radar and a calendar dialog.
+function dailyLabel(reward) {
+  if (reward.kind === 'spins') return reward.count === 1 ? '1 крутка' : reward.count + ' крутки';
+  if (reward.kind === 'featured') return 'Боец недели';
+  if (reward.kind === 'player-xp') return '+' + reward.amount + ' опыта';
+  if (reward.kind === 'team-xp') return '+' + reward.amount + ' опыта колоде';
+  return 'Легенда';
+}
+function renderDaily() {
+  const status = dailyStatus(profile);
+  const next = DAILY_REWARDS[status.today % 7];
+  // The card sits at the top of the radar only while a reward is waiting.
+  $('daily-card').hidden = !status.claimable;
+  html(
+    $('daily-card'),
+    '<button type="button" class="daily-teaser' +
+      (status.claimable ? ' is-ready' : '') +
+      '" data-daily-open><span class="quest-icon">' +
+      icon('star', 24) +
+      '</span><span><h2>Награда за вход</h2><p>' +
+      (status.claimable
+        ? 'День ' + status.today + ' из 7 · ' + esc(dailyLabel(DAILY_REWARDS[status.today - 1]))
+        : 'Получено · завтра: ' + esc(dailyLabel(next))) +
+      '</p></span><span class="quest-tail round-btn">' +
+      icon(status.claimable ? 'plus' : 'next', 18) +
+      '</span></button>',
+  );
+}
+function dailyDialog(result = null) {
+  const status = dailyStatus(profile);
+  const featured = featuredFighter(menu);
+  const tiles = DAILY_REWARDS.map((reward) => {
+    const done = reward.day <= status.claimed;
+    const today = status.claimable && reward.day === status.today;
+    const art =
+      reward.kind === 'featured' && featured
+        ? cardImage(featured)
+        : icon(reward.kind === 'legendary' ? 'trophy' : reward.kind === 'spins' ? 'spark' : 'star', 22);
+    return (
+      '<li class="daily-day' +
+      (done ? ' is-done' : '') +
+      (today ? ' is-today' : '') +
+      (reward.kind === 'legendary' ? ' is-legend' : '') +
+      '"><small>День ' +
+      reward.day +
+      '</small><span class="daily-art">' +
+      art +
+      '</span><b>' +
+      esc(reward.kind === 'featured' && featured ? featured.name : dailyLabel(reward)) +
+      '</b>' +
+      (done ? '<i class="daily-check">' + icon('check', 14) + '</i>' : '') +
+      '</li>'
+    );
+  }).join('');
+  const got = result
+    ? '<div class="daily-got"><h3>Получено</h3>' +
+      result.got
+        .map((g) =>
+          g.kind === 'card'
+            ? '<div class="daily-card">' + cardImage(g.card) + '<span>' + rarityTag(g.card) + '<strong>' + esc(g.card.name) + '</strong>' +
+              (g.isNew ? '<small class="daily-new">Новый боец!</small>' : '<small>Копия · опыт бойцу</small>') + '</span></div>'
+            : '<p class="daily-xp">' + icon('star', 16) + (g.kind === 'player-xp' ? '+' + g.amount + ' опыта игроку' : '+' + g.amount + ' опыта каждому бойцу колоды') + '</p>',
+        )
+        .join('') +
+      '</div>'
+    : '';
+  openDialog(
+    'Награда за вход',
+    '<div class="micro section-kicker">' + icon('star', 14) + ' Каждый день</div><h2>Награда за вход</h2><p>Заходи семь дней подряд: на седьмой день — легендарный боец. Пропуск дня начинает неделю заново.</p><ol class="daily-week">' +
+      tiles +
+      '</ol>' +
+      got +
+      (status.claimable
+        ? '<div class="dialog-actions"><button class="primary" data-daily-claim>' + icon('plus', 16) + 'Забрать награду дня ' + status.today + '</button></div>'
+        : '<p class="daily-next">Следующая награда завтра.</p>'),
+  );
+}
+async function claimDailyReward() {
+  const result = await store.update((p) => claimDaily(p, menu));
+  if (result.ok) {
+    dailyDialog(result);
+    renderDaily();
+    if (tab === 'collection') renderCollection();
+  } else dailyDialog();
+}
+$('daily-card').addEventListener('click', (e) => {
+  if (e.target.closest('[data-daily-open]')) dailyDialog();
+});
+
 function renderQuests() {
+  renderDaily();
   const daily = todayRoute(profile),
     n = daily.pointIds.length;
   html(
@@ -1013,6 +1107,11 @@ function profileDialog() {
             .join('') +
           '</ul>'
         : '') +
+      '<section class="sync-entry"><h3>Награда за вход</h3><p>' +
+      esc((() => { const st = dailyStatus(profile); return st.claimable ? 'Ждёт награда дня ' + st.today + ' из 7.' : 'Неделя: день ' + st.claimed + ' из 7, следующая награда завтра.'; })()) +
+      '</p><button class="outline-btn" data-daily-open>' +
+      icon('star', 16) +
+      'Календарь наград</button></section>' +
       '<section class="sync-entry"><h3>Синхронизация устройств</h3><p>' +
       esc(profile.sync?.key ? syncStatusText() : 'Общий прогресс на телефоне и компьютере.') +
       '</p><button class="outline-btn" data-sync-open>' +
@@ -1132,6 +1231,15 @@ $('dialog-body').addEventListener('submit', (e) => {
 $('dialog-body').addEventListener('click', async (e) => {
   const b = e.target.closest('button');
   if (!b) return;
+  if (b.hasAttribute('data-daily-open')) {
+    dailyDialog();
+    return;
+  }
+  if (b.hasAttribute('data-daily-claim')) {
+    b.disabled = true;
+    await claimDailyReward();
+    return;
+  }
   if (b.hasAttribute('data-sync-open')) {
     syncKeyShown = false;
     syncDialog('main');

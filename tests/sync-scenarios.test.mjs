@@ -111,7 +111,7 @@ function settleAll(devices, relays, now, rounds = 3) {
   for (let i = 0; i < rounds; i++) for (const d of devices) sync(d, relays, now + i);
 }
 
-const view = p => { const s = normalizeProfile(p); delete s.battleIds; delete s.sync.device; delete s.sync.key; return stableJson(s); };
+const view = p => { const s = normalizeProfile(p); delete s.battleIds; delete s.recentWild; delete s.sync.device; delete s.sync.key; return stableJson(s); };
 
 function assertExact(devices, label = '') {
   const total = devices.reduce((sum, d) => add(sum, d.earned), zero());
@@ -471,4 +471,15 @@ test('two wild fighters waiting at once: the one that came first stays on every 
   assert.equal(a.profile.encounter.id, first.id);
   assert.equal(b.profile.encounter.id, first.id);
   assert.ok(a.profile.retired[b.profile.encounter.id] === undefined);
+});
+
+test('the login week syncs: a reward taken on one device cannot be taken again on the other the same day', async () => {
+  const { claimDaily, dailyStatus } = await import('../public/js/game.js');
+  const { devices: [a, b], relays } = linked(2, 31);
+  const today = Date.UTC(2026, 10, 25, 9);
+  a.act(p => claimDaily(p, menu, { now: today, rng: a.random }));
+  settleAll([a, b], relays, today + 60_000);
+  assert.equal(dailyStatus(b.profile, today + 120_000).claimable, false, 'already taken today');
+  assert.equal(dailyStatus(b.profile, today + 86_400_000).today, 2, 'tomorrow continues the week on either device');
+  assertExact([a, b]);
 });

@@ -157,7 +157,7 @@ test('every new effect has its own layer when the recipe does not show it', () =
 
 test('a skipped turn is shown: ice that rattles and breaks, sleep that ends in waking up', () => {
   // Frozen by this very move: one ice block from the blow until the skipped turn is over.
-  const frozen = planOf('rostics-ice-cream-cone', 'special');
+  const frozen = planOf('bk-fish-burger', 'special');
   const ice = frozen.steps.filter(s => s.type === 'encase');
   assert.equal(ice.length, 1, 'one continuous ice block');
   assert.equal(frozen.skips.length, 1);

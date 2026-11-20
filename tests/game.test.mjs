@@ -281,3 +281,57 @@ test('untrusted saved data is repaired without accepting prototype keys, invalid
   assert.deepEqual(saved.battleIds, {});
   assert.equal(saved.xp, 0);
 });
+
+// The login week and fewer repeated wild fighters (November 2026).
+import { claimDaily, dailyStatus, featuredFighter, DAILY_REWARDS } from '../public/js/game.js';
+import { readFileSync } from 'node:fs';
+const realMenu = JSON.parse(readFileSync(new URL('../public/data/menu.json', import.meta.url)));
+const day = n => new Date(2026, 10, 20 + n, 10).getTime();
+function seq(seed) { let s = seed; return () => ((s = (s * 16807) % 2147483647) / 2147483647); }
+
+test('the login week: one reward a day, seven days in a row, a missed day starts over', () => {
+  let p = grantStarter(freshProfile(), realMenu, { rng: seq(3) }).profile;
+  const got = [];
+  for (let d = 0; d < 7; d++) {
+    const r = claimDaily(p, realMenu, { now: day(d), rng: seq(10 + d) });
+    assert.equal(r.ok, true, 'day ' + (d + 1));
+    assert.equal(r.day, d + 1);
+    assert.equal(claimDaily(r.profile, realMenu, { now: day(d) + 3600_000 }).reason, 'claimed', 'only once a day');
+    got.push(r);
+    p = r.profile;
+  }
+  assert.deepEqual(got.map(r => r.got.filter(g => g.kind === 'card').length), [1, 2, 1, 0, 3, 0, 1]);
+  assert.equal(got[2].got[0].card.id, featuredFighter(realMenu, day(2)).id, 'day 3 is the fighter of the week');
+  assert.equal(got[2].got[0].card.rarity, 'rare');
+  assert.equal(got[3].profile.xp - got[2].profile.xp, 100);
+  assert.equal(got[6].got[0].card.rarity, 'legendary', 'day 7 is a legend');
+  for (const id of got[5].got[0].ids) assert.ok(got[5].profile.collection[id].xp >= 40);
+  assert.equal(claimDaily(p, realMenu, { now: day(7) }).day, 1, 'after day 7 the week starts over');
+  assert.deepEqual(dailyStatus(p, day(9)), { claimable: true, today: 1, claimed: 0 }, 'a missed day starts over');
+  assert.equal(DAILY_REWARDS.length, 7);
+});
+
+test('the day-7 legend is one the player does not have yet, while there is one', () => {
+  const legends = realMenu.filter(item => cardFor(item).rarity === 'legendary').map(item => item.id);
+  const owned = Object.fromEntries(legends.slice(1).map(id => [id, { copies: 1, xp: 0 }]));
+  const p = normalizeProfile({ ...freshProfile(), collection: owned, team: [legends[1]], login: { day: '2026-11-19', streak: 6 } });
+  const r = claimDaily(p, realMenu, { now: new Date(2026, 10, 20, 9).getTime(), rng: seq(7) });
+  assert.equal(r.day, 7);
+  assert.equal(r.got[0].card.id, legends[0]);
+  assert.equal(r.got[0].isNew, true);
+});
+
+test('wild fighters: new dishes come first and the last five do not repeat while others remain', () => {
+  let p = grantStarter(freshProfile(), realMenu, { rng: seq(5) }).profile;
+  const seen = [];
+  let now = day(0);
+  for (let i = 0; i < 40; i++) {
+    const r = wildEncounter(p, realMenu, { now, rng: seq(100 + i) });
+    assert.equal(r.ok, true);
+    seen.push(r.encounter.enemyId);
+    p = resolveEncounter(r.profile, r.encounter.id, false, realMenu, { now: now + 1000 }).profile;
+    now += WILD_COOLDOWN_MS + 2000;
+  }
+  for (let i = 5; i < seen.length; i++) assert.ok(!seen.slice(i - 5, i).includes(seen[i]), 'no repeat within five: ' + seen[i]);
+  assert.ok(new Set(seen).size >= 30, 'mostly different fighters, got ' + new Set(seen).size);
+});
