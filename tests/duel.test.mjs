@@ -409,3 +409,141 @@ test('a duel peer that moves twice after a knockout is followed even when the fi
   assert.deepEqual(guest.state, host.state);
   assert.equal(guest.state.turn, guest.side);
 });
+
+// New effects (round 4): freeze, sleep, heartburn, draining, flurries, wipe, charge, grim look.
+test('freeze: the target misses its next turn, the freezer moves again, and it cannot be refrozen right away', () => {
+  const skill = { name: 'Лёд', cost: 1, power: 0, freeze: true };
+  let fight = duel({ skill }, {});
+  fight = play(fight, 'special');
+  assert.ok(fight.last.effects.includes('freeze'));
+  assert.equal(fight.turn, 0, 'the frozen side is skipped at once');
+  assert.deepEqual(fight.last.skips.map(s => [s.kind, s.recovered]), [['freeze', true]]);
+  assert.equal(fighter(fight, 1).status, null);
+  assert.equal(fighter(fight, 1).rested, true);
+  fight.teams[0][0].energy = 3;
+  fight = play(fight, 'special');
+  assert.ok(!fight.last.effects.includes('freeze') && fight.turn === 1, 'just thawed: alert, not frozen again');
+  fight = play(fight, 'hit');
+  assert.equal(fighter(fight, 1).rested, false, 'its own action ends the alert');
+});
+
+test('fire thaws a frozen fighter; only a sterile fighter does not freeze', () => {
+  const fire = duel({ skill: { name: 'Огонь', cost: 1, power: 0, burn: { dmg: 1, turns: 2 } } }, { trait: { fireproof: true } });
+  fire.teams[1][0].status = { kind: 'freeze', turns: 1 };
+  const after = play(fire, 'special');
+  assert.ok(after.last.effects.includes('thaw'));
+  assert.equal(fighter(after, 1).status, null);
+  assert.equal(fighter(after, 1).burn, null, 'fireproof still does not burn, but the ice is gone');
+  for (const trait of [{ pure: true }]) {
+    const iced = play(duel({ skill: { name: 'Лёд', cost: 1, freeze: true } }, { trait }), 'special');
+    assert.ok(iced.last.effects.includes('immune'));
+    assert.equal(fighter(iced, 1).status, null);
+    assert.equal(iced.turn, 1);
+  }
+});
+
+test('sleep lasts its turns unless a blow lands; moves without damage keep the target asleep', () => {
+  const skill = { name: 'Сытость', cost: 1, sleep: 2 };
+  let fight = duel({ skill, ultimate: { name: 'Щит', cost: 3, shield: 4 } }, {});
+  fight = play(fight, 'special');
+  assert.equal(fight.turn, 0);
+  assert.deepEqual(fighter(fight, 1).status, { kind: 'sleep', turns: 1 });
+  fight = play(fight, 'guard'); // no blow: still asleep, the second turn is skipped too
+  assert.equal(fight.turn, 0);
+  assert.equal(fighter(fight, 1).status, null);
+  const woken = play(play(duel({ skill }, {}), 'special'), 'hit');
+  assert.ok(woken.last.effects.includes('wake'));
+  assert.equal(fighter(woken, 1).status, null);
+  assert.equal(woken.turn, 1, 'awake, it moves');
+  const sterile = play(duel({ skill }, { trait: { pure: true } }), 'special');
+  assert.ok(sterile.last.effects.includes('immune'));
+});
+
+test('heartburn hurts 1, 2, 3, 4, 4 after each own turn and leaves with the fighter', () => {
+  let fight = duel({ skill: { name: 'Острый', cost: 1, toxic: true } }, { hp: 40 }, 0);
+  fight = play(fight, 'special');
+  const losses = [];
+  for (let i = 0; i < 5; i++) {
+    fight = play(fight, 'guard');
+    losses.push(fight.last.poisoned);
+    fight = play(fight, 'hit');
+  }
+  assert.deepEqual(losses, [1, 2, 3, 4, 4]);
+  const team = startBattle([[{ id: 'x', hp: 20, attack: 5, skill: { cost: 1, toxic: true } }], [{ id: 'y', hp: 20, attack: 5 }, { id: 'z', hp: 20, attack: 5 }]], 0, { tempo: false });
+  const switched = play(team, 'special', 'switch:1');
+  assert.equal(switched.teams[1][0].toxic, 0, 'switching out clears it');
+  assert.equal(switched.last.poisoned, 0);
+});
+
+test('draining moves HP from the target to whoever faces it, and a sterile fighter is immune', () => {
+  let fight = duel({ skill: { name: 'Соус', cost: 1, leech: 2 }, hp: 20 }, {});
+  fight.teams[0][0].hp = 15;
+  fight = play(fight, 'special', 'guard');
+  assert.equal(fight.last.leeched, 2);
+  assert.equal(fight.last.leechHeal, 2);
+  assert.deepEqual([fighter(fight, 0).hp, fighter(fight, 1).hp], [17, 18]);
+  const clean = play(duel({ skill: { cost: 1, leech: 2 } }, { trait: { pure: true } }), 'special');
+  assert.equal(fighter(clean, 1).leech, 0);
+  const wiped = play(duel({ skill: { cost: 1, leech: 2 } }, { skill: { cost: 1, cleanse: true } }), 'special', 'special');
+  assert.equal(fighter(wiped, 1).leech, 0, 'cleanse removes it');
+});
+
+test('a flurry: guard softens only the first strike, armour every strike, and it breaks a last stand', () => {
+  const flurry = { name: 'Шесть соусов', cost: 1, power: 3, hits: 4 }; // 8 split into 2+2+2+2
+  let fight = duel({ skill: flurry }, {}, 1);
+  fight = play(fight, 'guard', 'special');
+  assert.equal(fight.last.hits, 4);
+  assert.equal(fight.last.damage, 1 + 2 + 2 + 2);
+  const armored = play(duel({ skill: flurry }, { trait: { armor: 1 } }), 'special');
+  assert.equal(armored.last.damage, 4, 'armour trims each of the four strikes');
+  const sturdy = duel({ skill: flurry }, { trait: { laststand: true } });
+  sturdy.teams[1][0].hp = 5;
+  const broken = play(sturdy, 'special');
+  assert.equal(broken.last.saved, true, 'the last stand holds the first lethal strike…');
+  assert.equal(broken.winner, 0, '…and the next strike finishes the fight');
+  const spiky = play(duel({ skill: flurry }, { trait: { thorns: 1 } }), 'special');
+  assert.equal(spiky.last.thorns, 4, 'thorns prick on every strike');
+});
+
+test('a wipe removes the target attack boost, shield and guard; charge adds energy', () => {
+  let fight = duel({ skill: { name: 'Салфетка', cost: 1, power: 0, purge: true } }, { skill: { cost: 1, buff: 2, shield: 5 } }, 1);
+  fight = play(fight, 'special');
+  assert.deepEqual([fighter(fight, 1).attack, fighter(fight, 1).shield], [7, 5]);
+  fight = play(fight, 'special');
+  assert.ok(fight.last.effects.includes('purge'));
+  assert.deepEqual([fighter(fight, 1).attack, fighter(fight, 1).shield], [5, 0]);
+  const charged = play(duel({ skill: { cost: 1, charge: 2 } }, {}), 'special');
+  assert.equal(fighter(charged, 0).energy, 2);
+});
+
+test('a grim look lowers the attack of the fighter it meets: at the start, on a switch and after a knockout', () => {
+  const start = duel({ trait: { intimidate: 2 } }, {});
+  assert.equal(fighter(start, 1).attack, 3);
+  assert.equal(duel({ trait: { intimidate: 2 } }, { trait: { steady: true } }).teams[1][0].attack, 5, 'steady ignores it');
+  const team = startBattle([[{ id: 'x', hp: 20, attack: 5 }, { id: 'boss', hp: 20, attack: 5, trait: { intimidate: 1 } }], [{ id: 'y', hp: 20, attack: 5 }]], 0, { tempo: false });
+  const switched = play(team, 'switch:1');
+  assert.equal(fighter(switched, 1).attack, 4);
+  assert.deepEqual(switched.last.intimidated, ['boss']);
+});
+
+test('the new effects keep the engine deterministic and the bot uses them', () => {
+  const cards = [
+    { id: 'ice', hp: 22, attack: 5, speed: 6, skill: { cost: 2, power: 1, freeze: true } },
+    { id: 'nap', hp: 24, attack: 4, speed: 4, skill: { cost: 1, sleep: 2 }, trait: { intimidate: 1 } },
+  ];
+  const foes = [
+    { id: 'hot', hp: 22, attack: 5, speed: 5, skill: { cost: 2, power: 1, toxic: true, hits: 2 } },
+    { id: 'wipe', hp: 20, attack: 5, speed: 7, skill: { cost: 1, purge: true, leech: 2 }, trait: { pure: true } },
+  ];
+  const run = seed => {
+    let s = startBattle([cards, foes], 0);
+    let n = seed;
+    const random = () => ((n = (n * 16807) % 2147483647) / 2147483647);
+    const moves = [];
+    while (s.winner === null) { const m = botMove(s, random); moves.push(m); s = applyMove(s, s.turn, m); assert.ok(s, 'bot moves are legal'); }
+    return { moves, s: JSON.stringify(s) };
+  };
+  assert.deepEqual(run(7), run(7));
+  const freezeFirst = duel({ skill: { cost: 1, power: 0, freeze: true } }, {});
+  assert.equal(botMove(freezeFirst, () => 0.99), 'special');
+});

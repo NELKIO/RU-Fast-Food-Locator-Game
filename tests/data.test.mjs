@@ -49,16 +49,19 @@ test('each collectible has its own local image and a link to a restaurant menu',
   }
 });
 
-test('every dish on the menu is a hand-made fighter, one legend per chain and commons the most frequent', async () => {
+test('every dish on the menu is a hand-made fighter, two legends per chain and commons the most frequent', async () => {
   const { FIGHTERS, RARITIES, RENAMED, describeSkill, describeTrait } = await import('../public/js/fighters.js');
   const menu = readCatalog('menu');
   assert.deepEqual(menu.map(item => item.id).sort(), Object.keys(FIGHTERS).sort());
   for (const brand of brands) {
     const tiers = menu.filter(item => item.brand === brand).map(item => FIGHTERS[item.id].rarity);
     const [common, rare, epic, legendary] = RARITIES.map(r => tiers.filter(t => t === r).length);
-    assert.equal(legendary, 1, brand);
-    assert.ok(epic >= 2 && rare >= 2 && common >= rare && tiers.length >= 10, brand);
+    assert.equal(legendary, 2, brand);
+    assert.ok(epic >= 2 && rare >= 2 && common >= 4 && tiers.length >= 10, brand);
   }
+  // Across the game commons are the most frequent (Burger King's meme sauces are rare on purpose).
+  const count = r => Object.values(FIGHTERS).filter(f => f.rarity === r).length;
+  assert.ok(count('common') > count('rare') && count('rare') > count('epic') && count('epic') > count('legendary'));
   assert.equal(FIGHTERS['dodo-pepperoni'].rarity, 'legendary');
   assert.equal(FIGHTERS['dodo-four-cheeses'].rarity, 'epic');
   // The bigger the cup, the rarer the fighter.
@@ -113,7 +116,7 @@ test('rarer fighters have more: a talent from rare up, a super move from epic up
   }
 });
 
-test('every dish can drop from its chain roulette; the four legendaries drop with 2% per visit', async () => {
+test('every dish can drop from its chain roulette; each of the eight legendaries drops with 1.5% per visit', async () => {
   const { dropChance } = await import('../public/js/game.js');
   const menu = readCatalog('menu');
   for (const brand of brands) {
@@ -122,14 +125,16 @@ test('every dish can drop from its chain roulette; the four legendaries drop wit
     assert.ok(Math.abs(sum - 1) < 1e-9, brand);
     for (const item of items) assert.ok(dropChance(menu, item.id) > 0, item.id);
   }
-  assert.equal(dropChance(menu, 'bk-angus-parmigiano'), 0.02);
+  for (const id of ['bk-angus-parmigiano', 'bk-burger-box', 'dodo-cheesy-chicken']) assert.ok(Math.abs(dropChance(menu, id) - 0.015) < 1e-12, id);
   assert.equal(dropChance(menu, 'missing'), 0);
 });
 
 test('a super move is never weaker on paper than the cheaper signature move', async () => {
   const { FIGHTERS } = await import('../public/js/fighters.js');
-  // Damage dealt over the fight: hit, burn over its turns and the bonus on a hurt target.
-  const dealt = (f, s) => (Number.isFinite(s.power) ? f.attack + s.power : 0) + (s.burn ? s.burn.dmg * s.burn.turns : 0) + (s.execute ?? 0);
+  // Damage dealt over the fight: hit, burn over its turns, the bonus on a hurt target, heartburn
+  // over four turns (1 + 2 + 3 + 4) and draining over three.
+  const dealt = (f, s) => (Number.isFinite(s.power) ? f.attack + s.power : 0) + (s.burn ? s.burn.dmg * s.burn.turns : 0) + (s.execute ?? 0) +
+    (s.toxic ? 10 : 0) + (s.leech ? 3 * s.leech : 0);
   for (const [id, f] of Object.entries(FIGHTERS)) {
     if (!f.ultimate) continue;
     assert.ok(dealt(f, f.ultimate) >= dealt(f, f.skill), `${id}: ${dealt(f, f.ultimate)} < ${dealt(f, f.skill)}`);

@@ -1,0 +1,86 @@
+games 4761 draws 13 unsolved 4
+
+== common (26) perfect-play in-tier score | bot in-tier | wins/losses/split in tier | speed
+bk-cheese-sauce              0.88 0.87 22/3/0   v4  beats: fries shrimps shrimp-roll sundae cheeseburger-classic whopper-junior nuggets pie caesar-roll chocolate-cake macarons hamburger strips bites chefburger-junior fries ice-cream-cone hawaiian cheese cheesecake syrniki beak
+dodo-cheese                  0.84 0.89 21/4/0   v7  beats: fries shrimps shrimp-roll sundae cola-04 cheeseburger-classic whopper-junior nuggets pie caesar-roll chocolate-cake macarons hamburger strips bites chefburger-junior fries ice-cream-cone hawaiian oven-potatoes beak
+bk-sundae                    0.78 0.78 19/5/1   v5  beats: fries shrimps shrimp-roll cola-04 cheeseburger-classic whopper-junior nuggets caesar-roll chocolate-cake macarons hamburger strips bites drumsticks chefburger-junior fries ice-cream-cone hawaiian beak
+dodo-oven-potatoes           0.78 0.77 19/5/1   v8  beats: fries cheese-sauce shrimps shrimp-roll sundae cheeseburger-classic whopper-junior pie caesar-roll chocolate-cake macarons hamburger chefburger-junior fries ice-cream-cone hawaiian cheesecake syrniki beak
+dodo-syrniki                 0.76 0.48 19/6/0   v3  beats: fries shrimps shrimp-roll sundae cola-04 nuggets caesar-roll chocolate-cake macarons strips bites drumsticks chefburger-junior fries ice-cream-cone hawaiian cheese cheesecake beak
+dodo-cheesecake              0.72 0.73 18/7/0   v1  beats: fries shrimps shrimp-roll sundae cola-04 nuggets caesar-roll chocolate-cake macarons hamburger strips bites drumsticks fries ice-cream-cone hawaiian cheese beak
+vkusno-hamburger             0.64 0.67 16/9/0   v4  beats: fries shrimps shrimp-roll cola-04 cheeseburger-classic whopper-junior pie caesar-roll macarons strips chefburger-junior fries ice-cream-cone hawaiian syrniki beak
+vkusno-nuggets               0.57 0.50 13/10/1  v9  beats: fries shrimps shrimp-roll whopper-junior chocolate-cake macarons hamburger strips bites drumsticks ice-cream-cone oven-potatoes beak
+bk-cheeseburger-classic      0.56 0.58 14/11/0  v4  beats: shrimps shrimp-roll whopper-junior nuggets caesar-roll macarons bites drumsticks chefburger-junior ice-cream-cone hawaiian cheesecake syrniki beak
+vkusno-chocolate-cake        0.54 0.42 13/11/1  v5  beats: shrimps shrimp-roll cola-04 cheeseburger-classic whopper-junior macarons hamburger strips bites drumsticks chefburger-junior ice-cream-cone hawaiian
+rostics-fries                0.54 0.42 13/11/1  v9  beats: shrimps shrimp-roll cola-04 cheeseburger-classic whopper-junior pie caesar-roll chocolate-cake macarons bites drumsticks hawaiian beak
+bk-fries                     0.52 0.59 12/11/2  v8  beats: shrimp-roll cola-04 cheeseburger-classic whopper-junior pie caesar-roll chocolate-cake bites chefburger-junior fries hawaiian beak
+rostics-ice-cream-cone       0.52 0.49 13/12/0  v2  beats: fries shrimps shrimp-roll cola-04 whopper-junior pie macarons strips bites chefburger-junior fries hawaiian beak
+vkusno-caesar-roll           0.48 0.60 12/13/0  v6  beats: shrimps shrimp-roll cola-04 whopper-junior nuggets chocolate-cake macarons strips bites ice-cream-cone hawaiian beak
+rostics-strips               0.48 0.48 11/12/2  v9  beats: fries shrimp-roll cola-04 cheeseburger-classic whopper-junior macarons drumsticks chefburger-junior fries oven-potatoes beak
+vkusno-pie                   0.44 0.47 10/13/2  v5  beats: shrimp-roll cheeseburger-classic whopper-junior nuggets caesar-roll strips bites hawaiian cheesecake syrniki
+dodo-hawaiian                0.40 0.46 10/15/0  v3  beats: shrimps shrimp-roll cola-04 nuggets macarons strips bites drumsticks chefburger-junior beak
+bk-cola-04                   0.37 0.36 8/14/2   v9  beats: cheese-sauce shrimp-roll cheeseburger-classic whopper-junior pie macarons drumsticks oven-potatoes
+rostics-chefburger-junior    0.36 0.55 9/16/0   v2  beats: shrimp-roll cola-04 whopper-junior nuggets pie caesar-roll bites fries cheesecake
+bk-shrimps                   0.32 0.07 6/15/4   v9  beats: fries pie macarons drumsticks chefburger-junior beak
+bk-whopper-junior            0.32 0.36 8/17/0   v4  beats: shrimps shrimp-roll macarons bites drumsticks hawaiian cheesecake syrniki
+rostics-drumsticks           0.32 0.39 7/16/2   v8  beats: cheese-sauce pie caesar-roll hamburger chefburger-junior ice-cream-cone cheese
+rostics-bites                0.30 0.28 6/16/3   v9  beats: shrimp-roll macarons hamburger drumsticks oven-potatoes beak
+dodo-beak                    0.24 0.41 6/19/0   v7  beats: cola-04 whopper-junior pie chocolate-cake drumsticks chefburger-junior
+vkusno-macarons              0.18 0.22 4/20/1   v8  beats: pie drumsticks chefburger-junior beak
+bk-shrimp-roll               0.14 0.14 3/21/1   v9  beats: macarons drumsticks beak
+
+== rare (21) perfect-play in-tier score | bot in-tier | wins/losses/split in tier | speed
+bk-cheese-medallions         0.75 0.65 15/5/0   v8  beats: chicken-parmesan onion-rings brownie sauce-sweet-sour sauce-garlic sauce-ketchup sauce-mustard sauce-curry sauce-1000-islands big-special double-cheeseburger carbonara margherita bbq starter-cheese
+bk-sauce-sweet-sour          0.75 0.69 15/5/0   v4  beats: onion-rings fish-burger brownie sauce-garlic sauce-mustard sauce-1000-islands big-special chicken-hit double-cheeseburger twister i-roll carbonara margherita bbq starter-cheese
+bk-onion-rings               0.72 0.78 14/5/1   v7  beats: cola-05 fish-burger brownie sauce-garlic sauce-ketchup sauce-mustard sauce-curry sauce-1000-islands big-special chicken-hit double-cheeseburger i-roll bbq starter-cheese
+bk-sauce-curry               0.70 0.76 14/6/0   v5  beats: fish-burger brownie sauce-sweet-sour sauce-garlic sauce-mustard sauce-1000-islands big-special chicken-hit double-cheeseburger twister i-roll carbonara margherita bbq
+vkusno-chicken-hit           0.68 0.35 13/6/1   v9  beats: chicken-parmesan cheese-medallions cola-05 brownie sauce-garlic sauce-mustard sauce-1000-islands big-special i-roll carbonara margherita bbq starter-cheese
+vkusno-double-cheeseburger   0.60 0.55 12/8/0   v1  beats: cola-05 fish-burger brownie sauce-ketchup sauce-1000-islands big-special chicken-hit twister i-roll carbonara bbq starter-cheese
+bk-cola-05                   0.57 0.52 11/8/1   v6  beats: cheese-medallions fish-burger sauce-sweet-sour sauce-garlic sauce-mustard sauce-curry sauce-1000-islands big-special twister carbonara bbq
+rostics-twister              0.57 0.63 11/8/1   v9  beats: chicken-parmesan onion-rings cheese-medallions brownie sauce-ketchup sauce-mustard sauce-1000-islands big-special i-roll carbonara bbq
+bk-fish-burger               0.55 0.43 11/9/0   v4  beats: cheese-medallions brownie sauce-garlic sauce-ketchup sauce-1000-islands big-special chicken-hit twister i-roll carbonara margherita
+dodo-margherita              0.55 0.54 11/9/0   v9  beats: chicken-parmesan onion-rings cola-05 brownie sauce-ketchup sauce-mustard sauce-1000-islands double-cheeseburger twister i-roll carbonara
+bk-chicken-parmesan          0.53 0.61 10/9/1   v7  beats: cola-05 fish-burger sauce-sweet-sour sauce-garlic sauce-curry big-special double-cheeseburger carbonara bbq starter-cheese
+dodo-starter-cheese          0.50 0.54 10/10/0  v6  beats: cola-05 fish-burger brownie sauce-garlic sauce-ketchup sauce-curry twister i-roll carbonara margherita
+bk-sauce-ketchup             0.47 0.48 9/10/1   v6  beats: chicken-parmesan sauce-sweet-sour sauce-garlic sauce-curry big-special chicken-hit i-roll carbonara bbq
+bk-sauce-mustard             0.42 0.49 8/11/1   v9  beats: chicken-parmesan fish-burger brownie sauce-garlic sauce-ketchup sauce-1000-islands double-cheeseburger starter-cheese
+vkusno-big-special           0.40 0.52 8/12/0   v4  beats: brownie sauce-garlic sauce-mustard sauce-1000-islands i-roll carbonara margherita starter-cheese
+bk-brownie                   0.35 0.36 7/13/0   v8  beats: chicken-parmesan cola-05 sauce-garlic sauce-ketchup i-roll carbonara bbq
+dodo-bbq                     0.35 0.52 7/13/0   v5  beats: fish-burger sauce-mustard sauce-1000-islands big-special i-roll margherita starter-cheese
+bk-sauce-garlic              0.30 0.26 6/14/0   v3  beats: sauce-1000-islands double-cheeseburger twister carbonara margherita bbq
+bk-sauce-1000-islands        0.30 0.38 6/14/0   v2  beats: chicken-parmesan brownie sauce-ketchup i-roll carbonara starter-cheese
+rostics-i-roll               0.23 0.20 4/15/1   v9  beats: chicken-parmesan cheese-medallions cola-05 sauce-garlic
+dodo-carbonara               0.20 0.24 4/16/0   v5  beats: onion-rings sauce-mustard i-roll bbq
+
+== epic (14) perfect-play in-tier score | bot in-tier | wins/losses/split in tier | speed
+bk-big-king                  0.92 0.83 12/1/0   v1  beats: whopper double-whopper cola-08 wet-wipe brownie-ice-cream chicken-premier seasoning-provence-sour-cream wings basket four-cheeses diablo dodster
+bk-cola-08                   0.85 0.76 11/2/0   v3  beats: whopper double-whopper wet-wipe sauce-xxl-chili-cheese chicken-premier seasoning-provence-sour-cream wings basket four-cheeses diablo dodster
+bk-sauce-xxl-chili-cheese    0.77 0.83 10/3/0   v1  beats: whopper big-king wet-wipe brownie-ice-cream chicken-premier seasoning-provence-sour-cream wings basket four-cheeses dodster
+dodo-diablo                  0.69 0.71 9/4/0    v8  beats: wet-wipe sauce-xxl-chili-cheese brownie-ice-cream chicken-premier seasoning-provence-sour-cream wings basket four-cheeses dodster
+bk-double-whopper            0.62 0.74 8/5/0    v2  beats: whopper wet-wipe sauce-xxl-chili-cheese chicken-premier seasoning-provence-sour-cream basket four-cheeses diablo
+bk-brownie-ice-cream         0.46 0.22 6/7/0    v4  beats: whopper double-whopper cola-08 chicken-premier seasoning-provence-sour-cream four-cheeses
+rostics-wings                0.46 0.53 6/7/0    v5  beats: double-whopper brownie-ice-cream chicken-premier seasoning-provence-sour-cream basket four-cheeses
+dodo-dodster                 0.46 0.34 6/7/0    v8  beats: double-whopper wet-wipe brownie-ice-cream chicken-premier seasoning-provence-sour-cream wings
+bk-whopper                   0.38 0.39 5/8/0    v4  beats: chicken-premier seasoning-provence-sour-cream wings diablo dodster
+dodo-four-cheeses            0.38 0.50 5/8/0    v6  beats: whopper wet-wipe chicken-premier basket dodster
+bk-wet-wipe                  0.31 0.35 4/9/0    v5  beats: whopper brownie-ice-cream chicken-premier wings
+rostics-basket               0.31 0.35 4/9/0    v5  beats: whopper wet-wipe brownie-ice-cream dodster
+vkusno-seasoning-provence-sour-cream 0.23 0.27 3/10/0   v7  beats: wet-wipe basket four-cheeses
+vkusno-chicken-premier       0.15 0.16 2/11/0   v9  beats: seasoning-provence-sour-cream basket
+
+== legendary (8) perfect-play in-tier score | bot in-tier | wins/losses/split in tier | speed
+vkusno-big-hit               0.71 0.85 5/2/0    v6  beats: angus-parmigiano burger-box grand chefburger boxmaster
+dodo-pepperoni               0.71 0.58 5/2/0    v7  beats: big-hit grand chefburger boxmaster cheesy-chicken
+dodo-cheesy-chicken          0.71 0.50 5/2/0    v6  beats: angus-parmigiano burger-box big-hit grand boxmaster
+bk-burger-box                0.57 0.59 4/3/0    v1  beats: angus-parmigiano grand chefburger pepperoni
+rostics-chefburger           0.43 0.42 3/4/0    v6  beats: angus-parmigiano grand cheesy-chicken
+bk-angus-parmigiano          0.29 0.52 2/5/0    v3  beats: boxmaster pepperoni
+vkusno-grand                 0.29 0.30 2/5/0    v6  beats: angus-parmigiano boxmaster
+rostics-boxmaster            0.29 0.24 2/5/0    v5  beats: burger-box chefburger
+
+== cross tier (row tier vs column tier), perfect | bot
+common     0.50|0.50  0.10|0.08  0.01|0.04  0.00|0.00
+rare       0.90|0.92  0.50|0.50  0.11|0.30  0.00|0.00
+epic       0.99|0.96  0.89|0.70  0.50|0.50  0.13|0.07
+legendary  1.00|1.00  1.00|1.00  0.88|0.93  0.50|0.50
+
+upsets (lower tier wins both orders): 92 bk-chicken-parmesan>rostics-basket, bk-onion-rings>bk-wet-wipe, bk-cheese-sauce>bk-onion-rings, bk-cheese-sauce>bk-fish-burger, bk-cheese-sauce>bk-brownie, bk-cheese-sauce>bk-sauce-mustard, bk-cheese-sauce>bk-sauce-1000-islands, bk-cheese-sauce>vkusno-big-special, bk-cheese-sauce>vkusno-chicken-hit, bk-cheese-sauce>rostics-twister, bk-cheese-sauce>rostics-basket, bk-cheese-sauce>rostics-i-roll, bk-cheese-sauce>dodo-margherita, bk-cheese-sauce>dodo-bbq, bk-cheese-sauce>dodo-starter-cheese, bk-cheese-medallions>vkusno-seasoning-provence-sour-cream, bk-sundae>bk-onion-rings, bk-sundae>bk-sauce-mustard, bk-sundae>bk-sauce-1000-islands, bk-sundae>rostics-i-roll, bk-sundae>dodo-starter-cheese, bk-cola-05>bk-whopper, bk-cola-05>bk-wet-wipe, bk-cola-05>vkusno-chicken-premier, bk-cola-05>rostics-wings, bk-cola-04>bk-sauce-garlic, bk-big-king>bk-angus-parmigiano, bk-big-king>vkusno-big-hit, bk-big-king>vkusno-grand, bk-big-king>rostics-chefburger

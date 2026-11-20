@@ -125,7 +125,8 @@ test('a local-day route requires two distinct locations, pays once and rolls ove
 });
 
 test('roulette boundaries, rarity, stats and card mastery are stable regardless of menu order', () => {
-  const weights = [[0, 'common'], [0.59999, 'common'], [0.60, 'rare'], [0.86999, 'rare'], [0.87, 'epic'], [0.97999, 'epic'], [0.98, 'legendary'], [0.99999, 'legendary']];
+  // Weights 58 / 27 / 12 / 3.
+  const weights = [[0, 'common'], [0.57999, 'common'], [0.5801, 'rare'], [0.84999, 'rare'], [0.8501, 'epic'], [0.96999, 'epic'], [0.9701, 'legendary'], [0.99999, 'legendary']];
   for (const [value, tier] of weights) {
     const reward = claimAt(freshProfile(), first, noon, value);
     assert.equal(reward.card.rarity, tier);

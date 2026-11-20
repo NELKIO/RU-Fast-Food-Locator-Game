@@ -4,7 +4,7 @@ import { describeSkill, describeTrait } from './fighters.js';
 import { DuelRoom, newRoomCode, parseRoomCode, RECONNECT_MS } from './duel-room.js';
 import { connectDuel } from './duel-transport.js';
 import { createFx } from './battle-fx.js';
-import { movePlan } from './fx-moves.js';
+import { intimidateFx, movePlan } from './fx-moves.js';
 
 const LABELS = { wild: 'Дикий боец', online: 'Сетевая дуэль' };
 const plural = new Intl.PluralRules('ru');
@@ -54,14 +54,17 @@ function story(event, name, state) {
   else {
     const opening = event.command === 'ultimate' ? `${who}: суперприём «${event.skill}»!` : event.skill ? `${who}: «${event.skill}».` : `${who} бьёт.`;
     parts.push(opening);
-    if (event.damage) parts.push(`${target} −${event.damage} HP${event.executed ? ', добивание' : ''}.`);
+    if (event.damage) parts.push(`${target} −${event.damage} HP${event.hits > 1 ? ` за ${event.hits} удара` : ''}${event.executed ? ', добивание' : ''}.`);
     else if (event.command === 'hit' || event.skill && event.blocked) parts.push(`${target} не получает урона.`);
     if (event.blocked) parts.push('Защита смягчила удар.');
     if (event.absorbed) parts.push(`Щит поглотил ${event.absorbed}.`);
     if (event.heal) parts.push(`+${event.heal} HP.`);
     const effects = {
       burn: `${target} горит.`, weaken: `Атака ${target} падает.`, sap: `${target} теряет энергию.`,
-      buff: `Атака ${who} растёт.`, shield: `${who} под щитом.`, cleanse: 'Огонь потушен.', shatter: 'Защита сбита.'
+      buff: `Атака ${who} растёт.`, shield: `${who} под щитом.`, cleanse: `${who} снова в порядке.`, shatter: 'Защита сбита.',
+      purge: `С ${target} стёрты щит и усиления.`, freeze: `${target} заморожен!`, thaw: `${target} оттаял.`,
+      sleep: `${target} засыпает.`, wake: `${target} просыпается от удара.`, toxic: `У ${target} изжога.`,
+      leech: `${who} вытягивает силы из ${target}.`, charge: `${who} заряжается.`, immune: `На ${target} это не действует.`
     };
     for (const effect of event.effects) if (effects[effect]) parts.push(effects[effect]);
     if (event.recoil) parts.push(`Отдача −${event.recoil}.`);
@@ -70,6 +73,16 @@ function story(event, name, state) {
   }
   if (event.regen) parts.push(`${who} восстанавливается: +${event.regen}.`);
   if (event.burned) parts.push(`${who} обжигается: −${event.burned}.`);
+  if (event.poisoned) parts.push(`${who} мучает изжога: −${event.poisoned}.`);
+  if (event.leeched) parts.push(`Из ${who} вытянуто ${event.leeched}${event.leechHeal ? `, соперник +${event.leechHeal}` : ''}.`);
+  for (const id of event.intimidated) parts.push(`${name(id)} смотрит грозно: атака соперника падает.`);
+  for (const skip of event.skips) {
+    parts.push(skip.kind === 'freeze' ? `${name(skip.id)} заморожен и пропускает ход.` : `${name(skip.id)} спит и пропускает ход.`);
+    if (skip.burned) parts.push(`Ожог −${skip.burned}.`);
+    if (skip.poisoned) parts.push(`Изжога −${skip.poisoned}.`);
+    if (skip.leeched) parts.push(`Вытянуто ${skip.leeched}.`);
+    if (skip.recovered) parts.push(skip.kind === 'freeze' ? `${name(skip.id)} оттаял.` : `${name(skip.id)} просыпается.`);
+  }
   for (const id of event.ko) parts.push(`${name(id)} выбит!`);
   event.entered.forEach((id, side) => { if (id && !event.command.startsWith('switch:')) parts.push(`Выходит ${name(id)}.`); });
   // After a knockout the faster fighter on the arena moves first, even twice in a row.
@@ -82,6 +95,10 @@ function chips(fighter) {
   if (fighter.guarding) out.push(['guard', icon('lock', 12) + 'Защита']);
   if (fighter.shield) out.push(['shield', 'Щит ' + fighter.shield]);
   if (fighter.burn) out.push(['burn', 'Горит −' + fighter.burn.dmg + ' × ' + fighter.burn.turns]);
+  if (fighter.status?.kind === 'freeze') out.push(['freeze', 'Заморожен']);
+  if (fighter.status?.kind === 'sleep') out.push(['sleep', 'Спит' + (fighter.status.turns > 1 ? ' × ' + fighter.status.turns : '')]);
+  if (fighter.toxic) out.push(['toxic', 'Изжога −' + fighter.toxic]);
+  if (fighter.leech) out.push(['leech', 'Вытягивают −' + fighter.leech]);
   const shift = fighter.attack - fighter.baseAttack;
   if (shift) out.push([shift > 0 ? 'buff' : 'weaken', 'Атака ' + (shift > 0 ? '+' : '−') + Math.abs(shift)]);
   return out.map(([kind, text]) => `<span class="duel-chip is-${kind}">${text}</span>`).join('');
@@ -525,16 +542,18 @@ export function mountDuels(container, options) {
   function animate(state, side, plan) {
     const event = state.last;
     const motion = !reduced();
-    const pop = (who, text, kind, delay = 0) => {
+    const pop = (who, text, kind, delay = 0, low = false) => {
       const host = panel(who)?.querySelector('.duel-portrait');
       if (!host) return;
       const el = document.createElement('span');
-      el.className = 'duel-pop is-' + kind;
+      // Words use the page font: the monospace stack has no Cyrillic on some systems.
+      el.className = 'duel-pop is-' + kind + (/\p{L}/u.test(text) ? ' is-word' : '') + (low ? ' is-under' : '');
       el.style.animationDelay = delay + 'ms';
       el.textContent = text;
       host.append(el);
       setTimeout(() => el.remove(), 1300 + delay);
     };
+    const later = (fn, delay) => setTimeout(() => { if (!disposed) fn(); }, delay);
     const mark = (who, cls, delay = 0) => {
       const el = panel(who);
       if (!el) return;
@@ -549,14 +568,24 @@ export function mountDuels(container, options) {
     }
     const actor = event.side === side ? 'me' : 'foe', other = actor === 'me' ? 'foe' : 'me';
     const hit = plan?.impact ?? 160, after = hit + 260;
+    // A flurry: the target flinches at every strike and the total shows after the last one.
+    const strikes = plan?.strikes ?? [hit];
+    const landed = strikes.at(-1);
     if (plan) effects().play(plan.steps, plan.alias);
-    if (event.command.startsWith('switch:')) mark(actor, 'act-enter');
+    if (event.command.startsWith('switch:')) {
+      mark(actor, 'act-enter');
+      if (event.intimidated?.includes(event.target)) { pop(actor, 'Грозный вид', 'info', 300, true); pop(other, 'Атака ↓', 'info', 640); }
+    }
     else if (event.command === 'guard') { mark(actor, 'act-guard'); pop(actor, 'Защита', 'info', 120); }
     else {
       mark(actor, actor === 'me' ? 'act-lunge-up' : 'act-lunge-down', plan?.lungeAt ?? 0);
-      if (event.damage || event.blocked || event.absorbed) mark(other, 'act-hit', hit);
-      if (event.damage) pop(other, '−' + event.damage, 'damage', hit);
-      else if (event.absorbed) pop(other, 'Щит', 'info', hit);
+      if (event.damage || event.blocked || event.absorbed) {
+        mark(other, 'act-hit', hit);
+        for (const t of strikes.slice(1)) later(() => mark(other, 'act-hit'), t);
+      }
+      if (event.hits > 1) pop(other, 'Серия ×' + event.hits, 'info', Math.max(0, hit - 220));
+      if (event.damage) pop(other, '−' + event.damage, 'damage', landed);
+      else if (event.absorbed) pop(other, 'Щит', 'info', landed);
       if (event.blocked) pop(other, 'Блок', 'info', hit + 260);
       if (event.heal) pop(actor, '+' + event.heal, 'heal', after);
       if (event.recoil) pop(actor, '−' + event.recoil, 'damage', after);
@@ -565,12 +594,36 @@ export function mountDuels(container, options) {
       if (event.effects.includes('weaken')) pop(other, 'Атака ↓', 'info', after + 140);
       if (event.effects.includes('buff')) pop(actor, 'Атака ↑', 'heal', after + 140);
       if (event.effects.includes('shield')) pop(actor, 'Щит', 'heal', after);
-      if (event.effects.includes('cleanse')) pop(actor, 'Потушен', 'heal', after + 140);
+      if (event.effects.includes('cleanse')) pop(actor, 'Очищен', 'heal', after + 140);
       if (event.effects.includes('shatter')) pop(other, 'Щит сбит', 'info', hit - 120);
+      if (event.effects.includes('purge')) pop(other, 'Стёрто', 'info', after + 120);
+      if (event.effects.includes('freeze')) pop(other, 'Заморожен', 'freeze', after);
+      if (event.effects.includes('thaw')) pop(other, 'Оттаял', 'freeze', after);
+      if (event.effects.includes('sleep')) pop(other, 'Zzz', 'sleep', after);
+      if (event.effects.includes('wake')) pop(other, 'Проснулся!', 'info', landed + 160);
+      if (event.effects.includes('toxic')) pop(other, 'Изжога', 'toxic', after + 80);
+      if (event.effects.includes('leech')) pop(actor, 'Вытягивает', 'leech', after + 200);
+      if (event.effects.includes('charge')) pop(actor, 'Энергия ↑', 'heal', after + 200);
+      if (event.effects.includes('immune')) pop(other, 'Иммунитет', 'info', after);
       if (event.thorns) pop(actor, '−' + event.thorns, 'damage', after + 200);
       if (event.saved) pop(other, 'Выстоял!', 'heal', after);
     }
+    // Losses after the mover's own turn: burning, heartburn, draining (the other side drinks it).
     if (event.burned) pop(actor, '−' + event.burned, 'burn', after + 340);
+    if (event.poisoned) pop(actor, '−' + event.poisoned, 'toxic', after + 420);
+    if (event.leeched) pop(actor, '−' + event.leeched, 'leech', after + 500);
+    if (event.leechHeal) pop(other, '+' + event.leechHeal, 'heal', after + 900);
+    // Turns the engine skipped: who misses it, what it still costs, and the moment it is over.
+    // A status put on by this very move already has its label, so its skip only gets the ending.
+    (plan?.skips ?? []).forEach((shown, i) => {
+      const skip = event.skips[i], who = shown.at === 'src' ? actor : other, drinker = who === 'me' ? 'foe' : 'me';
+      if (!(i === 0 && who === other && event.effects.includes(shown.kind))) pop(who, 'Пропуск хода', shown.kind, shown.start);
+      if (skip.burned) pop(who, '−' + skip.burned, 'burn', shown.start + 300, true);
+      if (skip.poisoned) pop(who, '−' + skip.poisoned, 'toxic', shown.start + 380, true);
+      if (skip.leeched) pop(who, '−' + skip.leeched, 'leech', shown.start + 460, true);
+      if (skip.leechHeal) pop(drinker, '+' + skip.leechHeal, 'heal', shown.start + 860);
+      if (shown.recovered) pop(who, shown.kind === 'freeze' ? 'Оттаял' : 'Проснулся', shown.kind === 'freeze' ? 'freeze' : 'heal', shown.end, true);
+    });
     if (event.skill && motion) {
       const callout = document.createElement('div');
       callout.className = 'duel-callout is-' + actor + (event.command === 'ultimate' ? ' is-ultimate' : '');
@@ -584,7 +637,8 @@ export function mountDuels(container, options) {
   function slideBars(state, side, plan) {
     const actor = state.last && (state.last.side === side ? 'me' : 'foe');
     for (const el of page.querySelectorAll('.duel-fighter')) {
-      const delay = !plan ? 120 : el.dataset.side === actor ? plan.impact + 260 : plan.impact;
+      // A flurry takes the health off once its last strike has landed.
+      const delay = !plan ? 120 : el.dataset.side === actor ? plan.impact + 260 : plan.strikes?.at(-1) ?? plan.impact;
       el.style.setProperty('--hp-delay', delay + 'ms');
       const bar = el.querySelector('.duel-hp span');
       const key = el.dataset.side + ':' + el.dataset.fighter;
@@ -645,7 +699,13 @@ export function mountDuels(container, options) {
     if (state && fresh) animate(state, side, plan);
     if (state && entering.some(Boolean) && !reduced()) {
       entering.forEach((on, s) => {
-        if (on) page.querySelector(`.duel-fighter[data-side="${s === side ? 'me' : 'foe'}"]`)?.classList.add('act-enter');
+        if (!on) return;
+        const who = s === side ? 'me' : 'foe';
+        page.querySelector(`.duel-fighter[data-side="${who}"]`)?.classList.add('act-enter');
+        // A newcomer with a grim look lowers the other side's attack the moment it arrives.
+        if (state.last?.intimidated?.includes(currentFighter(state, s).id) && state.last.entered[s]) {
+          effects().play(intimidateFx(260), { src: who, tgt: who === 'me' ? 'foe' : 'me' });
+        }
       });
     }
     entering = [false, false];

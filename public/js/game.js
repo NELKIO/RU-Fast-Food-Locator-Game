@@ -12,7 +12,8 @@ export const GPS_RULES = Object.freeze({
 });
 
 const BRANDS = new Set(['bk', 'vkusno', 'rostics', 'dodo']);
-const LOOT_WEIGHTS = [60, 27, 11, 2];
+// Each chain has two legendaries: 1.5% each per visit.
+const LOOT_WEIGHTS = [58, 27, 12, 3];
 const XP_THRESHOLDS = [0, 10, 25, 45, 70, 100, 135, 175, 220, 270];
 export const CARD_XP_CAP = XP_THRESHOLDS.at(-1);
 // Wild fighters that already left (won, lost or replaced). Synced devices use this list to drop

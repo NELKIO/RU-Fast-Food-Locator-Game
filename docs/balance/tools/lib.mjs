@@ -12,7 +12,8 @@ export async function loadRoster(path) {
 const RANK = { common: 0, rare: 1, epic: 2, legendary: 3 };
 export const rank = r => RANK[r];
 function fkey(x) {
-  return x.hp + ',' + x.attack + ',' + x.energy + ',' + (x.guarding ? 1 : 0) + ',' + x.shield + ',' + (x.burn ? x.burn.dmg * 10 + x.burn.turns : 0) + (x.saved ? 's' : '');
+  return x.hp + ',' + x.attack + ',' + x.energy + ',' + (x.guarding ? 1 : 0) + ',' + x.shield + ',' + (x.burn ? x.burn.dmg * 10 + x.burn.turns : 0) + (x.saved ? 's' : '') +
+    (x.status ? x.status.kind[0] + x.status.turns : '') + (x.rested ? 'r' : '') + (x.toxic ? 't' + x.toxic : '') + (x.leech ? 'l' + x.leech : '');
 }
 let budget = Infinity;
 // Exact result with perfect play: +1 side 0 wins, -1 side 1 wins, 0 draw. null if over the state budget.
