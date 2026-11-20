@@ -12,6 +12,12 @@
 import { applyMove, legalMoves, MAX_ENERGY, MAX_TURNS } from './duel-engine.js';
 
 const WIN = 1e6;
+// Share of a team's health already lost, 0..1 (knocked-out fighters count fully).
+function dealt(state, side) {
+  let hp = 0, max = 0;
+  for (const f of state.teams[side]) { hp += Math.max(0, f.hp); max += f.maxHp; }
+  return max ? 1 - hp / max : 0;
+}
 
 // Damage a status will still do if nothing changes.
 function booked(f) {
@@ -102,7 +108,13 @@ function project(state, side) {
 }
 
 export function evaluate(state, side, w = WEIGHTS) {
-  if (state.winner !== null) return state.winner === 'draw' ? 0 : state.winner === side ? WIN - state.moves : -WIN + state.moves;
+  if (state.winner !== null) {
+    if (state.winner === 'draw') return 0;
+    if (state.winner === side) return WIN - state.moves;
+    // A lost battle is still fought: the computer takes as much of the other team with it as it can,
+    // instead of stalling the end with guard after guard.
+    return -WIN + 800 * dealt(state, 1 - side);
+  }
   const race = w.race ?? WEIGHTS.race;
   return race ? (1 - race) * strengths(state, side, w) + race * project(state, side) : strengths(state, side, w);
 }
@@ -277,8 +289,8 @@ export function smartMove(state, side = state.turn, { timeMs = 120, nodes = null
     }
     if (stopped) break;
     rootOrder = [choice, ...scored.filter(([m]) => m !== choice).sort((x, y) => y[1] - x[1]).map(([m]) => m)];
-    // A sure win or a sure loss needs no deeper look.
-    if (Math.abs(best) >= WIN - MAX_TURNS - 1) break;
+    // A sure win needs no deeper look; a sure loss keeps looking for the most damage on the way.
+    if (best >= WIN - MAX_TURNS - 1) break;
   }
   if (info) Object.assign(info, { depth: done, nodes: visited, score, ms: Date.now() - start });
   return choice;
