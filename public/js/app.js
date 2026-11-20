@@ -1,5 +1,6 @@
 import { makeSfx } from './sfx.js';
-import { brands, icon, brandMark, esc, rarityNames, formatDistance, formatWait, formatCountdown, countdown } from './ui.js';
+import { createSiteStats } from './site-stats.js';
+import { brands, icon, brandMark, esc, rarityNames, formatDistance, formatWait, formatCountdown, countdown, transformBadge } from './ui.js';
 import { makeMap, MOSCOW } from './map.js';
 import { applyAppearance, normalizeTheme, themeOptions, themes } from './themes.js';
 import {
@@ -28,7 +29,7 @@ import {
   WILD_COOLDOWN_MS,
   GPS_RULES,
 } from './game.js';
-import { describeSkill, describeTrait } from './fighters.js';
+import { describeSkill, describeTrait, describeTransform } from './fighters.js';
 import { mountDuels } from './duels.js';
 import { reelMarkup, rewardMarkup } from './rewards.js';
 import { createSync, formatSyncKey, newSyncKey, parseSyncKey } from './sync.js';
@@ -613,6 +614,21 @@ function skillBox(card) {
     ' урона и +1 энергия</small></div>'
   );
 }
+// The transformation: once per battle, for energy, the fighter takes its other form.
+function transformBox(card) {
+  if (!card.transform) return '';
+  return (
+    '<section class="tf-box" aria-label="Трансформация"><small>' +
+    icon('transform', 14) +
+    ' Трансформация · ' +
+    esc(card.transform.cost) +
+    ' энерг. · раз за бой</small><strong>«' +
+    esc(card.transform.name) +
+    '»</strong><p>' +
+    esc(describeTransform(card.transform, card.attack)) +
+    '</p></section>'
+  );
+}
 function cardStats(card) {
   return (
     '<div class="stat-grid"><div><strong>' +
@@ -930,6 +946,7 @@ function renderCollection() {
         '"><span class="deck-num">' +
         (n + 1) +
         '</span>' +
+        (c.transform ? transformBadge(11) : '') +
         cardImage(c) +
         '<strong>' +
         esc(c.name) +
@@ -977,6 +994,7 @@ function renderCollection() {
         esc(c.id) +
         '">' +
         rarityTag(c) +
+        (c.transform ? transformBadge(14) : '') +
         cardImage(c) +
         '<small>' +
         esc(brands[c.brand].name) +
@@ -1077,11 +1095,13 @@ function showCard(id, { readOnly = false } = {}) {
       '</div><div class="reward-stage">' +
       cardImage(card, 'reward-img') +
       rarityTag(card) +
+      (card.transform ? transformBadge(16) : '') +
       '</div><h2>' +
       esc(card.name) +
       '</h2>' +
       cardStats(card) +
       skillBox(card) +
+      transformBox(card) +
       (entry
         ? '<p class="card-xp">Опыт бойца · ' +
           esc(card.xp) +
@@ -1184,10 +1204,37 @@ function profileDialog() {
       icon('route', 16) +
       (profile.sync?.key ? 'Настроить' : 'Связать устройства') +
       '</button></section>' +
-      '<button class="outline-btn" data-open="collection">Открыть коллекцию</button>',
+      '<button class="outline-btn" data-open="collection">Открыть коллекцию</button>' +
+      '<section class="site-stats" id="site-stats" aria-live="polite">' + siteStatsHtml(siteStats.cached(), true) + '</section>',
   );
+  // The whole game: the last known total at once, the fresh one from the relays a moment later.
+  const run = dialogRun;
+  siteStats.total().then((total) => {
+    const box = document.getElementById('site-stats');
+    if (box && run === dialogRun) box.innerHTML = siteStatsHtml(total, false);
+  }).catch(() => {});
 }
 listen('profile-btn', profileDialog);
+
+// Every browser reports only what it played itself (see site-stats.js); only the live site reports.
+const siteStats = createSiteStats({ live: location.hostname === 'nelkio.github.io' });
+function siteStatsHtml(total, loading) {
+  const n = (v) => Number(v ?? 0).toLocaleString('ru-RU');
+  const head = '<h3>Вся игра</h3>';
+  if (!total) return head + '<p class="site-stats-note">' + (loading ? 'Собираем статистику всех игроков…' : 'Статистика всех игроков пока недоступна.') + '</p>';
+  const tiles = [
+    ['Игроков', total.players], ['Боёв', total.games], ['Побед', total.wins], ['Поражений', total.losses],
+    ['Бойцов поймано', total.cards], ['Посещений точек', total.visits],
+  ];
+  const favorites = (total.favorites ?? [])
+    .map((f) => { const item = menuById.get(f.id); return item ? cardFor(item) : null; })
+    .filter(Boolean);
+  return head + '<div class="stat-grid site-stat-grid">' + tiles.map(([label, value]) => '<div><strong>' + n(value) + '</strong><small>' + label + '</small></div>').join('') + '</div>' +
+    (favorites.length
+      ? '<h4>Любимые бойцы</h4><ol class="site-favorites">' + favorites.map((c, i) => '<li><span class="site-rank">' + (i + 1) + '</span>' + cardImage(c) + '<span>' + esc(c.name) + '</span></li>').join('') + '</ol>'
+      : '') +
+    '<p class="site-stats-note">Сумма по всем игрокам. Каждое устройство сообщает только свои бои, поэтому связанные устройства не считаются дважды.' + (loading ? ' Обновляем…' : '') + '</p>';
+}
 
 // Device sync lives in the profile, out of the way of the game.
 let wildFightActive = false;
@@ -1509,6 +1556,7 @@ $('dialog-body').addEventListener('click', async (e) => {
 });
 store.subscribe((next) => {
   profile = next;
+  siteStats.schedule(next);
   renderHeader();
   renderQuests();
   if (tab === 'radar') {
@@ -1565,6 +1613,7 @@ async function init() {
   // Older profiles get their wild stream now, so linked devices agree on it at the first sync.
   await store.update((p) => (p.wildSeed ? { ok: false, profile: p } : { ok: true, profile: ensureWildSeed(p) }));
   await ensureWild();
+  siteStats.schedule(store.read(), 5000);
   if (/^#duel=/i.test(location.hash)) switchTab('arena', { initialMode: 'online' });
   else if (starter.ok) welcome(starter.card);
   sync.start();

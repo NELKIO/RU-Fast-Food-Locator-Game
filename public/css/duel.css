@@ -414,3 +414,67 @@
   color: #2a1606;
   font-size: clamp(1.05rem, 4.6vw, 1.35rem);
 }
+
+/* Transformation: violet, apart from the lime accent and the gold super move. */
+.duel-page { --duel-tf: var(--tf, #8f3dff); --duel-tf-light: var(--tf-light, #c9a2ff); }
+.duel-art { position: relative; }
+.duel-art > .tf-badge { top: -5px; right: -5px; width: 19px; height: 19px; }
+.duel-portrait .duel-art > .tf-badge { top: 2px; right: 2px; width: 22px; height: 22px; }
+.duel-swap .duel-art > .tf-badge { top: -6px; right: -6px; width: 16px; height: 16px; }
+.duel-swap .duel-art > .tf-badge svg { width: 10px; height: 10px; }
+.duel-ready-slot .duel-art > .tf-badge { top: -10px; right: -10px; }
+.duel-wild > .duel-art > .tf-badge { top: 0; right: 0; width: 26px; height: 26px; }
+.duel-wild-skill.is-transform strong { color: var(--duel-tf-light); }
+.duel-transform { grid-column: 1 / -1; min-height: 66px; border-color: color-mix(in srgb, var(--duel-tf) 60%, var(--duel-line)); }
+.duel-transform .duel-glyph { color: var(--duel-tf-light); }
+.duel-transform .duel-pips i { border-color: var(--duel-tf-light); }
+.duel-transform .duel-pips i.on { background: var(--duel-tf-light); }
+.duel-transform em { font-style: normal; font-weight: 750; font-size: .86rem; color: var(--duel-tf-light); }
+.duel-transform.is-ready:enabled {
+  border-color: var(--duel-tf);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--duel-tf) 26%, var(--duel-panel)), color-mix(in srgb, var(--duel-tf) 8%, var(--duel-panel)));
+  animation: duel-tf-glow 1.6s ease-in-out infinite;
+}
+.duel-transform.is-ready:enabled .duel-glyph { filter: drop-shadow(0 0 6px var(--duel-tf)); }
+.duel-page .duel-transform:enabled:hover { border-color: var(--duel-tf-light); }
+@keyframes duel-tf-glow { 50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--duel-tf) 35%, transparent), 0 0 18px -4px var(--duel-tf); } }
+.duel-chip.is-form { color: var(--duel-tf-light); background: color-mix(in srgb, var(--duel-tf) 16%, transparent); }
+.duel-fighter.is-transformed { border-color: color-mix(in srgb, var(--duel-tf) 55%, var(--duel-line)); }
+.duel-fighter.is-transformed h3 { color: var(--duel-tf-light); }
+.duel-fighter.is-transformed .duel-portrait {
+  background:
+    radial-gradient(ellipse at 50% 68%, color-mix(in srgb, var(--duel-tf) 42%, transparent), transparent 70%);
+}
+.duel-fighter.is-transformed .duel-portrait .duel-art img { filter: drop-shadow(0 0 7px color-mix(in srgb, var(--duel-tf) 80%, transparent)); }
+/* A form without its own picture: the same dish, bigger, charged with violet. */
+.duel-fighter.is-glowing .duel-portrait .duel-art img {
+  transform: scale(1.1);
+  transform-origin: 50% 90%;
+  filter: drop-shadow(0 0 4px #fff) drop-shadow(0 0 12px var(--duel-tf)) saturate(1.3) hue-rotate(-14deg);
+}
+.duel-fighter.is-glowing .duel-portrait::before {
+  content: ''; position: absolute; inset: 6% 12%; border-radius: 50%; pointer-events: none;
+  border: 2px dashed color-mix(in srgb, var(--duel-tf-light) 70%, transparent);
+  animation: duel-tf-spin 9s linear infinite;
+}
+@keyframes duel-tf-spin { to { transform: rotate(1turn); } }
+.duel-morph-old { position: absolute; inset: 0; z-index: 1; pointer-events: none; animation: duel-morph-out .44s ease-in both; }
+.act-transform .duel-portrait > .duel-art { animation: duel-morph-in .6s cubic-bezier(.2, 1.5, .4, 1) .44s both; }
+@keyframes duel-morph-out {
+  0% { transform: none; filter: none; }
+  60% { transform: scale(1.08) rotate(-4deg); filter: brightness(1.5) saturate(1.4) hue-rotate(-30deg); }
+  100% { transform: scale(.25) rotate(14deg); opacity: 0; filter: brightness(4); }
+}
+@keyframes duel-morph-in {
+  0% { opacity: 0; transform: scale(.2) rotate(-12deg); filter: brightness(4); }
+  60% { opacity: 1; filter: brightness(1.4); }
+  100% { transform: none; filter: none; }
+}
+.duel-pop.is-form {
+  color: #fff; font-family: inherit; font-size: .76rem; font-weight: 800; padding: 2px 7px; border-radius: 99px; top: 4%;
+  background: linear-gradient(90deg, #b26bff, #7a2cff); text-shadow: none; box-shadow: 0 4px 16px rgb(122 44 255 / .5);
+}
+.duel-callout.is-transform { background: linear-gradient(90deg, #b26bff, #7a2cff); color: #fff; box-shadow: 0 8px 30px rgb(122 44 255 / .45); }
+@media (prefers-reduced-motion: reduce) {
+  .duel-morph-old { display: none; }
+}

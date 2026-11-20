@@ -1,11 +1,11 @@
-import { brands, countdown, esc, icon, rarityNames } from './ui.js';
+import { brands, countdown, esc, icon, rarityNames, transformBadge } from './ui.js';
 import { applyMove, battleStats, currentFighter, legalMoves, MAX_ENERGY, opener, startBattle } from './duel-engine.js';
 import { smartMove } from './duel-ai.js';
-import { describeSkill, describeTrait } from './fighters.js';
+import { describeSkill, describeTrait, describeTransform } from './fighters.js';
 import { DuelRoom, newRoomCode, parseRoomCode, RECONNECT_MS } from './duel-room.js';
 import { connectDuel } from './duel-transport.js';
 import { createFx } from './battle-fx.js';
-import { intimidateFx, movePlan } from './fx-moves.js';
+import { intimidateFx, movePlan, TRANSFORM_FLASH } from './fx-moves.js';
 
 const LABELS = { wild: 'Дикий боец', trainer: 'Бой с тренером', online: 'Сетевая дуэль' };
 // How long the computer thinks per move: the trainer plays at full strength, a wild fighter a little lighter.
@@ -16,7 +16,7 @@ const THINK_MS = { wild: 90, easy: 60, normal: 350, hard: 900, lord: 1200 };
 // Tuned on battles against a casual and a thinking player (docs/balance/tools/trainer-noise.mjs) so
 // that each level is a little easier than the first trainers: Всерьёз a fair fight, Без пощады hard,
 // Лука the strongest. The wild fighter keeps the balance it had with the earlier computer player.
-const SLACK = { wild: 0.2, easy: 0, normal: 0.07, hard: 0.03, lord: 0 };
+const SLACK = { wild: 0.2, easy: 0, normal: 0.1, hard: 0.03, lord: 0 };
 const LEVELS = [['easy', 'Разминка'], ['normal', 'Всерьёз'], ['hard', 'Без пощады']];
 const plural = new Intl.PluralRules('ru');
 const MOVES = { one: 'ход', few: 'хода', many: 'ходов', other: 'хода' };
@@ -33,9 +33,19 @@ function button(action, title, options = {}) {
     ${options.icon ? icon(options.icon, 18) : ''}<span>${esc(title)}</span></button>`;
 }
 
-function artwork(card) {
+// `badge`: the purple corner mark of a fighter that can still transform.
+function artwork(card, badge = false) {
   const art = card?.image ? `<img src="${esc(card.image)}" alt="" decoding="async" draggable="false">` : '';
-  return `<span class="duel-art" style="--team-color:${color(card?.brand)}">${art || icon(card?.brand ?? 'battle', 36)}</span>`;
+  return `<span class="duel-art" style="--team-color:${color(card?.brand)}">${art || icon(card?.brand ?? 'battle', 36)}${badge ? transformBadge() : ''}</span>`;
+}
+
+// The name a fighter goes by on the arena: the form's name once it has transformed.
+function shownName(state, id, name, side) {
+  for (const s of side === undefined ? [0, 1] : [side]) {
+    const fighter = state?.teams[s].find(member => member.id === id && member.transformed);
+    if (fighter) return fighter.transform.name;
+  }
+  return name(id);
 }
 
 function pips(filled, total, label) {
@@ -51,20 +61,37 @@ const rules = `<details class="duel-rules"><summary>Как идёт бой</summ
   <p>Через 48 ходов побеждает команда, у которой осталось больше здоровья. В дуэли с другом у всех базовые характеристики, а команды выравниваются по меньшей.</p></details>`;
 
 // The narrator: one short line about what just happened, from the event the engine produced.
-function story(event, name, state) {
+// `snackers`: the sides whose fighter ate its snack in this event (the engine only gives the sum).
+function story(event, plainName, state, snackers = []) {
+  const name = (id, side) => shownName(state, id, plainName, side);
   if (!event) {
     const [a, b] = [0, 1].map(side => currentFighter(state, side));
     const lead = currentFighter(state, state.turn);
     if (a.speed === b.speed) return `Скорость равна, первым ходит ${name(lead.id)}. Бей, чтобы копить энергию, и трать её на приёмы.`;
     return `${name(lead.id)} быстрее (скорость ${lead.speed} против ${Math.min(a.speed, b.speed)}) и ходит первым.`;
   }
-  const who = name(event.fighter), target = name(event.target);
+  const switched = event.command.startsWith('switch:');
+  const who = name(event.fighter, event.side), target = name(event.target, switched ? event.side : 1 - event.side);
   const parts = [];
-  if (event.command.startsWith('switch:')) parts.push(`${who} уходит. На арену выходит ${target}.`);
+  if (switched) {
+    parts.push(`${who} уходит. На арену выходит ${target}.`);
+    if (event.refresh) parts.push(`${plainName(event.fighter)} переводит дух: +${event.refresh} HP.`);
+  }
   else if (event.command === 'guard') parts.push(`${who} уходит в защиту.`);
   else {
-    const opening = event.command === 'ultimate' ? `${who}: суперприём «${event.skill}»!` : event.skill ? `${who}: «${event.skill}».` : `${who} бьёт.`;
+    const form = event.command === 'transform' ? state.teams[event.side].find(f => f.id === event.fighter && f.transformed)?.transform : null;
+    const opening = event.command === 'transform'
+      ? `Трансформация! ${plainName(event.fighter)} → «${event.transformed}».`
+      : event.command === 'ultimate' ? `${who}: суперприём «${event.skill}»!` : event.skill ? `${who}: «${event.skill}».` : `${who} бьёт.`;
     parts.push(opening);
+    if (form) {
+      const stats = [['hp', 'здоровье'], ['attack', 'атака'], ['speed', 'скорость']].filter(([key]) => form[key])
+        .map(([key, label]) => `${label} ${form[key] > 0 ? '+' : '−'}${Math.abs(form[key])}`);
+      if (stats.length) parts.push(stats.join(', ').replace(/^./, c => c.toUpperCase()) + '.');
+      if (form.effect) parts.push(`«${form.effect.name}»!`);
+    }
+    if (event.opener) parts.push('Первый удар на арене сильнее.');
+    if (event.fresh) parts.push(`${target} свеж: урон вдвое меньше.`);
     if (event.damage) parts.push(`${target} −${event.damage} HP${event.hits > 1 ? ` за ${event.hits} удара` : ''}${event.executed ? ', добивание' : ''}.`);
     else if (event.command === 'hit' || event.skill && event.blocked) parts.push(`${target} не получает урона.`);
     if (event.blocked) parts.push('Защита смягчила удар.');
@@ -81,6 +108,12 @@ function story(event, name, state) {
     if (event.recoil) parts.push(`Отдача −${event.recoil}.`);
     if (event.thorns) parts.push(`${who} укололся: −${event.thorns}.`);
     if (event.saved) parts.push(`${target} выстоял на 1 HP!`);
+    if (event.parting) parts.push(`Прощальный укус: ${who} −${event.parting}.`);
+    if (event.moxie) parts.push(`Нокаут раззадорил: атака ${who} растёт.`);
+  }
+  if (event.snack) {
+    const eaters = snackers.length ? snackers : [1 - event.side];
+    for (const side of eaters) parts.push(`${name(currentFighter(state, side).id, side)} перекусывает${eaters.length === 1 ? ': +' + event.snack + ' HP' : ''}.`);
   }
   if (event.regen) parts.push(`${who} восстанавливается: +${event.regen}.`);
   if (event.burned) parts.push(`${who} обжигается: −${event.burned}.`);
@@ -93,6 +126,7 @@ function story(event, name, state) {
     if (skip.poisoned) parts.push(`Изжога −${skip.poisoned}.`);
     if (skip.leeched) parts.push(`Вытянуто ${skip.leeched}.`);
     if (skip.recovered) parts.push(skip.kind === 'freeze' ? `${name(skip.id)} оттаял.` : `${name(skip.id)} просыпается.`);
+    if (skip.snack) parts.push(`Перекус +${skip.snack}.`);
   }
   for (const id of event.ko) parts.push(`${name(id)} выбит!`);
   event.entered.forEach((id, side) => { if (id && !event.command.startsWith('switch:')) parts.push(`Выходит ${name(id)}.`); });
@@ -103,6 +137,7 @@ function story(event, name, state) {
 
 function chips(fighter) {
   const out = [];
+  if (fighter.transformed) out.push(['form', icon('transform', 12) + 'Форма']);
   if (fighter.guarding) out.push(['guard', icon('lock', 12) + 'Защита']);
   if (fighter.shield) out.push(['shield', 'Щит ' + fighter.shield]);
   if (fighter.burn) out.push(['burn', 'Горит −' + fighter.burn.dmg + ' × ' + fighter.burn.turns]);
@@ -326,7 +361,7 @@ export function mountDuels(container, options) {
       const label = number < 0 ? `Добавить в команду: ${card.name}` : `Убрать из команды: ${card.name}, выходит ${number + 1}-м`;
       return `<div class="duel-pick ${number >= 0 ? 'is-selected' : ''}">
         <button type="button" class="duel-pick-info" data-duel-action="card:${esc(id)}" aria-label="Карточка бойца: ${esc(card.name)}">
-        ${artwork(card)}<span class="duel-pick-title"><strong>${esc(card.name)}</strong>
+        ${artwork(card, Boolean(card.transform))}<span class="duel-pick-title"><strong>${esc(card.name)}</strong>
         <small><span>${icon('heart', 11)}&nbsp;${stats.hp}</span> · <span>${icon('battle', 11)}&nbsp;${stats.attack}</span> · <span>${icon('speed', 11)}&nbsp;${stats.speed}</span> · <span>${esc(stats.skill.name)}</span></small></span></button>
         <button type="button" class="duel-slot" data-duel-action="pick:${esc(id)}" aria-pressed="${number >= 0}" aria-label="${esc(label)}"
           ${locked || (number < 0 && selected.length === 3) ? 'disabled' : ''}>${number < 0 ? '+' : number + 1}</button></div>`;
@@ -338,7 +373,7 @@ export function mountDuels(container, options) {
   function trainerBox() {
     const offer = trainerFor();
     if (!offer) return '';
-    const faces = offer.team.map(card => `<span class="duel-trainer-fighter" style="--team-color:${color(card.brand)}" title="${esc(card.name)}">${artwork(card)}
+    const faces = offer.team.map(card => `<span class="duel-trainer-fighter" style="--team-color:${color(card.brand)}" title="${esc(card.name)}">${artwork(card, Boolean(card.transform))}
       <small><span class="rarity ${esc(card.rarity)}">${esc((rarityNames[card.rarity] ?? '').slice(0, 1))}</span> ур. ${card.level}</small></span>`).join('');
     const coach = offer.trainer;
     const level = data.trainerLevel?.() ?? 'normal';
@@ -367,7 +402,7 @@ export function mountDuels(container, options) {
     if (!enemy) return '';
     const owns = owned.includes(enemy.id);
     return `<section class="duel-wild" style="--team-color:${color(enemy.brand)}" aria-labelledby="duel-wild-title">
-      ${artwork(enemy)}
+      ${artwork(enemy, Boolean(enemy.transform))}
       <div class="duel-wild-copy">
         <span class="duel-label">Дикий боец · ${esc(brands[enemy.brand]?.name ?? '')}</span>
         <h3 id="duel-wild-title">${esc(enemy.name)}</h3>
@@ -376,6 +411,7 @@ export function mountDuels(container, options) {
         <p class="duel-wild-skill"><strong>«${esc(enemy.skill.name)}»</strong> ${esc(describeSkill(enemy.skill, enemy.attack))}</p>
         ${enemy.ultimate ? `<p class="duel-wild-skill"><strong>Суперприём «${esc(enemy.ultimate.name)}»</strong> ${esc(describeSkill(enemy.ultimate, enemy.attack))}</p>` : ''}
         ${enemy.trait ? `<p class="duel-wild-skill"><strong>Талант «${esc(enemy.trait.name)}»</strong> ${esc(describeTrait(enemy.trait))}</p>` : ''}
+        ${enemy.transform ? `<p class="duel-wild-skill is-transform"><strong>Трансформация «${esc(enemy.transform.name)}»</strong> ${esc(describeTransform(enemy.transform, enemy.attack))}</p>` : ''}
       </div>
       <p class="duel-wild-deal">${icon('trophy', 16)}<span>${owns ? 'Победа прокачает его копию в коллекции и даст опыт команде.' : 'Победи — и он перейдёт в твою коллекцию.'}</span></p>
       ${button('wild', 'Сразиться', { primary: true, icon: 'battle', disabled: !selected.length })}
@@ -437,7 +473,7 @@ export function mountDuels(container, options) {
     const slots = [0, 1, 2].map(i => {
       const card = catalog.get(selected[i]);
       return card
-        ? `<span class="duel-ready-slot is-filled" style="--team-color:${color(card.brand)}" title="${esc(card.name)}">${artwork(card)}<b>${i + 1}</b></span>`
+        ? `<span class="duel-ready-slot is-filled" style="--team-color:${color(card.brand)}" title="${esc(card.name)}">${artwork(card, Boolean(card.transform))}<b>${i + 1}</b></span>`
         : `<span class="duel-ready-slot"><b>${i + 1}</b></span>`;
     }).join('');
     const hint = room.team
@@ -470,16 +506,21 @@ export function mountDuels(container, options) {
     const fighter = state.teams[side][shownIndex(state, side)];
     const card = catalog.get(fighter.id);
     const who = mine ? 'me' : 'foe';
+    // A transformed fighter shows its form: the form's own picture when it has one, else a violet glow.
+    const form = fighter.transformed ? fighter.transform : null;
+    const look = form?.look && catalog.get(form.look)?.image ? { ...card, image: catalog.get(form.look).image } : card;
+    const title = form ? form.name : card?.name;
     const roster = state.teams[side].map((member, index) =>
       `<i class="${member.hp <= 0 ? 'out' : index === shownIndex(state, side) ? 'here' : ''}"></i>`).join('');
     const pct = Math.round(1000 * fighter.hp / fighter.maxHp) / 10;
-    return `<section class="duel-fighter is-${who}${fighter.hp <= 0 ? ' is-ko' : ''}${pct <= 30 && fighter.hp > 0 ? ' is-low' : ''}" data-side="${who}"
-        data-fighter="${esc(fighter.id)}" style="--team-color:${color(card?.brand)}" aria-label="${mine ? 'Твой боец' : 'Боец соперника'}: ${esc(card?.name)}">
-      <div class="duel-portrait">${artwork(card)}</div>
+    const formClass = form ? ' is-transformed' + (look?.image === card?.image ? ' is-glowing' : '') : '';
+    return `<section class="duel-fighter is-${who}${fighter.hp <= 0 ? ' is-ko' : ''}${pct <= 30 && fighter.hp > 0 ? ' is-low' : ''}${formClass}" data-side="${who}"
+        data-fighter="${esc(fighter.id)}" style="--team-color:${color(card?.brand)}" aria-label="${mine ? 'Твой боец' : 'Боец соперника'}: ${esc(title)}">
+      <div class="duel-portrait">${artwork(look, Boolean(fighter.transform && !fighter.transformed && fighter.hp > 0))}</div>
       <div class="duel-info">
         <div class="duel-name-row"><span class="duel-owner">${mine ? 'Ты' : mode === 'wild' ? 'Дикий' : mode === 'trainer' ? 'Тренер' : 'Соперник'}</span>
           <span class="duel-roster-dots" aria-label="В строю ${state.teams[side].filter(m => m.hp > 0).length} из ${state.teams[side].length}">${roster}</span></div>
-        <h3>${esc(card?.name)}</h3>
+        <h3>${esc(title)}</h3>
         <div class="duel-hp"><span style="width:${pct}%"></span></div>
         <div class="duel-vitals"><span class="duel-hp-text">${fighter.hp} / ${fighter.maxHp}</span>
           ${pips(fighter.energy, MAX_ENERGY, 'Энергия ' + fighter.energy + ' из ' + MAX_ENERGY)}</div>
@@ -502,16 +543,27 @@ export function mountDuels(container, options) {
       <span class="duel-glyph">${icon('spark', 20)}</span>
       <span><strong>${esc(skill.name)} ${pips(Math.min(fighter.energy, skill.cost), skill.cost, 'Стоит ' + skill.cost + ' энергии')}</strong>
       <small>${esc(describeSkill(skill, fighter.attack))}${ready ? '' : ' Нужно энергии: ' + skill.cost + '.'}</small></span></button>`;
-    const swaps = state.teams[side].map((reserve, index) => index !== state.active[side] && reserve.hp > 0 ?
-      `<button type="button" class="duel-swap" data-duel-action="move:switch:${index}" ${enabled ? '' : 'disabled'}>
-        ${artwork(catalog.get(reserve.id))}<span>Выпустить ${esc(name(reserve.id))}<small>${reserve.hp} / ${reserve.maxHp} HP</small></span></button>` : '').join('');
+    const swaps = state.teams[side].map((reserve, index) => {
+      if (index === state.active[side] || reserve.hp <= 0) return '';
+      const look = reserve.transformed && catalog.get(reserve.transform.look)?.image ? catalog.get(reserve.transform.look) : catalog.get(reserve.id);
+      return `<button type="button" class="duel-swap" data-duel-action="move:switch:${index}" ${enabled ? '' : 'disabled'}>
+        ${artwork({ ...catalog.get(reserve.id), image: look?.image }, Boolean(reserve.transform && !reserve.transformed))}<span>Выпустить ${esc(reserve.transformed ? reserve.transform.name : name(reserve.id))}<small>${reserve.hp} / ${reserve.maxHp} HP</small></span></button>`;
+    }).join('');
+    // The transformation: once per battle, its own violet button with the price and what it does.
+    const tf = fighter.transform && !fighter.transformed ? fighter.transform : null;
+    const tfReady = tf && fighter.energy >= tf.cost;
+    const transform = tf ? `<button type="button" class="duel-move duel-transform${tfReady ? ' is-ready' : ''}" data-duel-action="move:transform" ${enabled && allowed.has('transform') ? '' : 'disabled'}>
+      <span class="duel-glyph">${icon('transform', 22)}</span>
+      <span><strong>Трансформация ${pips(Math.min(fighter.energy, tf.cost), tf.cost, 'Стоит ' + tf.cost + ' энергии')}</strong>
+      <em>→ ${esc(tf.name)}</em>
+      <small>${esc(describeTransform(tf, fighter.attack))}${tfReady ? '' : ' Нужно энергии: ' + tf.cost + '.'}</small></span></button>` : '';
     const ult = fighter.ultimate;
     const ultReady = ult && fighter.energy >= ult.cost;
     const ultimate = ult ? `<button type="button" class="duel-move duel-skill duel-ultimate${ultReady ? ' is-ready' : ''}" data-duel-action="move:ultimate" ${enabled && allowed.has('ultimate') ? '' : 'disabled'}>
       <span class="duel-glyph">${icon('trophy', 20)}</span>
       <span><strong>${esc(ult.name)} ${pips(Math.min(fighter.energy, ult.cost), ult.cost, 'Стоит ' + ult.cost + ' энергии')}</strong>
       <small>${esc(describeSkill(ult, fighter.attack))}</small></span></button>` : '';
-    return `<div class="duel-controls${ult ? ' has-ultimate' : ''}">${special}${ultimate}${hit}${guard}</div>${swaps ? '<div class="duel-subs">' + swaps + '</div>' : ''}`;
+    return `<div class="duel-controls${ult ? ' has-ultimate' : ''}">${special}${ultimate}${transform}${hit}${guard}</div>${swaps ? '<div class="duel-subs">' + swaps + '</div>' : ''}`;
   }
 
   function resultText(state, side) {
@@ -582,7 +634,7 @@ export function mountDuels(container, options) {
         <h2 class="${final ? 'duel-outcome is-' + (state.winner === side ? 'win' : state.winner === 'draw' ? 'draw' : 'loss') : ''}">${esc(title)}</h2></div>
       ${room && currentPath ? '<small class="duel-note" data-connection="' + currentPath + '">' + (currentPath === 'direct' ? 'Напрямую' : 'Через ретранслятор') + '</small>' : ''}</header>
       <div class="duel-stage${turnClass}">${fighterPanel(state, 1 - side, false)}
-        <p class="duel-log" role="status" aria-live="polite">${esc(story(state.last, name, state))}</p>
+        <p class="duel-log" role="status" aria-live="polite">${esc(story(state.last, name, state, snackers(state)))}</p>
         ${fighterPanel(state, side, true)}</div>
       ${!connected ? '<p class="duel-alert">Ходы на паузе. Ждём повторного подключения до ' + (RECONNECT_MS / 1000) + ' секунд.</p>' : ''}
       ${final ? `<div class="duel-result">${resultText(state, side)}
@@ -595,6 +647,24 @@ export function mountDuels(container, options) {
   }
 
   const busy = () => fxUntil > performance.now();
+
+  // Whose snack the latest event reports: the engine gives only the sum, so compare with the state
+  // before the move (the fighters that had not eaten and now have). Without it: a blow feeds the
+  // target, burning and heartburn after the own move feed the mover.
+  let previousState = null, snackMemo = null;
+  function snackers(state) {
+    const event = state.last;
+    if (!event?.snack) return [];
+    // The engine names the sides that ate in the move itself; snacks on skipped turns come apart.
+    if (event.snackSides) return [...new Set(event.snackSides)];
+    if (snackMemo?.state === state) return snackMemo.sides;
+    const before = previousState?.moves === state.moves - 1 ? previousState : null;
+    const fromSkips = new Set(event.skips.filter(skip => skip.snack).map(skip => skip.side));
+    let sides = before ? [0, 1].filter(s => !fromSkips.has(s) && state.teams[s].some((f, i) => f.snacked && !before.teams[s][i]?.snacked)) : [];
+    if (!sides.length) sides = [(event.burned || event.poisoned || event.leeched) && !event.damage ? event.side : 1 - event.side];
+    snackMemo = { state, sides };
+    return sides;
+  }
   const panel = who => page.querySelector(`.duel-fighter[data-side="${who}"]`);
 
   // The effects layer is created on the first fight and lives until the arena is closed.
@@ -617,7 +687,10 @@ export function mountDuels(container, options) {
     const actor = event.side === side ? 'me' : 'foe';
     const card = catalog.get(event.fighter);
     const fighter = state.teams[event.side].find(f => f.id === event.fighter);
-    const plan = movePlan(event, { brand: card?.brand, energyFor: event.command === 'ultimate' ? fighter?.ultimate : fighter?.skill });
+    const energyFor = event.command === 'ultimate' ? fighter?.ultimate : event.command === 'transform' ? fighter?.transform?.effect : fighter?.skill;
+    const eaters = snackers(state);
+    const snack = eaters.length === 1 ? (eaters[0] === event.side ? 'src' : 'tgt') : undefined;
+    const plan = movePlan(event, { brand: card?.brand, energyFor, snack });
     plan.alias = { src: actor, tgt: actor === 'me' ? 'foe' : 'me' };
     fxUntil = performance.now() + plan.end;
     clearTimeout(fxTimer);
@@ -637,6 +710,7 @@ export function mountDuels(container, options) {
     else {
       if (event.command === 'ultimate') sfx('ultimate');
       else if (event.command === 'special') sfx('whoosh', Math.max(0, hit - 220));
+      else if (event.command === 'transform') sfx('transform');
       if (event.effects.includes('shatter')) sfx('shatter', Math.max(0, hit - 120));
       const strength = Math.min(1, (event.damage ?? 0) / 14);
       if (event.damage) {
@@ -647,7 +721,11 @@ export function mountDuels(container, options) {
       // At most two effect sounds, so a busy move does not turn into noise.
       EFFECT_SOUNDS.filter(([effect]) => event.effects.includes(effect)).slice(0, 2).forEach(([, name], i) => sfx(name, after + i * 160));
       if (event.heal || event.saved) sfx('heal', after + 120);
+      if (event.parting) sfx('strike', hit + 470);
+      if (event.moxie) sfx('buff', hit + 560);
     }
+    if (event.refresh) sfx('heal', 200);
+    if (event.snack) sfx('snack', after + 380);
     if (event.burned || event.poisoned || event.leeched) sfx('tick', after + 340);
   }
 
@@ -693,7 +771,20 @@ export function mountDuels(container, options) {
     }
     else if (event.command === 'guard') { mark(actor, 'act-guard'); pop(actor, 'Защита', 'info', 120); }
     else {
-      mark(actor, actor === 'me' ? 'act-lunge-up' : 'act-lunge-down', plan?.lungeAt ?? 0);
+      if (event.command === 'transform') {
+        // The old picture bursts in the flash and the new form pops out of it.
+        const host = panel(actor)?.querySelector('.duel-portrait');
+        if (motion && host) {
+          const old = document.createElement('span');
+          old.className = 'duel-morph-old';
+          old.setAttribute('aria-hidden', 'true');
+          old.innerHTML = artwork(catalog.get(event.fighter));
+          host.append(old);
+          later(() => old.remove(), TRANSFORM_FLASH + 120);
+        }
+        mark(actor, 'act-transform');
+        pop(actor, 'Трансформация!', 'form', 0);
+      } else mark(actor, actor === 'me' ? 'act-lunge-up' : 'act-lunge-down', plan?.lungeAt ?? 0);
       if (event.damage || event.blocked || event.absorbed) {
         mark(other, 'act-hit', hit);
         for (const t of strikes.slice(1)) later(() => mark(other, 'act-hit'), t);
@@ -722,6 +813,23 @@ export function mountDuels(container, options) {
       if (event.effects.includes('immune')) pop(other, 'Иммунитет', 'info', after);
       if (event.thorns) pop(actor, '−' + event.thorns, 'damage', after + 200);
       if (event.saved) pop(other, 'Выстоял!', 'heal', after);
+      // The new talents.
+      if (event.opener) {
+        const bonus = currentFighter(state, event.side).trait?.opener;
+        pop(actor, 'Первый удар' + (bonus ? ' +' + bonus : '!'), 'info', Math.max(0, hit - 260), true);
+      }
+      if (event.fresh) pop(other, 'Свежий: урон ½', 'info', landed + 140, true);
+      if (event.parting) { pop(actor, '−' + event.parting, 'damage', hit + 470); pop(actor, 'Прощальный укус', 'info', hit + 520, true); }
+      if (event.moxie) pop(actor, 'Атака ↑', 'heal', hit + 600);
+    }
+    if (event.refresh) { pop(actor, '+' + event.refresh, 'heal', 200); pop(actor, 'Передышка', 'info', 260, true); }
+    if (event.snack) {
+      const eaters = snackers(state);
+      for (const s of eaters) {
+        const who = s === side ? 'me' : 'foe', at = who === actor ? after + 420 : hit + 420;
+        if (eaters.length === 1) pop(who, '+' + event.snack, 'heal', at);
+        pop(who, 'Перекус', 'info', at + 60, true);
+      }
     }
     // Losses after the mover's own turn: burning, heartburn, draining (the other side drinks it).
     if (event.burned) pop(actor, '−' + event.burned, 'burn', after + 340);
@@ -739,13 +847,18 @@ export function mountDuels(container, options) {
       if (skip.leeched) pop(who, '−' + skip.leeched, 'leech', shown.start + 460, true);
       if (skip.leechHeal) pop(drinker, '+' + skip.leechHeal, 'heal', shown.start + 860);
       if (shown.recovered) pop(who, shown.kind === 'freeze' ? 'Оттаял' : 'Проснулся', shown.kind === 'freeze' ? 'freeze' : 'heal', shown.end, true);
+      if (skip.snack) { pop(who, '+' + skip.snack, 'heal', shown.start + 560); sfx('snack', shown.start + 520); }
     });
-    if (event.skill && motion) {
+    const named = event.command === 'transform' ? event.transformed : event.skill;
+    if (named && motion) {
+      // A transformation names the new form at the flash, when the picture changes.
+      const delay = event.command === 'transform' ? TRANSFORM_FLASH : 0;
       const callout = document.createElement('div');
-      callout.className = 'duel-callout is-' + actor + (event.command === 'ultimate' ? ' is-ultimate' : '');
-      callout.textContent = event.skill;
+      callout.className = 'duel-callout is-' + actor + (event.command === 'ultimate' ? ' is-ultimate' : event.command === 'transform' ? ' is-transform' : '');
+      callout.textContent = named;
+      callout.style.animationDelay = delay + 'ms';
       page.querySelector('.duel-stage')?.append(callout);
-      setTimeout(() => callout.remove(), 1200);
+      setTimeout(() => callout.remove(), 1200 + delay);
     }
   }
 
@@ -778,6 +891,7 @@ export function mountDuels(container, options) {
     const key = room?.matchId ?? localMatchId;
     const side = room?.side ?? 0;
     const fresh = Boolean(state) && (!lastDrawn || lastDrawn.key !== key || lastDrawn.moves !== state.moves);
+    if (fresh) previousState = lastDrawn?.key === key ? lastDrawn.state : null;
     const plan = state && fresh ? planFor(state, side) : null;
     if (fresh && lastDrawn?.key === key && state.moves === lastDrawn.moves + 1) {
       // A knocked-out fighter stays on screen for a moment before the next one comes in.
@@ -797,7 +911,7 @@ export function mountDuels(container, options) {
         }, reduced() ? 200 : Math.max(900, (plan?.end ?? 0) + 250));
       }
     }
-    if (state) lastDrawn = { key, moves: state.moves, active: [...state.active] };
+    if (state) lastDrawn = { key, moves: state.moves, active: [...state.active], state };
     const previous = document.activeElement;
     const action = page.contains(previous) ? previous?.dataset?.duelAction : null;
     const detailsOpen = page.querySelector('details')?.open;

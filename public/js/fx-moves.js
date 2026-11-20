@@ -1245,6 +1245,7 @@ function skipFx(skip) {
   if (skip.burned) steps.push({ type: 'rise', t: tick, at, shape: 'flame', colors: FIRE, dur: 420, rate: 26, size: [5, 9], size2: 2 });
   if (skip.poisoned) steps.push(...heartburnFx(tick, at, { small: true }));
   if (skip.leeched) steps.push(...leechFx(tick + 60, at, other, { small: true }));
+  if (skip.snack) steps.push({ type: 'rise', t: tick + 260, at, shape: 'plus', colors: HEAL, dur: 320, rate: 16, size: [4, 7] });
   return steps;
 }
 
@@ -1695,16 +1696,92 @@ function ultimateFx(id, skill, brand) {
   return { ...recipe, steps: [...ultIntro(Math.min(end, at + 800), recipe.dim), ...recipe.steps] };
 }
 
+// ------------------------------------------------------------------------------ transformation
+// The change of form has one look for every fighter, in a bright violet nothing else in the game
+// uses: sparks spiral in, a column of light, a flash (the moment the picture changes, see
+// TRANSFORM_FLASH in duels.js), stars burst out. Then the form's own effect plays like a free skill.
+export const TRANSFORM_FLASH = 440;
+const TRANSFORM_AT = 720;
+const VIOLET = ['#f3e8ff', '#d4b0ff', '#b26bff', '#8a3dff'];
+// The effects that act on the other fighter, so a non-damaging one still sends something over.
+const AT_FOE = ['sap', 'weaken', 'freeze', 'sleep', 'toxic', 'leech', 'purge', 'shatter'];
+
+function transformFx(effect) {
+  const steps = [
+    { type: 'dim', t: 0, dur: 1000, color: '#1c0638', alpha: 0.42 },
+    { type: 'charge', t: 0, at: 'src', colors: VIOLET, dur: TRANSFORM_FLASH, count: 26, shape: 'twinkle' },
+    { type: 'orbit', t: 0, at: 'src', shape: ['twinkle', 'star'], colors: VIOLET, count: 8, from: 1.8, to: 0.35, turns: 1.3, size: 6, dur: TRANSFORM_FLASH + 60 },
+    { type: 'ring', t: 40, at: 'src', shape: 'hex', color: '#b26bff', from: 130, to: 24, width: 5, dur: TRANSFORM_FLASH - 40 },
+    { type: 'pillar', t: TRANSFORM_FLASH - 120, at: 'src', colors: ['#f6edff', '#9b4dff'], height: 3.4, width: 0.6, dur: 640 },
+    { type: 'flash', t: TRANSFORM_FLASH, at: 'src', color: '#e7d2ff', alpha: 0.95, size: 2.8, dur: 380 },
+    { type: 'flash', t: TRANSFORM_FLASH, screen: true, color: '#a35cff', alpha: 0.16, dur: 320 },
+    { type: 'ring', t: TRANSFORM_FLASH, at: 'src', color: '#c08cff', from: 20, to: 160, width: 7, dur: 520 },
+    { type: 'ring', t: TRANSFORM_FLASH + 90, at: 'src', color: '#ffffff', from: 20, to: 110, width: 4, dur: 420 },
+    { type: 'burst', t: TRANSFORM_FLASH + 10, at: 'src', shape: ['star', 'twinkle'], colors: [...VIOLET, '#ffffff'], count: 24, speed: [160, 430], life: [500, 820], size: [4, 8], drag: 2 },
+    { type: 'shake', t: TRANSFORM_FLASH + 10, mag: 4, dur: 240 },
+  ];
+  if (!effect) return { steps, at: TRANSFORM_AT };
+  const hits = Math.max(1, effect.hits ?? 1);
+  const blast = (o) => toss('orb', { t: TRANSFORM_AT - 60, size: 10, halo: '#a35cff', colors: ['#ffffff'], travel: 380, impact: VIOLET, sparks: 14, spin: 0,
+    trail: { shape: 'twinkle', colors: VIOLET, size: [3, 6], rate: 55 }, ...o });
+  if (Number.isFinite(effect.power)) {
+    steps.push(blast(hits > 1 ? { count: hits, gap: 160, strike: true, alternate: true, arc: 0.2 } : {}));
+    return { steps, at: TRANSFORM_AT };
+  }
+  // No blow: a soft orb carries a status over, or the form's gift glows on the fighter itself.
+  if (AT_FOE.some((k) => effect[k])) {
+    steps.push(blast({ size: 8, onHit: [{ type: 'ring', color: '#c08cff', from: 16, to: 90, width: 5, dur: 380 }, { type: 'burst', shape: 'twinkle', colors: VIOLET, count: 10, speed: [80, 220], life: [300, 520], size: [3, 6] }] }));
+    return { steps, at: TRANSFORM_AT - 60 + 380 };
+  }
+  steps.push({ type: 'ring', t: TRANSFORM_AT, at: 'src', color: '#d4b0ff', from: 90, to: 30, width: 4, dur: 360 });
+  return { steps, at: TRANSFORM_AT + 80 };
+}
+
+// The new talents, each a small touch on top of the move.
+function passiveFx(event, t0, { snack } = {}) {
+  const steps = [];
+  // Opener: the first blow on the field comes with a burst of orange speed lines on the fighter.
+  if (event.opener) steps.push(
+    { type: 'charge', t: 0, at: 'src', colors: ['#ffb347', '#fff1a1'], dur: 260, count: 10 },
+    { type: 'burst', t: t0, at: 'tgt', shape: 'star', colors: GOLD, count: 8, speed: [180, 360], life: [300, 480], size: [4, 7] },
+  );
+  // Fresh: a fighter at full health shrugs off half of it behind a mint film.
+  if (event.fresh) steps.push(
+    { type: 'bubble', t: t0 - 40, at: 'tgt', color: '#9ff2d0', size: 1.2, dur: 420 },
+    { type: 'burst', t: t0, at: 'tgt', shape: 'leaf', colors: HERB, count: 6, speed: [90, 200], life: [400, 620], size: [4, 6], gravity: 200 },
+  );
+  // Parting gift: the fighter knocked out bites the one who did it.
+  if (event.parting) steps.push({ type: 'chomp', t: t0 + 320, at: 'src', size: 0.85, dur: 380, close: 0.42,
+    onHit: [{ type: 'burst', shape: 'spark', colors: ['#ff6b6b', '#ffd166'], count: 8, speed: [120, 260], life: [240, 400], size: [2, 4] }, { type: 'shake', mag: 3, dur: 160 }] });
+  // Moxie: after the knockout the winner grows bolder.
+  if (event.moxie) steps.push(
+    { type: 'rise', t: t0 + 520, at: 'src', shape: 'arrowUp', colors: ['#ff7a1a', '#ffd76a'], dur: 380, rate: 14, size: [7, 10] },
+    { type: 'stamp', t: t0 + 520, at: 'src', shape: 'anger', colors: ['#ff7a1a'], size: 0.26, dx: 0.75, dy: -0.85, dur: 620 },
+  );
+  // Refresh: the fighter leaving takes a breath on its way out.
+  if (event.refresh) steps.push({ type: 'rise', t: 0, at: 'src', shape: 'plus', colors: HEAL, dur: 360, rate: 16, size: [4, 7] });
+  // Snack: a bite to eat at half health, crumbs and a green plus.
+  if (event.snack && snack) steps.push(
+    { type: 'burst', t: t0 + 380, at: snack, shape: 'crumb', colors: CRUMB, count: 9, speed: [80, 200], life: [420, 640], size: [3, 5], gravity: 420 },
+    { type: 'rise', t: t0 + 420, at: snack, shape: 'plus', colors: HEAL, dur: 380, rate: 16, size: [5, 8] },
+  );
+  return steps;
+}
+
 // Everything the arena needs for one engine event: the steps and the moments that matter.
-export function movePlan(event, { brand, energyFor } = {}) {
+// `snack` says whose snack the event reports ('src' or 'tgt'); the engine does not say it.
+export function movePlan(event, { brand, energyFor, snack } = {}) {
   const id = event.fighter;
   let recipe;
   if (event.command.startsWith('switch:')) recipe = { steps: enterFx(brand) };
   else if (event.command === 'guard') recipe = { steps: guardFx(brand) };
+  else if (event.command === 'transform') recipe = transformFx(energyFor);
   else if (event.command === 'special') recipe = (SKILL[id] ?? (() => genericSkill(energyFor, brand)))();
   else if (event.command === 'ultimate') recipe = ultimateFx(id, energyFor, brand);
   else recipe = { steps: (BASIC[id] ?? (() => throwBasic('orb', [BRAND[brand]?.glow ?? '#fff', '#ffffff'], { size: 8, halo: BRAND[brand]?.main ?? '#fff', spin: 0 })))() };
   const timing = fxTiming(recipe.steps);
+  // A transformation without a blow still has its moment: when the form's effect comes on.
+  if (recipe.at !== undefined && !recipe.steps.some((s) => s.hit)) timing.impact = recipe.at;
   const steps = [...recipe.steps];
   const switched = event.command.startsWith('switch:');
   const blow = !switched && event.command !== 'guard';
@@ -1727,6 +1804,7 @@ export function movePlan(event, { brand, energyFor } = {}) {
     return { ...skip, at, start: skipStart + i * (SKIP + 120), fresh: i === 0 && at === 'tgt' && event.effects.includes(skip.kind) };
   });
   if (blow) steps.push(...layers(event, energyFor, new Set(recipe.covers ?? []), timing.impact, brand, skips));
+  steps.push(...passiveFx(event, timing.impact, { snack }));
   if (switched && event.intimidated?.includes(event.target)) steps.push(...intimidateFx(260));
   if (event.regen && !switched) steps.push(...regenFx(blow ? timing.impact + 480 : 320));
   if (event.burned) steps.push({ type: 'rise', t: timing.impact + 450, at: 'src', shape: 'flame', colors: FIRE, dur: 420, rate: 26, size: [5, 9], size2: 2 });

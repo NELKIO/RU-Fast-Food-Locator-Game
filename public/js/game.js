@@ -327,6 +327,7 @@ export function cardFor(item, level = 1) {
     attack: fighter.attack + Math.floor((rank - 1) / 2),
     speed: fighter.speed, role: ROLES[fighter.role], basic: fighter.basic, skill: {...fighter.skill},
     ...(fighter.ultimate && {ultimate: {...fighter.ultimate}}), ...(fighter.trait && {trait: {...fighter.trait}}),
+    ...(fighter.transform && {transform: structuredClone(fighter.transform)}),
   };
 }
 
@@ -517,7 +518,7 @@ export function wildEncounter(profile, menu, {now = Date.now(), rng = Math.rando
 // WILD_RARITY_BONUS. Its moves scale with it, up as well as down. Tuned with simulations where the
 // player is the strong computer opponent (duel-ai.js): a good player wins about two fights in three
 // whatever the team.
-export const WILD_TUNING = Object.freeze({strength: 0.85, rarityBonus: 0.1, skillUp: 0});
+export const WILD_TUNING = Object.freeze({strength: 0.8, rarityBonus: 0.1, skillUp: 0});
 // Moves follow the size: fully when the wild fighter is smaller than usual, by `skillUp` of the
 // growth when it is bigger.
 function fitSkill(skill, size, skillUp) {

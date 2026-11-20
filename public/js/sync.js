@@ -166,6 +166,40 @@ export async function publishEvent(event, { relays = SYNC_RELAYS, Socket = globa
   return replies.filter(reply => reply.ok).length;
 }
 
+// Any app event signed with a key of its own (the game statistics use a per-browser key).
+export async function signEvent(secret, event) {
+  const curve = await schnorr();
+  const full = { ...event, pubkey: hex(curve.getPublicKey(secret)) };
+  const digest = await sha256(canonical(full));
+  return { ...full, id: hex(digest), sig: hex(await curve.signAsync(digest, secret)) };
+}
+
+export async function verifyEvent(event) {
+  try {
+    if (!/^[a-f\d]{64}$/.test(event?.id) || !/^[a-f\d]{128}$/.test(event.sig) || !/^[a-f\d]{64}$/.test(event.pubkey)) return false;
+    const digest = await sha256(canonical(event));
+    if (event.id !== hex(digest)) return false;
+    return await (await schnorr()).verifyAsync(fromHex(event.sig), digest, fromHex(event.pubkey));
+  } catch {
+    return false;
+  }
+}
+
+// Events matching a filter from every relay that answers, without duplicates.
+export async function queryRelays(filter, { relays = SYNC_RELAYS, Socket = globalThis.WebSocket, timeoutMs = 7000 } = {}) {
+  const sub = 'fq' + Math.random().toString(36).slice(2, 10);
+  const replies = await Promise.all(relays.map(url => talk(Socket, url, ['REQ', sub, filter], (reply, got) => {
+    if (reply[0] === 'EVENT' && reply[1] === sub) got.push(reply[2]);
+    if ((reply[0] === 'EOSE' || reply[0] === 'CLOSED') && reply[1] === sub) return reply[0] === 'EOSE';
+    return undefined;
+  }, timeoutMs)));
+  // Identical copies from several relays collapse; anything that differs is kept for the caller to
+  // verify (a relay could send a doctored copy under a genuine id).
+  const seen = new Map();
+  for (const reply of replies) for (const event of reply.got) if (event && typeof event.id === 'string') seen.set(JSON.stringify(event), event);
+  return { events: [...seen.values()], reachable: replies.filter(reply => reply.ok).length };
+}
+
 // The controller the app uses. It pulls, merges into the local profile in one store update,
 // and publishes only when the relays do not already hold the merged document.
 export function createSync({ store, relays = SYNC_RELAYS, Socket = globalThis.WebSocket, clock = () => Date.now(),
