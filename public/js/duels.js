@@ -16,7 +16,7 @@ const THINK_MS = { wild: 90, easy: 60, normal: 350, hard: 900, lord: 1200 };
 // Tuned on battles against a casual and a thinking player (docs/balance/tools/trainer-noise.mjs) so
 // that each level is a little easier than the first trainers: Всерьёз a fair fight, Без пощады hard,
 // Лука the strongest. The wild fighter keeps the balance it had with the earlier computer player.
-const SLACK = { wild: 0.2, easy: 0, normal: 0.07, hard: 0.03, lord: 0 };
+const SLACK = { wild: 0.2, easy: 0, normal: 0.1, hard: 0.03, lord: 0 };
 const LEVELS = [['easy', 'Разминка'], ['normal', 'Всерьёз'], ['hard', 'Без пощады']];
 const plural = new Intl.PluralRules('ru');
 const MOVES = { one: 'ход', few: 'хода', many: 'ходов', other: 'хода' };
