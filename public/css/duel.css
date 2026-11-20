@@ -88,6 +88,28 @@
 .duel-wild.is-empty p { color: var(--duel-muted); font-size: .88rem; margin-top: 3px; }
 .duel-wild.is-empty h3 { font-size: 1.05rem; }
 .duel-wild-icon { color: var(--duel-muted); display: grid; place-items: center; }
+/* Trainer: a 3-on-3 battle against the strong computer opponent. */
+.duel-trainer {
+  display: grid;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--team-color) 40%, var(--duel-line));
+  border-radius: 16px;
+  padding: clamp(14px, 3vw, 22px);
+  background:
+    radial-gradient(circle at 90% 20%, color-mix(in srgb, var(--team-color) 14%, transparent), transparent 55%),
+    var(--duel-panel);
+}
+.duel-trainer-head { display: grid; gap: 4px; }
+.duel-trainer-head h3 { font-size: 1.2rem; letter-spacing: -.03em; }
+.duel-trainer-head p { color: var(--duel-muted); font-size: .86rem; line-height: 1.4; }
+.duel-trainer-team { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.duel-trainer-fighter {
+  display: grid; justify-items: center; gap: 4px; padding: 8px 4px; border-radius: 12px;
+  border: 1px solid var(--duel-line); background: color-mix(in srgb, var(--team-color) 6%, transparent);
+}
+.duel-trainer-fighter .duel-art { width: 64px; height: 54px; }
+.duel-trainer-fighter small { font: 600 .74rem/1.2 var(--mono, ui-monospace, monospace); color: var(--duel-muted); display: inline-flex; gap: 4px; align-items: center; }
+.duel-trainer-fighter .rarity { font-family: inherit; padding: 0 5px; }
 .duel-friend { display: flex; align-items: center; gap: 12px; padding-block: 12px; }
 .duel-friend > span { color: var(--duel-accent); display: grid; }
 .duel-friend p { flex: 1; display: grid; gap: 2px; min-width: 0; }

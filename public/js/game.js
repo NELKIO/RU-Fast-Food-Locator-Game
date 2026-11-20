@@ -488,19 +488,26 @@ export function wildEncounter(profile, menu, {now = Date.now(), rng = Math.rando
 
 // The wild fighter fights alone against the whole team, so its size is fitted to that team:
 // it keeps its own move set, and its health × attack lands at WILD_STRENGTH of the team's
-// (total health × average attack), which leaves the player a fair edge whatever the rarity.
-const WILD_STRENGTH = 0.95;
-// A scaled-down wild fighter also gets a proportionally weaker signature move.
-function shrinkSkill(skill, scale) {
-  if (scale >= 1) return {...skill};
+// (total health × average attack). Rarer teams bring super moves, last stands and regeneration
+// that health × attack does not see, so each step of the team's average rarity adds
+// WILD_RARITY_BONUS. Its moves scale with it, up as well as down. Tuned with simulations where the
+// player is the strong computer opponent (duel-ai.js): a good player wins about two fights in three
+// whatever the team.
+export const WILD_TUNING = Object.freeze({strength: 0.85, rarityBonus: 0.1, skillUp: 0});
+// Moves follow the size: fully when the wild fighter is smaller than usual, by `skillUp` of the
+// growth when it is bigger.
+function fitSkill(skill, size, skillUp) {
+  const scale = size < 1 ? size : 1 + (size - 1) * skillUp;
+  if (scale === 1) return {...skill};
   const fit = value => Math.max(1, Math.round(value * scale));
   const out = {...skill};
   for (const key of ['power', 'heal', 'shield', 'team', 'execute']) if (Number.isFinite(out[key]) && out[key] > 0) out[key] = fit(out[key]);
   if (out.burn) out.burn = {...out.burn, dmg: fit(out.burn.dmg)};
+  if (out.leech) out.leech = fit(out.leech);
   return out;
 }
 
-export function wildFighter(encounter, menu, team = []) {
+export function wildFighter(encounter, menu, team = [], tuning = WILD_TUNING) {
   const item = menuItems(menu).find(entry => String(entry.id) === encounter?.enemyId);
   if (!item) return null;
   const card = cardFor(item, 1);
@@ -508,10 +515,12 @@ export function wildFighter(encounter, menu, team = []) {
   if (!members.length) return card;
   const health = members.reduce((sum, c) => sum + (c.maxHp ?? c.hp), 0);
   const attack = members.reduce((sum, c) => sum + c.attack, 0) / members.length;
-  const scale = Math.sqrt(WILD_STRENGTH * health * attack / (card.maxHp * card.attack));
+  const rank = members.reduce((sum, c) => sum + Math.max(0, RARITIES.indexOf(c.rarity)), 0) / members.length;
+  const strength = tuning.strength * (1 + tuning.rarityBonus * rank);
+  const scale = Math.sqrt(strength * health * attack / (card.maxHp * card.attack));
   const maxHp = Math.max(8, Math.round(card.maxHp * scale));
-  return {...card, maxHp, hp: maxHp, attack: Math.max(2, Math.round(card.attack * scale)), skill: shrinkSkill(card.skill, scale),
-    ...(card.ultimate && {ultimate: shrinkSkill(card.ultimate, scale)})};
+  return {...card, maxHp, hp: maxHp, attack: Math.max(2, Math.round(card.attack * scale)), skill: fitSkill(card.skill, scale, tuning.skillUp ?? 0),
+    ...(card.ultimate && {ultimate: fitSkill(card.ultimate, scale, tuning.skillUp ?? 0)})};
 }
 
 function battleOutcome(won, draw) {
@@ -557,6 +566,51 @@ export function resolveEncounter(profile, encounterId, won, menu, {teamIds, draw
     ok: true, reason: outcome, profile: saved, encounter, card: won ? ownedCard(enemy, saved.collection[enemy.id]) : null,
     playerXp, partyXp, isNew: reward.isNew, leveledUp: reward.leveledUp || leveledIds.length > 0, leveledIds,
   };
+}
+
+// Trainers: a 3-on-3 battle against the strong computer opponent, any time, no cooldown. A trainer
+// works for one chain and brings fighters of the same rarities and levels as the player's team,
+// from that chain when it has them. Only experience is at stake, and modestly so.
+export const TRAINERS = Object.freeze([
+  {id: 'bk-grill', name: 'Мастер гриля Артём', brand: 'bk'},
+  {id: 'bk-cashier', name: 'Кассир Валя', brand: 'bk'},
+  {id: 'vkusno-manager', name: 'Менеджер смены Олег', brand: 'vkusno'},
+  {id: 'vkusno-mccafe', name: 'Бариста Соня', brand: 'vkusno'},
+  {id: 'rostics-chef', name: 'Шеф Марина', brand: 'rostics'},
+  {id: 'rostics-courier', name: 'Курьер Тимур', brand: 'rostics'},
+  {id: 'dodo-pizzaiolo', name: 'Пиццамейкер Лёша', brand: 'dodo'},
+  {id: 'dodo-baker', name: 'Пекарь Настя', brand: 'dodo'},
+]);
+export const TRAINER_XP = Object.freeze({won: {player: 12, party: 8}, draw: {player: 4, party: 3}, lost: {player: 3, party: 2}});
+
+export function trainerOffer(menu, playerCards, {rng = Math.random, trainer = null} = {}) {
+  const items = menuItems(menu);
+  const members = (Array.isArray(playerCards) ? playerCards : []).filter(Boolean).slice(0, MAX_TEAM_SIZE);
+  if (!items.length || !members.length) return null;
+  const coach = trainer ? TRAINERS.find(t => t.id === trainer) ?? TRAINERS[0] : choose(TRAINERS, rng);
+  const taken = new Set(members.map(c => String(c.id)));
+  const team = members.map(card => {
+    const rarity = card.rarity ?? 'common';
+    const fits = items.filter(item => !taken.has(String(item.id)) && fighterFor(item.id).rarity === rarity);
+    const home = fits.filter(item => item.brand === coach.brand);
+    const item = choose(home.length ? home : fits.length ? fits : items.filter(i => !taken.has(String(i.id))), rng);
+    taken.add(String(item.id));
+    return cardFor(item, Math.max(1, card.level ?? 1));
+  });
+  return {trainer: coach, team};
+}
+
+export function recordTrainer(profile, {won, draw = false, teamIds, matchId} = {}) {
+  const saved = normalizeProfile(profile);
+  const outcome = battleOutcome(won, draw);
+  const id = validId(matchId);
+  if (!outcome || !id) return {ok: false, reason: 'invalid-battle', profile: saved};
+  if (Object.hasOwn(saved.battleIds, id)) return {ok: false, reason: 'already-recorded', profile: saved};
+  saved.battleIds[id] = true;
+  const reward = TRAINER_XP[outcome];
+  const party = uniqueIds(teamIds).filter(card => Object.hasOwn(saved.collection, card)).slice(0, MAX_TEAM_SIZE);
+  const leveledIds = finishBattle(saved, outcome, reward.player, party, reward.party);
+  return {ok: true, reason: outcome, profile: saved, playerXp: reward.player, partyXp: reward.party, leveledUp: leveledIds.length > 0, leveledIds};
 }
 
 export function recordBattle(profile, {xp, won, draw = false, cardId, mode, matchId} = {}) {

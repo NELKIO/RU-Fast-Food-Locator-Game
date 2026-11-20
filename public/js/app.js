@@ -14,6 +14,8 @@ import {
   wildFighter,
   dropChance,
   claimDaily,
+  trainerOffer,
+  recordTrainer,
   dailyStatus,
   featuredFighter,
   DAILY_REWARDS,
@@ -1362,6 +1364,14 @@ function arenaData() {
     team: [...profile.team],
     wild: e && { id: e.id, opponent: (team) => wildFighter(e, menu, team) },
     wildWaitMs: wildWait(),
+    // A trainer for the current team; asking again gives a different one.
+    trainer: (cards, { avoid } = {}) => {
+      for (let i = 0; i < 6; i++) {
+        const offer = trainerOffer(menu, cards);
+        if (offer && offer.trainer.id !== avoid) return offer;
+      }
+      return trainerOffer(menu, cards);
+    },
   };
 }
 function switchTab(next, options = {}) {
@@ -1418,7 +1428,9 @@ function switchTab(next, options = {}) {
                   now: Date.now(),
                 }),
               )
-            : await store.update((p) => recordBattle(p, result));
+            : result.mode === 'trainer'
+              ? await store.update((p) => recordTrainer(p, result))
+              : await store.update((p) => recordBattle(p, result));
         if (saved.ok && saved.leveledUp) showToast('Боец получил новый уровень!');
         return saved;
       },
