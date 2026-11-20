@@ -243,6 +243,32 @@ try {
   assert.equal(await p.locator('[data-act="claim"]').count(), 0);
   assert.deepEqual((await saved(p)).collection, afterBattle.collection);
   log('Wild fight from the reward, deck edits, earned fighters and six-hour location cooldown survive reload');
+  // The trainer's team does not follow the player's own line-up; «Новая команда» rolls a new one.
+  await p.locator('.main-nav [data-nav="arena"]').click();
+  await p.locator('.duel-trainer').waitFor();
+  for (let i = 0; i < 5 && (await p.locator('.duel-trainer.is-lord').count()); i++) await p.getByRole('button', { name: 'Другой тренер' }).click();
+  const lineup = () => p.locator('.duel-trainer-fighter').evaluateAll((els) => els.map((e) => e.title).join('|'));
+  const trainerTeam = await lineup();
+  const picked = p.locator('.duel-slot[aria-pressed="true"]');
+  // Grow the own team to two first: also a change of the own team.
+  const added = (await picked.count()) < 2 ? await p.locator('.duel-slot[aria-pressed="false"]').first().getAttribute('data-duel-action') : null;
+  if (added) await p.locator(`[data-duel-action="${added}"]`).click();
+  assert.equal(await lineup(), trainerTeam, 'adding an own fighter keeps the trainer team');
+  assert.ok((await picked.count()) >= 2, 'a team of two or more to rearrange');
+  const lastPick = await picked.last().getAttribute('data-duel-action');
+  await picked.last().click();
+  assert.equal(await lineup(), trainerTeam, 'removing an own fighter keeps the trainer team');
+  await p.locator(`[data-duel-action="${lastPick}"]`).click();
+  assert.equal(await lineup(), trainerTeam, 'putting it back keeps the trainer team');
+  let rolled = false;
+  for (let i = 0; i < 6 && !rolled; i++) {
+    await p.getByRole('button', { name: 'Новая команда' }).click();
+    rolled = (await lineup()) !== trainerTeam;
+  }
+  assert.ok(rolled, '«Новая команда» gives the trainer another line-up');
+  if (added) await p.locator(`[data-duel-action="${added}"]`).click();
+  await p.locator('.main-nav [data-nav="radar"]').click();
+  log('The trainer team ignores the player rearranging the own team; «Новая команда» rolls a new one');
   await p.locator('[data-brand="vkusno"]').click();
   await p.locator('[data-point="vkusno-88"]').click();
   await p.getByRole('button', { name: 'Сменить цель' }).click();
