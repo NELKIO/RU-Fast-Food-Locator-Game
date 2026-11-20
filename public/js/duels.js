@@ -12,6 +12,11 @@ const LABELS = { wild: 'Дикий боец', trainer: 'Бой с тренеро
 // A trainer goes by a funny job and a name: «Курьер Андрей».
 const fullName = coach => (coach.role ? `${coach.role} ${coach.name}` : coach.name);
 const THINK_MS = { wild: 90, easy: 60, normal: 350, hard: 900, lord: 1200 };
+// Noise: the computer picks among moves at most this much worse than its best (duel-ai.js, slack).
+// Tuned on battles against a casual and a thinking player (docs/balance/tools/trainer-noise.mjs) so
+// that each level is a little easier than the first trainers: Всерьёз a fair fight, Без пощады hard,
+// Лука the strongest. The wild fighter keeps the balance it had with the earlier computer player.
+const SLACK = { wild: 0.2, easy: 0, normal: 0.07, hard: 0.03, lord: 0 };
 const LEVELS = [['easy', 'Разминка'], ['normal', 'Всерьёз'], ['hard', 'Без пощады']];
 const plural = new Intl.PluralRules('ru');
 const MOVES = { one: 'ход', few: 'хода', many: 'ходов', other: 'хода' };
@@ -217,28 +222,23 @@ export function mountDuels(container, options) {
     const moves = legalMoves(local);
     // At the warm-up level the trainer sometimes slips; everywhere else it plays its best.
     const slip = level === 'easy' && Math.random() < 0.25;
-    local = applyMove(local, 1, slip ? moves[Math.floor(Math.random() * moves.length)] : smartMove(local, 1, { timeMs: THINK_MS[level] ?? 90 }));
+    local = applyMove(local, 1, slip ? moves[Math.floor(Math.random() * moves.length)] : smartMove(local, 1, { timeMs: THINK_MS[level] ?? 90, slack: SLACK[level] ?? 0 }));
     draw();
     queueBot();
   }
 
   // The trainer on offer matches the current team; a new one only when asked or when the team changes.
-  // The trainer prepares for the player's three strongest fighters, not for the team on the bench
-  // right now: reordering or swapping the own team never changes the trainer's line-up (and a weak
-  // team cannot lure a weak trainer). «Новая команда» rolls a new line-up for the same trainer.
+  // The trainer's line-up follows the rarities and levels of the player's team only: reordering it
+  // or swapping a fighter for an equal one keeps the line-up. «Новая команда» rolls another one.
   let trainer = null, trainerKey = '', trainerRoll = 0;
-  const power = card => card.maxHp * card.attack;
-  function trainerBase() {
-    return owned.map(id => catalog.get(id)).filter(Boolean)
-      .sort((a, b) => power(b) - power(a) || (a.id < b.id ? -1 : 1)).slice(0, 3);
-  }
   function trainerFor(fresh = false) {
     if (!data.trainer || !selected.length) return null;
     if (fresh) { data.nextTrainer?.(); trainerRoll = 0; }
-    const base = trainerBase();
-    const key = base.map(c => c.id + ':' + c.level).join(',') + '|' + data.trainerLevel?.() + '|' + data.trainerId?.() + '|' + trainerRoll;
+    const cards = selected.map(id => catalog.get(id));
+    const strength = cards.map(c => c.rarity + ':' + c.level).sort().join(',');
+    const key = strength + '|' + data.trainerLevel?.() + '|' + data.trainerId?.() + '|' + trainerRoll;
     if (fresh || !trainer || trainerKey !== key) {
-      trainer = data.trainer(base, trainerRoll);
+      trainer = data.trainer(cards, trainerRoll);
       trainerKey = key;
     }
     return trainer;
@@ -349,7 +349,7 @@ export function mountDuels(container, options) {
     return `<section class="duel-trainer${coach.lord ? ' is-lord' : ''}" style="--team-color:${coach.brand ? color(coach.brand) : coach.lord ? '#ffd76a' : '#c7b1f5'}" aria-labelledby="duel-trainer-title">
       <div class="duel-trainer-head"><span class="duel-label">Тренер · ${esc(coach.title ?? brands[coach.brand]?.name ?? '')}</span>
         <h3 id="duel-trainer-title">${coach.lord ? icon('trophy', 18) + ' ' : ''}${esc(fullName(coach))}</h3>
-        <p>Бой 3 на 3 в любое время. Тренер просчитывает ходы вперёд, меняет бойцов и бережёт энергию на суперприём.${coach.lord ? '' : ' Его команда собрана против трёх твоих сильнейших бойцов — свою можно переставлять.'}</p></div>
+        <p>Бой 3 на 3 в любое время. Тренер просчитывает ходы вперёд, меняет бойцов и бережёт энергию на суперприём.${coach.lord ? '' : ' Его команда подобрана под редкости и уровни твоей: перестановки и замена бойца на равного её не меняют.'}</p></div>
       ${levels}
       <div class="duel-trainer-team">${faces}</div>
       <div class="duel-buttons duel-trainer-actions">${button('trainer', 'Вызвать на бой', { primary: true, icon: 'battle', disabled: !selected.length })}${button('trainer-new', 'Другой тренер', { quiet: true })}${coach.lord ? '' : button('trainer-roll', 'Новая команда', { quiet: true })}</div>

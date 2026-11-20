@@ -619,7 +619,7 @@ export const LORD_TEAM = Object.freeze(['vkusno-big-hit', 'dodo-cheesy-chicken',
 export const TRAINER_LEVELS = Object.freeze({
   easy: {name: 'Разминка', levels: -1, xp: 0.6},
   normal: {name: 'Всерьёз', levels: 0, xp: 1},
-  hard: {name: 'Без пощады', levels: 1, xp: 1.5, strongest: true},
+  hard: {name: 'Без пощады', levels: 0, xp: 1.5, strongest: true},
 });
 export const TRAINER_XP = Object.freeze({won: {player: 12, party: 8}, draw: {player: 4, party: 3}, lost: {player: 3, party: 2}});
 const LORD_XP = 2;
@@ -638,11 +638,17 @@ export function trainerOffer(menu, playerCards, {rng = Math.random, trainer = nu
       .map(item => cardFor(item, levelCap(top + 1)));
     return {trainer: coach, team, difficulty: 'lord'};
   }
-  const taken = new Set(members.map(c => String(c.id)));
+  // Only the rarities and levels of the player's team count, not which fighters or in what order:
+  // reordering the team or swapping a fighter for one of the same rarity and level leaves the
+  // trainer's line-up as it is, so the player can build counters against it.
+  const RANK = {legendary: 0, epic: 1, rare: 2, common: 3};
+  const slots = members.map(c => ({rarity: c.rarity ?? 'common', level: c.level ?? 1}))
+    .sort((a, b) => (RANK[a.rarity] ?? 4) - (RANK[b.rarity] ?? 4) || b.level - a.level);
+  const taken = new Set();
   const power = card => card.maxHp * card.attack;
-  const team = members.map(card => {
-    const rarity = card.rarity ?? 'common';
-    const lvl = levelCap((card.level ?? 1) + level.levels);
+  const team = slots.map(card => {
+    const rarity = card.rarity;
+    const lvl = levelCap(card.level + level.levels);
     const fits = items.filter(item => !taken.has(String(item.id)) && fighterFor(item.id).rarity === rarity);
     const home = coach.brand ? fits.filter(item => item.brand === coach.brand) : fits;
     let pool = home.length ? home : fits.length ? fits : items.filter(i => !taken.has(String(i.id)));

@@ -165,12 +165,25 @@ test('a trainer brings fighters of the same rarities and levels, from its own ch
   for (const trainer of TRAINERS.filter(t => t.brand)) {
     const offer = trainerOffer(menu, team, { trainer: trainer.id, rng: seq(7) });
     assert.equal(offer.trainer.id, trainer.id);
-    assert.deepEqual(offer.team.map(c => c.rarity), team.map(c => c.rarity));
+    assert.deepEqual(offer.team.map(c => c.rarity).sort(), team.map(c => c.rarity).sort());
     assert.ok(offer.team.every(c => c.level === 4));
-    assert.ok(offer.team.every(c => !team.some(t => t.id === c.id)), 'never the player’s own fighters');
     assert.equal(new Set(offer.team.map(c => c.id)).size, 3);
     assert.ok(offer.team.filter(c => c.brand === trainer.brand).length >= 2, trainer.id);
   }
+});
+
+test('the trainer line-up depends only on the rarities and levels of the player team', () => {
+  const card = (id, level = 4) => cardFor(menu.find(m => m.id === id), level);
+  const ids = offer => offer.team.map(c => c.id + ':' + c.level).join(',');
+  const base = [card('bk-whopper'), card('dodo-pepperoni'), card('vkusno-nuggets')];
+  const same = trainerOffer(menu, base, { trainer: 'mark', rng: seq(5) });
+  // Another order, and another fighter of the same rarity and level: the same line-up.
+  const common = Object.keys(FIGHTERS).find(id => FIGHTERS[id].rarity === 'common' && id !== 'vkusno-nuggets' && menu.some(m => m.id === id));
+  assert.equal(ids(trainerOffer(menu, [base[2], base[0], base[1]], { trainer: 'mark', rng: seq(5) })), ids(same));
+  assert.equal(ids(trainerOffer(menu, [base[0], base[1], card(common)], { trainer: 'mark', rng: seq(5) })), ids(same));
+  // A stronger fighter in the team does change the matching slot.
+  const stronger = trainerOffer(menu, [base[0], base[1], card('vkusno-nuggets', 7)], { trainer: 'mark', rng: seq(5) });
+  assert.ok(stronger.team.some(c => c.level === 7));
 });
 
 test('a trainer battle pays modest experience once per match', () => {

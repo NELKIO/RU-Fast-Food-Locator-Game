@@ -40,17 +40,17 @@ test('the lord brings the three strongest legends a level above the best fighter
   assert.deepEqual([r.playerXp, r.partyXp], [24, 16]);
 });
 
-test('difficulty moves the trainer team level and its pick, and scales the reward', () => {
+test('difficulty moves the trainer team level (warm-up) and its pick (no mercy), and scales the reward', () => {
   const mine = team(['bk-whopper', 'dodo-pepperoni', 'vkusno-nuggets'], 5);
   const levels = d => trainerOffer(menu, mine, { trainer: 'artem', difficulty: d, rng: seq(9) }).team.map(c => c.level);
   assert.deepEqual(levels('easy'), [4, 4, 4]);
   assert.deepEqual(levels('normal'), [5, 5, 5]);
-  assert.deepEqual(levels('hard'), [6, 6, 6]);
+  assert.deepEqual(levels('hard'), [5, 5, 5], 'no level up: the strongest picks make it hard enough');
   // Without mercy: the strongest of each rarity (one of the top two by health × attack).
   const hard = trainerOffer(menu, mine, { trainer: 'lev-b', difficulty: 'hard', rng: seq(5) });
   const power = c => c.maxHp * c.attack;
   for (const card of hard.team) {
-    const same = menu.filter(m => cardFor(m).rarity === card.rarity && !mine.some(x => x.id === m.id)).map(m => cardFor(m, card.level));
+    const same = menu.filter(m => cardFor(m).rarity === card.rarity).map(m => cardFor(m, card.level));
     const better = same.filter(c => power(c) > power(card)).length;
     assert.ok(better <= 1, card.id);
   }
