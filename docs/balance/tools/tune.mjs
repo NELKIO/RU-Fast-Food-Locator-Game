@@ -19,9 +19,12 @@ const SK = { power: [-1, 6], heal: [1, 8], shield: [2, 9], weaken: [1, 3], buff:
 const ULT = { ...SK, power: [0, 9], shield: [3, 10], heal: [2, 9] };
 const TR = { armor: [1, 2], thorns: [1, 2], regen: [1, 2], rage: [1, 3], vamp: [1, 2], intimidate: [1, 2] };
 // Every number the search may move, as [id, path, lo, hi].
+// FOCUS=epic,legendary moves only those tiers and scores only their pairs (a quick follow-up pass).
+const FOCUS = process.env.FOCUS ? process.env.FOCUS.split(',') : null;
 const knobs = [];
 for (const id of ids) {
   const f = F[id], t = TIER[f.rarity];
+  if (FOCUS && !FOCUS.includes(f.rarity)) continue;
   f.speed ??= 5;
   knobs.push([id, ['hp'], ...t.hp], [id, ['attack'], ...t.attack], [id, ['speed'], 1, 9]);
   for (const [part, table] of [['skill', SK], ['ultimate', ULT]]) {
@@ -61,7 +64,8 @@ const TOP = +process.env.TOP || 0.74, BOTTOM = +process.env.BOTTOM || 0.28;
 const ladder = n => Array.from({ length: n }, (_, k) => TOP - (TOP - BOTTOM) * k / (n - 1));
 function objective(detail = false) {
   const c = { ladder: 0, even: 0, counters: 0, bot: 0, cross: 0, legendCounter: 0, draws: 0, top: 0, unsolved: 0 };
-  groups.forEach(G => {
+  groups.forEach((G, gi) => {
+    if (FOCUS && !FOCUS.includes(tiers[gi])) return;
     const need = G.length <= 4 ? 1 : 2;
     let even = 0, pairs = 0, draws = 0, top = 0;
     const A = [], B = [];
@@ -93,17 +97,22 @@ function objective(detail = false) {
   // Legendaries beat most epics but not all: every legendary has an epic that beats it outright
   // (a fighter that hits its weak spot), so even the top tier has a counter worth looking for.
   for (let u = 0; u < 4; u++) for (let v = 0; v < u; v++) {
+    if (FOCUS && !(FOCUS.includes(tiers[u]) && FOCUS.includes(tiers[v]))) continue;
     let x = 0, y = 0, n = 0;
     for (const a of groups[u]) for (const b of groups[v]) { x += s(a, b); y += bs(a, b); n++; }
     x /= n; y /= n;
     const d = u - v, lo = [0, 0.72, 0.9, 0.97][d], hi = [0, u === 3 ? 0.86 : 0.88, 1, 1][d];
     c.cross += 10 * (Math.max(0, lo - x) ** 2 + Math.max(0, x - hi) ** 2) + 4 * Math.max(0, lo - 0.04 - y) ** 2;
   }
+  // Each legend has its own counter: no epic may be the answer to more than two legends.
   c.legendCounter = 0;
+  const kills = new Map();
   for (const L of groups[3]) {
-    const beaten = groups[2].filter(e => s(e, L) === 1).length;
-    c.legendCounter += 0.25 * Math.max(0, 1 - beaten) + 0.05 * Math.max(0, beaten - 3);
+    const by = groups[2].filter(e => s(e, L) === 1);
+    for (const e of by) kills.set(e, (kills.get(e) ?? 0) + 1);
+    c.legendCounter += 0.25 * Math.max(0, 1 - by.length) + 0.05 * Math.max(0, by.length - 3);
   }
+  for (const n of kills.values()) c.legendCounter += 0.12 * Math.max(0, n - 2);
   const J = Object.values(c).reduce((p, q) => p + q, 0);
   return detail ? { J, ...c } : J;
 }
