@@ -138,6 +138,32 @@ try {
   assert.equal(counters(await saved(laptop)), counters(p), 'the laptop has the same progress');
   console.log('PASS link on the phone / two progresses summed / laptop catches up');
 
+  // The login reward can be taken only once for both devices. The laptop opens the calendar while
+  // the reward is still free, the phone takes it, then the laptop presses «Забрать».
+  await phone.keyboard.press('Escape');
+  await laptop.keyboard.press('Escape');
+  await laptop.locator('#daily-card [data-daily-open]').click();
+  await laptop.locator('[data-daily-claim]').waitFor();
+  await phone.locator('#daily-card [data-daily-open]').click();
+  await phone.locator('[data-daily-claim]').click();
+  await phone.locator('[data-daily-next]').waitFor({ timeout: 15_000 });
+  await phone.locator('[data-daily-next]').click();
+  await phone.locator('.daily-got').waitFor();
+  const phoneClaim = await saved(phone);
+  assert.ok(phoneClaim.login.day, 'the phone took the reward');
+  const xpBefore = (await saved(laptop)).xp;
+  await laptop.locator('[data-daily-claim]').click();
+  await laptop.locator('.daily-note', { hasText: 'уже забрали на другом устройстве' }).waitFor({ timeout: 15_000 });
+  assert.equal(await laptop.locator('[data-daily-claim]').count(), 0, 'no second claim button');
+  assert.equal(await laptop.locator('[data-daily-next]').count(), 0, 'no roulette on the laptop');
+  const after = await saved(laptop);
+  assert.deepEqual(after.login, phoneClaim.login);
+  assert.ok(after.xp >= xpBefore);
+  assert.equal(await laptop.locator('#daily-card').isHidden(), true, 'the radar card is gone too');
+  await laptop.keyboard.press('Escape');
+  await phone.keyboard.press('Escape');
+  console.log('PASS the login reward taken on the phone is not offered again on the laptop');
+
   // A change on the phone reaches the laptop: the team.
   await phone.keyboard.press('Escape');
   await phone.locator('.main-nav [data-nav="collection"]').click();
@@ -145,6 +171,7 @@ try {
   await phone.waitForFunction(key => JSON.parse(localStorage.getItem(key)).team.includes('bk-fries'), profileKey);
   const team = (await saved(phone)).team;
   await phone.waitForTimeout(3500); // the debounced sync publishes by itself
+  await openSync(laptop);
   await laptop.locator('[data-sync-now]').click();
   await laptop.waitForFunction(({ key, team }) => JSON.stringify(JSON.parse(localStorage.getItem(key)).team) === JSON.stringify(team), { key: profileKey, team }, { timeout: 15_000 });
   console.log('PASS a team change on the phone syncs by itself and reaches the laptop');

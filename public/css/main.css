@@ -1553,6 +1553,7 @@ dialog[open]::backdrop { animation: fade-in 0.25s ease-out; }
 .daily-card .daily-new { color: var(--accent); font-weight: 650; }
 .daily-xp { display: flex; align-items: center; gap: 8px; color: var(--accent) !important; font-weight: 650; }
 .daily-next { color: var(--muted) !important; }
+.daily-note { color: var(--accent-type, var(--accent)) !important; font-weight: 600; }
 @media (max-width: 700px) {
   .daily-week { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .daily-day.is-legend { grid-column: span 1; }

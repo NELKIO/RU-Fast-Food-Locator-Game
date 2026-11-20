@@ -637,19 +637,36 @@ async function playReel(pool, card, label) {
   } else strip.style.transform = final;
   return dialogRun === run && $('dialog').open;
 }
+// A linked device asks the others first: otherwise a reward taken a minute ago on the phone would
+// still look free on the laptop. Resolves to true when the shared progress was checked.
+async function syncedBeforeClaim() {
+  if (!profile.sync?.key) return true;
+  const status = await Promise.race([sync.syncNow(), new Promise((resolve) => setTimeout(() => resolve(null), 9000))]);
+  return status?.state === 'ok';
+}
 async function spinReward() {
   if (!target || claimPending) return;
   const point = target;
   claimPending = true;
   let result;
   try {
+    // At the restaurant a missing connection must not cost the find, so the check is best effort.
+    if (profile.sync?.key) {
+      showToast('Сверяем прогресс с другими устройствами…');
+      await syncedBeforeClaim();
+    }
     result = await store.update((p) => claimVisit(p, point, fix, menu));
   } finally {
     claimPending = false;
   }
+  if (result.ok && profile.sync?.key) sync.syncNow();
   if (!result.ok) {
     renderRadar();
-    showToast('Не удалось подтвердить посещение. Проверь расстояние и таймер точки.');
+    showToast(
+      result.reason === 'cooldown'
+        ? 'Эту точку уже открыли недавно — возможно, на другом устройстве.'
+        : 'Не удалось подтвердить посещение. Проверь расстояние и таймер точки.',
+    );
     return;
   }
   const card = result.card;
@@ -693,7 +710,7 @@ function renderDaily() {
       '</span></button>',
   );
 }
-function dailyDialog(result = null) {
+function dailyDialog(result = null, note = '') {
   const status = dailyStatus(profile);
   const featured = featuredFighter(menu);
   const tiles = DAILY_REWARDS.map((reward) => {
@@ -737,8 +754,9 @@ function dailyDialog(result = null) {
       tiles +
       '</ol>' +
       got +
+      (note ? '<p class="daily-note" role="status">' + esc(note) + '</p>' : '') +
       (status.claimable
-        ? '<div class="dialog-actions"><button class="primary" data-daily-claim>' + icon('plus', 16) + 'Забрать награду дня ' + status.today + '</button></div>'
+        ? '<div class="dialog-actions"><button class="primary" data-daily-claim' + (note.endsWith('…') ? ' disabled' : '') + '>' + icon('plus', 16) + 'Забрать награду дня ' + status.today + '</button></div>'
         : '<p class="daily-next">Следующая награда завтра.</p>'),
   );
 }
@@ -746,8 +764,16 @@ function dailyDialog(result = null) {
 // the rares for the fighter of the week, the legends on day 7.
 let dailyRun = null;
 async function claimDailyReward() {
+  if (profile.sync?.key) {
+    dailyDialog(null, 'Сверяем прогресс с другими устройствами…');
+    if (!(await syncedBeforeClaim())) {
+      return dailyDialog(null, 'Нет связи с другими устройствами. Награду можно будет забрать, когда синхронизация пройдёт: так её не заберут дважды.');
+    }
+    if (!dailyStatus(store.read()).claimable) return dailyDialog(null, 'Награду дня уже забрали на другом устройстве.');
+  }
   const result = await store.update((p) => claimDaily(p, menu));
-  if (!result.ok) return dailyDialog();
+  if (!result.ok) return dailyDialog(null, 'Награду дня уже забрали.');
+  if (profile.sync?.key) sync.syncNow();
   renderDaily();
   if (tab === 'collection') renderCollection();
   dailyRun = { result, cards: result.got.filter((g) => g.kind === 'card'), index: 0 };
