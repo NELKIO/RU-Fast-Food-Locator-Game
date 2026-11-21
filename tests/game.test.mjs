@@ -432,3 +432,13 @@ test('the suggested team: the three strongest by measured strength and level, th
   assert.equal(trained[0], 'bk-fries');
   assert.deepEqual(suggestTeam([card('vkusno-nuggets')]), ['vkusno-nuggets'], 'fewer than three: all of them');
 });
+
+test('a login day far in the future (a clock set wrong on a linked device) does not lock the reward', async () => {
+  const { dailyStatus } = await import('../public/js/game.js');
+  const now = Date.UTC(2026, 10, 21, 12);
+  const at = day => normalizeProfile({ ...freshProfile(), login: { day, streak: 3, v: 2 } });
+  assert.equal(dailyStatus(at('2026-11-21'), now).claimable, false, 'claimed today');
+  assert.equal(dailyStatus(at('2026-11-22'), now).claimable, false, 'a time zone ahead: still today there');
+  const far = dailyStatus(at('2027-11-21'), now);
+  assert.deepEqual([far.claimable, far.today], [true, 1], 'a year ahead: claimable again, the streak starts over');
+});

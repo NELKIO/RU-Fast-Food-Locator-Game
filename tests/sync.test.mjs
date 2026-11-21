@@ -426,3 +426,16 @@ test('many devices: a hundred linked browsers sum up exactly, and the ledger kee
   assert.ok(merged.sync.devices.zzzzzzzzlast, 'own entry survives');
   assert.ok(Object.keys(merged.sync.devices).length <= 257);
 });
+
+test('a login day from a clock set a year ahead on a linked device neither locks nor loops the reward', async () => {
+  const { claimDaily, dailyStatus } = await import('../public/js/game.js');
+  const now = Date.UTC(2026, 10, 21, 12);
+
+  // The wrong clock claimed "2027-11-21"; this device merges its document and claims today.
+  let wrong = mergeProfile(normalizeProfile({ ...freshProfile(), login: { day: '2027-11-21', streak: 1, v: 2 } }), [], { now: now + 365 * 86_400_000 });
+  let here = mergeProfile(freshProfile(), [docOf(wrong)], { now });
+  assert.equal(dailyStatus(here, now).claimable, true, 'not locked until next year');
+  here = claimDaily(here, menu, { now }).profile;
+  for (let i = 0; i < 3; i++) here = mergeProfile(here, [docOf(wrong)], { now: now + i });
+  assert.equal(dailyStatus(here, now).claimable, false, 'claimed once today, the far day does not make it claimable again');
+});

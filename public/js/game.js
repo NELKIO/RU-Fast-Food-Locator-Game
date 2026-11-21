@@ -823,7 +823,11 @@ export function dailyStatus(profile, now = Date.now()) {
   const saved = normalizeProfile(profile);
   const today = localDay(now);
   const {day, streak} = saved.login;
-  if (day >= today) return {claimable: false, today: streak, claimed: streak};
+  // Today, or tomorrow on a device a time zone ahead, is claimed. A day further ahead came from a
+  // clock set wrong on a linked device: it must not lock the reward everywhere until that date.
+  const tomorrow = localDay(now + 86_400_000);
+  if (day >= today && day <= tomorrow) return {claimable: false, today: streak, claimed: streak};
+  if (day > tomorrow) return {claimable: true, today: 1, claimed: 0};
   const next = day && day === dayBefore(today) ? streak % DAILY_DAYS + 1 : 1;
   return {claimable: true, today: next, claimed: next - 1};
 }

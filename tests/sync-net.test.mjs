@@ -412,7 +412,7 @@ test('an offline link and reload defer the starter until the shared collection h
   }
 });
 
-test('a valid oversized account snapshot is preserved; an unrelated oversized frame excludes only its relay', async t => {
+test('a valid oversized account snapshot is read and its progress kept; an unrelated oversized frame excludes only its relay', async t => {
   const net = relayNet(), key = newSyncKey(), acc = await accountOf(key);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const doc = {v: 1, devices: {oldphone1: {xp: 95}}, padding: 'X'.repeat(152_000)};
@@ -422,9 +422,11 @@ test('a valid oversized account snapshot is preserved; an unrelated oversized fr
   for (const url of net.urls) net.stored.set(url, valid);
   const newcomer = await device(net, 38);
   t.after(() => newcomer.sync.stop());
-  assert.equal((await newcomer.sync.link(key)).status.state, 'unreadable');
-  assert.ok([...net.stored.values()].every(e => e.id === valid.id));
-  assert.equal(net.publishes, 0);
+  // A large but valid save (an older uncompressed one) is read, not mistaken for unreadable: its
+  // progress survives into the new, compact save instead of blocking the account for good.
+  assert.equal((await newcomer.sync.link(key)).status.state, 'ok');
+  assert.equal(newcomer.store.read().xp, 95);
+  assert.ok([...net.stored.values()].every(e => e.id !== valid.id && e.content.length < 200_000));
 
   const healthy = relayNet();
   const writes = [];

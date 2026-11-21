@@ -207,7 +207,14 @@ export function mergeProfile(local, docs = [], {now = Date.now(), device} = {}) 
   // One wild-fighter stream for the account: every device ends up with the same (smallest) seed.
   merged.wildSeed = [base.wildSeed, ...clean.map(doc => doc.wildSeed)].filter(Boolean).sort()[0] ?? '';
   // The login week: the latest claimed day wins, so a reward taken on one device is taken everywhere.
-  merged.login = clean.reduce((a, doc) => (doc.login.day > a.day || (doc.login.day === a.day && doc.login.streak > a.streak) ? doc.login : a), base.login);
+  // A day more than one ahead of this device's own day comes from a clock set wrong elsewhere; it
+  // is left out, so it can neither lock the reward here nor make it claimable again and again.
+  const latestDay = dayKey(now + 86_400_000);
+  const plausible = login => (login.day <= latestDay ? login : { ...login, day: '', streak: 0 });
+  merged.login = clean.reduce((a, doc) => {
+    const login = plausible(doc.login);
+    return login.day > a.day || (login.day === a.day && login.streak > a.streak) ? login : a;
+  }, plausible(base.login));
   merged.lastScoutAt = Math.max(base.lastScoutAt ?? -1, ...clean.map(doc => doc.lastScoutAt ?? -1));
   if (merged.lastScoutAt < 0) merged.lastScoutAt = null;
   merged.encounterSequence = Math.max(base.encounterSequence, ...clean.map(doc => doc.encounterSequence));
@@ -277,4 +284,10 @@ export function stableJson(value) {
   if (Array.isArray(value)) return '[' + value.map(stableJson).join(',') + ']';
   if (record(value)) return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + stableJson(value[key])).join(',') + '}';
   return JSON.stringify(value);
+}
+
+// The local calendar day (YYYY-MM-DD) of a moment, as the login week counts days.
+function dayKey(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

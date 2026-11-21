@@ -797,7 +797,8 @@ async function claimDailyReward() {
   if (profile.sync?.key) {
     dailyDialog(null, 'Сверяем прогресс с другими устройствами…');
     const state = await syncedBeforeClaim();
-    if (state === 'unreadable' || state === 'outdated') {
+    if (state === 'outdated') return dailyDialog(null, 'На другом устройстве новая версия игры. Обнови страницу, чтобы забрать награду.');
+    if (state === 'unreadable') {
       return dailyDialog(null, 'Сохранение не удалось прочитать. Обнови игру или открой её в другом браузере.');
     }
     if (state !== 'ok') {

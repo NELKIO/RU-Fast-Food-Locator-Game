@@ -23,6 +23,9 @@ export const SYNC_RELAYS = Object.freeze([
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const MAX_DOC_BYTES = 1_000_000;
 const MAX_EVENT_CHARS = 200_000;
+// Reading accepts any event a largest allowed document can make (an older uncompressed save, base64
+// of IV + tag + 1 MB), so a valid save is read, not mistaken for unreadable and left blocking sync.
+const MAX_READ_CHARS = 3 + Math.ceil((MAX_DOC_BYTES + 28) / 3) * 4;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const hex = bytes => Array.from(bytes, octet => octet.toString(16).padStart(2, '0')).join('');
@@ -109,7 +112,7 @@ async function readProfileEvent(account, event) {
       !event.tags.some(tag => Array.isArray(tag) && tag[0] === 'd' && tag[1] === SYNC_TAG) || !await verifyEvent(event)) return null;
   try {
     const mode = event.content.slice(0, 3);
-    if (event.content.length > MAX_EVENT_CHARS || (mode !== 'z1:' && mode !== 'p1:')) return {unreadable: true};
+    if (event.content.length > MAX_READ_CHARS || (mode !== 'z1:' && mode !== 'p1:')) return {unreadable: true};
     const body = Uint8Array.from(atob(event.content.slice(3)), ch => ch.charCodeAt(0));
     const packed = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: body.subarray(0, 12) }, account.aes, body.subarray(12)));
     const plain = mode === 'z1:' ? await pipe(packed, new DecompressionStream('deflate-raw')) : packed;
