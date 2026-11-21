@@ -1,7 +1,7 @@
 // How hard is a trainer (or a wild fighter) for a player, by AI version and noise (`slack`)?
 // Real battles: the player's random team of level 5 against trainerOffer() at the difficulty, or
 // against wildFighter(). The player is the old AI with a small budget (a thinking human) or the
-// simple botMove (a casual one). Budgets are in positions, matched to the think time of each level
+// simple botMove that transforms as soon as it can (a casual one). Budgets are in positions, matched to the think time of each level
 // on a mid-range phone, so runs repeat exactly and do not depend on the machine's load.
 //
 //   node trainer-noise.mjs <easy|normal|hard|lord|wild> <think|casual> <old|new> <slack> <games> [seed]
@@ -43,7 +43,9 @@ for (let g = 0; g < games; g++) {
       const list = legalMoves(s);
       if (level === 'easy' && random() < 0.25) m = list[Math.floor(random() * list.length)];
       else m = version === 'new' ? NEW.smartMove(s, 1, { nodes: budget, random, slack }) : OLD.smartMove(s, 1, { nodes: budget, random });
-    } else m = player === 'think' ? OLD.smartMove(s, 0, { nodes: PLAYER_NODES, random }) : botMove(s, random);
+    } else if (player === 'think') m = OLD.smartMove(s, 0, { nodes: PLAYER_NODES, random });
+    // The casual player plays the simple bot, but like a person it transforms as soon as it can.
+    else m = legalMoves(s).includes('transform') ? 'transform' : botMove(s, random);
     s = applyMove(s, s.turn, m);
   }
   const w = s.winner === 'draw' ? 0.5 : s.winner === 0 ? 1 : 0;
