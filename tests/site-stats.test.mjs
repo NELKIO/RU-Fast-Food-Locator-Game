@@ -107,8 +107,61 @@ test('reports replace each other: the total counts every browser once and checks
 test('reports are cleaned: impossible numbers and unknown fighters do not count', async () => {
   const secret = new Uint8Array(32).fill(3);
   const event = await signEvent(secret, { kind: 30078, created_at: 5, tags: [['d', 'foodradar-stats'], ['t', STATS_TOPIC]],
-    content: JSON.stringify({ v: 1, wins: 2, losses: -5, draws: 1e12, cards: 3, xp: { 'bk-whopper': 40, 'not-a-fighter': 99 } }) });
+    content: JSON.stringify({ v: 1, wins: 2, losses: -5, draws: 1e12, cards: 3, xpSource: 'battle', xp: { 'bk-whopper': 40, 'not-a-fighter': 99 } }) });
   const total = await totalOf([event]);
   assert.deepEqual([total.players, total.wins, total.losses, total.draws, total.cards], [1, 2, 0, 0, 3]);
   assert.deepEqual(total.favorites, [{ id: 'bk-whopper', xp: 40 }]);
+});
+
+test('two first reports from the same browser count as one player', async () => {
+  const { Socket, stored } = relayNetwork();
+  const options = { storage: memoryStorage(), relays: ['wss://a'], Socket, live: true };
+  const tabs = [createSiteStats(options), createSiteStats(options)];
+  const p = start(6);
+  await Promise.all(tabs.map(tab => tab.report(p)));
+  assert.equal(stored.size, 1);
+  const { players, cards } = await tabs[0].total();
+  assert.deepEqual([players, cards], [1, 1]);
+});
+
+test('a browser without writable storage never reports an ephemeral player', async () => {
+  const { Socket, stored } = relayNetwork();
+  const blocked = { getItem: () => null, setItem() { throw new Error('storage denied'); } };
+  const stats = createSiteStats({ live: true, storage: blocked, relays: ['wss://a'], Socket });
+  assert.equal(await stats.report(start(7)), 0);
+  assert.equal(stored.size, 0);
+});
+
+test('favorites use local battle awards, including past the level cap, and exclude other card XP', async () => {
+  let p = start(8);
+  const id = p.team[0];
+  p.collection[id].xp = 270; // duplicate/login XP and the XP of older saves have no recorded source
+  assert.deepEqual(reportOf(p).xp, {});
+  p = play(p, 2, 0);
+  assert.deepEqual(reportOf(normalizeProfile(p)).xp, { [id]: 20 });
+  const linked = mergeProfile(p);
+  const other = mergeProfile(freshProfile(), [docOf(linked)]);
+  assert.deepEqual(other.battleXp, { [id]: 20 }, 'the linked device downloaded the account ledger');
+  assert.deepEqual(reportOf(other).xp, {}, 'it reports only the battles it played itself');
+  const old = await signEvent(new Uint8Array(32).fill(4), { kind: 30078, created_at: 5,
+    tags: [['d', 'foodradar-stats'], ['t', STATS_TOPIC]], content: JSON.stringify({ v: 1, wins: 1, cards: 1, xp: { [id]: 270 } }) });
+  const total = await totalOf([old]);
+  assert.deepEqual([total.players, total.games, total.favorites], [1, 1, []]);
+});
+
+test('two tabs reporting in one second preserve the newest counters in either delivery order', async () => {
+  const { Socket, stored } = relayNetwork();
+  const options = { storage: memoryStorage(), Socket, relays: ['wss://a'], live: true, clock: () => 1_800_000_000_000 };
+  const older = createSiteStats(options), newer = createSiteStats(options);
+  const initial = start(9), played = play(initial, 1, 0);
+  await older.report(initial);
+  const before = [...stored.values()][0];
+  await newer.report(played);
+  const after = [...stored.values()][0];
+  assert.ok(after.created_at > before.created_at);
+  assert.equal(await older.report(initial), 0, 'a delayed tab cannot replace the newer totals');
+  for (const events of [[before, after], [after, before]]) {
+    const total = await totalOf(events);
+    assert.deepEqual([total.games, total.favorites], [1, [{ id: played.team[0], xp: 10 }]]);
+  }
 });

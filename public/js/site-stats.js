@@ -13,8 +13,9 @@ import { queryRelays, publishEvent, signEvent, SYNC_KIND, SYNC_RELAYS, verifyEve
 export const STATS_TAG = 'foodradar-stats';
 export const STATS_TOPIC = 'foodradar-stats-v1';
 const STORE_KEY = 'foodradar.stats.v1';
-const CACHE_KEY = 'foodradar.stats.total.v1';
+const CACHE_KEY = 'foodradar.stats.total.v2';
 const MAX = 1_000_000; // per browser and counter: anything larger is not a real player
+const COUNTERS = ['wins', 'losses', 'draws', 'cards', 'kinds', 'visits', 'places'];
 const REFRESH_MS = 24 * 3600_000;
 
 const hex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
@@ -24,27 +25,28 @@ const count = value => (Number.isSafeInteger(value) && value > 0 && value <= MAX
 // The report of one browser, built from its own contribution.
 export function reportOf(profile, earlierIds = []) {
   const own = ownContribution(profile, earlierIds);
-  const xp = {}, caught = {};
+  const caught = {};
   let cards = 0;
-  for (const [id, [copies, gained]] of Object.entries(own.cards)) {
+  for (const [id, [copies]] of Object.entries(own.cards)) {
     if (!FIGHTERS[id]) continue;
     cards += copies;
     if (copies) caught[id] = copies;
-    if (gained) xp[id] = gained;
   }
   const visits = Object.values(own.visits).reduce((sum, n) => sum + n, 0);
   return {
     v: 1, games: own.wins + own.losses + own.draws, wins: own.wins, losses: own.losses, draws: own.draws,
-    cards, kinds: Object.keys(caught).length, visits, places: Object.values(own.visits).filter(Boolean).length, xp,
+    cards, kinds: Object.keys(caught).length, visits, places: Object.values(own.visits).filter(Boolean).length,
+    xp: own.battleXp ?? {}, xpSource: 'battle',
   };
 }
 
 function cleanReport(value) {
   if (!value || typeof value !== 'object' || value.v !== 1) return null;
   const out = { games: 0, wins: 0, losses: 0, draws: 0, cards: 0, kinds: 0, visits: 0, places: 0, xp: {} };
-  for (const key of ['wins', 'losses', 'draws', 'cards', 'kinds', 'visits', 'places']) out[key] = count(value[key]);
+  for (const key of COUNTERS) out[key] = count(value[key]);
   out.games = out.wins + out.losses + out.draws;
-  if (value.xp && typeof value.xp === 'object') {
+  // Older reports mix battle, duplicate and login XP; their other counters are still usable.
+  if (value.xpSource === 'battle' && value.xp && typeof value.xp === 'object') {
     for (const [id, xp] of Object.entries(value.xp)) if (Object.hasOwn(FIGHTERS, id) && count(xp)) out.xp[id] = count(xp);
   }
   return out;
@@ -61,7 +63,7 @@ export async function totalOf(events) {
   }
   const latest = [];
   for (const list of byAuthor.values()) {
-    list.sort((a, b) => b.created_at - a.created_at);
+    list.sort((a, b) => b.created_at - a.created_at || String(a.id).localeCompare(String(b.id)));
     for (const event of list) if (await verifyEvent(event)) { latest.push(event); break; }
   }
   const total = { players: 0, games: 0, wins: 0, losses: 0, draws: 0, cards: 0, visits: 0, favorites: [] };
@@ -78,38 +80,99 @@ export async function totalOf(events) {
   return total;
 }
 
-export function createSiteStats({ storage = globalThis.localStorage, relays = SYNC_RELAYS, Socket = globalThis.WebSocket,
-  live = false, clock = () => Date.now(), debounceMs = 20_000 } = {}) {
-  const read = key => { try { return JSON.parse(storage?.getItem(key) ?? 'null'); } catch { return null; } };
-  const write = (key, value) => { try { storage?.setItem(key, JSON.stringify(value)); } catch { /* private mode */ } };
-
-  // This browser's statistics key and every device id it has used (a rollback gives a new one).
-  async function identity(profile) {
-    let me = read(STORE_KEY);
-    if (!me || !/^[a-f\d]{64}$/.test(me.secret)) {
-      const { schnorr } = await import('../vendor/duel-trystero-0.27.0.js');
-      let secret;
-      do { secret = crypto.getRandomValues(new Uint8Array(32)); } while ((() => { try { schnorr.getPublicKey(secret); return false; } catch { return true; } })());
-      me = { secret: hex(secret), devices: [], sent: '', sentAt: 0 };
+// Without Web Locks, a read-write IndexedDB transaction also serializes same-origin tabs.
+// The secret stays in localStorage so existing installations keep their original identity.
+async function withIdentityLock(action) {
+  let locks;
+  try { locks = globalThis.navigator?.locks; } catch { /* embedded browser */ }
+  if (locks) {
+    try { return await locks.request(STORE_KEY, action); }
+    catch (error) {
+      if (!['SecurityError', 'NotAllowedError', 'NotSupportedError'].includes(error?.name)) throw error;
     }
-    const device = profile?.sync?.device;
-    if (device && !me.devices.includes(device)) me.devices = [...me.devices, device].slice(-64);
-    write(STORE_KEY, me);
-    return me;
+  }
+  return new Promise(resolve => {
+    let open;
+    try { open = globalThis.indexedDB.open(STORE_KEY, 1); } catch { resolve(null); return; }
+    open.onupgradeneeded = () => open.result.createObjectStore('identity');
+    open.onerror = () => resolve(null);
+    open.onsuccess = () => {
+      const db = open.result;
+      const tx = db.transaction('identity', 'readwrite');
+      let identity = null;
+      tx.objectStore('identity').get('lock').onsuccess = () => { identity = action(); };
+      tx.oncomplete = () => { db.close(); resolve(identity); };
+      tx.onabort = () => { db.close(); resolve(null); };
+    };
+  });
+}
+
+export function createSiteStats({ storage, relays = SYNC_RELAYS, Socket = globalThis.WebSocket,
+  live = false, clock = () => Date.now(), debounceMs = 20_000 } = {}) {
+  if (storage === undefined) {
+    try { storage = globalThis.localStorage; } catch { storage = null; }
+  }
+  const read = key => { try { return JSON.parse(storage?.getItem(key) ?? 'null'); } catch { return null; } };
+  const write = (key, value) => { try { storage.setItem(key, JSON.stringify(value)); return true; } catch { return false; } };
+
+  // Read, create and persist under the same lock, including device IDs after a rollback.
+  async function prepareReport(profile) {
+    if (!storage) return null;
+    const { schnorr } = await import('../vendor/duel-trystero-0.27.0.js');
+    return withIdentityLock(() => {
+      let me = read(STORE_KEY);
+      if (!me || !/^[a-f\d]{64}$/.test(me.secret)) {
+        let secret;
+        for (;;) {
+          secret = crypto.getRandomValues(new Uint8Array(32));
+          try { schnorr.getPublicKey(secret); break; } catch { /* not a valid curve scalar */ }
+        }
+        me = { secret: hex(secret), devices: [], sent: '', sentAt: 0 };
+      }
+      if (!Array.isArray(me.devices)) me.devices = [];
+      const device = profile?.sync?.device;
+      if (device && !me.devices.includes(device)) me.devices = [...me.devices, device].slice(-64);
+      const next = reportOf(profile, me.devices);
+      const previous = cleanReport(me.pending);
+      if (previous) {
+        // A delayed tab may still have the profile from before another tab played a battle.
+        for (const key of COUNTERS) next[key] = Math.max(next[key], previous[key]);
+        next.games = next.wins + next.losses + next.draws;
+        for (const [id, xp] of Object.entries(previous.xp)) next.xp[id] = Math.max(next.xp[id] ?? 0, xp);
+      }
+      next.xp = Object.fromEntries(Object.entries(next.xp).sort(([a], [b]) => a.localeCompare(b)));
+      const body = JSON.stringify(next);
+      const now = clock();
+      const fresh = body === me.sent && now - me.sentAt < REFRESH_MS;
+      const samePending = body === JSON.stringify(me.pending) && Number.isSafeInteger(me.timestamp);
+      if (!samePending || (!fresh && now - me.preparedAt >= REFRESH_MS)) {
+        const last = Number.isSafeInteger(me.timestamp) ? me.timestamp : Math.floor((me.sentAt || 0) / 1000);
+        me.timestamp = Math.max(Math.floor(now / 1000), last + 1);
+        me.preparedAt = now;
+      }
+      me.pending = next;
+      if (!write(STORE_KEY, me) || read(STORE_KEY)?.secret !== me.secret || fresh) return null;
+      return {secret: me.secret, timestamp: me.timestamp, body};
+    });
   }
 
-  let timer = null, running = null;
-  // Publishes this browser's report when it changed (or once a day, so relays keep it).
+  let timer = null, running = Promise.resolve();
+  // Reserve a relay timestamp while the lock is held; signing and network I/O can run outside it.
   async function report(profile) {
     if (!live || !profile) return 0;
-    const me = await identity(profile);
-    const body = JSON.stringify(reportOf(profile, me.devices));
-    if (body === me.sent && clock() - me.sentAt < REFRESH_MS) return 0;
-    const event = await signEvent(fromHex(me.secret), {
-      kind: SYNC_KIND, created_at: Math.floor(clock() / 1000), tags: [['d', STATS_TAG], ['t', STATS_TOPIC]], content: body,
+    const prepared = await prepareReport(profile);
+    if (!prepared) return 0;
+    const {secret, timestamp, body} = prepared;
+    const event = await signEvent(fromHex(secret), {
+      kind: SYNC_KIND, created_at: timestamp, tags: [['d', STATS_TAG], ['t', STATS_TOPIC]], content: body,
     });
     const accepted = await publishEvent(event, { relays, Socket });
-    if (accepted) write(STORE_KEY, { ...read(STORE_KEY), sent: body, sentAt: clock() });
+    if (accepted) await withIdentityLock(() => {
+      const stored = read(STORE_KEY);
+      if (stored?.secret === secret && stored.timestamp === timestamp) {
+        write(STORE_KEY, { ...stored, sent: body, sentAt: clock() });
+      }
+    });
     return accepted;
   }
 
@@ -119,7 +182,7 @@ export function createSiteStats({ storage = globalThis.localStorage, relays = SY
       if (!live) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
-        running = (running ?? Promise.resolve()).then(() => report(profile)).catch(() => 0).finally(() => { running = null; });
+        running = running.then(() => report(profile)).catch(() => 0);
       }, delay);
     },
     report,

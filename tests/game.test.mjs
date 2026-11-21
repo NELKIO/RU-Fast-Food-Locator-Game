@@ -285,10 +285,50 @@ test('untrusted saved data is repaired without accepting prototype keys, invalid
 
 // The login week and fewer repeated wild fighters (November 2026).
 import { claimDaily, dailyStatus, featuredFighter, DAILY_REWARDS } from '../public/js/game.js';
+import { docOf, mergeProfile } from '../public/js/sync-merge.js';
 import { readFileSync } from 'node:fs';
 const realMenu = JSON.parse(readFileSync(new URL('../public/data/menu.json', import.meta.url)));
 const day = n => new Date(2026, 10, 20 + n, 10).getTime();
 function seq(seed) { let s = seed; return () => ((s = (s * 16807) % 2147483647) / 2147483647); }
+
+test('a synced encounter with the same sequence cannot change the fighter a player won', () => {
+  const starter = grantStarter(freshProfile(), realMenu, {rng: seq(3)}).profile;
+  const laptop = mergeProfile(starter, [], {now: noon - 2000, device: 'aaaaaaaaaaaaaaaa'});
+  const phone = mergeProfile(freshProfile(), [docOf(laptop)], {now: noon - 1000, device: 'bbbbbbbbbbbbbbbb'});
+  const visit = (profile, point, now) => claimVisit(profile, point, fixAt(point, now), realMenu, {now, rng: seq(8)});
+  const remote = visit(laptop, first, noon);
+  const local = visit(phone, pizza, noon + 1000);
+  const fought = local.encounter;
+  assert.equal(remote.encounter.id, fought.id);
+  assert.notEqual(remote.encounter.enemyId, fought.enemyId);
+  const remoteDoc = docOf(mergeProfile(remote.profile, [], {now: noon + 2000}));
+  const synced = mergeProfile(local.profile, [remoteDoc], {now: noon + 3000});
+  assert.equal(synced.encounter.enemyId, remote.encounter.enemyId);
+  const options = {now: noon + 4000, fought, matchId: 'won-on-phone'};
+  const reward = resolveEncounter(synced, fought.id, true, realMenu, options);
+  assert.equal(reward.card.id, fought.enemyId);
+  assert.equal(reward.profile.collection[fought.enemyId].copies, (synced.collection[fought.enemyId]?.copies ?? 0) + 1);
+  assert.deepEqual(reward.profile.collection[remote.encounter.enemyId], synced.collection[remote.encounter.enemyId]);
+  const replay = resolveEncounter(reward.profile, fought.id, true, realMenu, options);
+  assert.equal(replay.reason, 'already-recorded');
+  assert.deepEqual(replay.profile, reward.profile);
+  assert.equal(resolveEncounter(reward.profile, fought.id, true, realMenu, {fought}).reason, 'no-encounter');
+});
+
+test('moving the local calendar back across midnight preserves the login streak and reward', () => {
+  const profile = normalizeProfile({...freshProfile(), login: {day: '2026-11-20', streak: 5, v: 2}});
+  const midnight = new Date(2026, 10, 21, 0, 30).getTime();
+  const earned = claimDaily(profile, realMenu, {now: midnight});
+  assert.equal(earned.day, 6);
+  for (const localTime of [midnight - hour, midnight, day(1)]) {
+    assert.deepEqual(dailyStatus(earned.profile, localTime), {claimable: false, today: 6, claimed: 6});
+    const repeated = claimDaily(earned.profile, realMenu, {now: localTime});
+    assert.equal(repeated.reason, 'claimed');
+    assert.deepEqual(repeated.profile, earned.profile);
+  }
+  assert.equal(claimDaily(earned.profile, realMenu, {now: day(2)}).day, 7);
+  assert.equal(dailyStatus({...earned.profile, login: {day: '2026-11-31', streak: 6, v: 2}}, day(0)).today, 1);
+});
 
 test('the login week: one reward a day, seven days in a row, a missed day starts over', () => {
   let p = grantStarter(freshProfile(), realMenu, { rng: seq(3) }).profile;
@@ -335,6 +375,23 @@ test('wild fighters: new dishes come first and the last five do not repeat while
   }
   for (let i = 5; i < seen.length; i++) assert.ok(!seen.slice(i - 5, i).includes(seen[i]), 'no repeat within five: ' + seen[i]);
   assert.ok(new Set(seen).size >= 27, 'mostly different fighters, got ' + new Set(seen).size);
+});
+
+test('losing to the only missing fighter leaves five other encounters before it may return', () => {
+  const missing = 'bk-whopper';
+  let profile = normalizeProfile({...freshProfile(), wildSeed: '00000001', team: ['bk-fries'],
+    collection: Object.fromEntries(realMenu.filter(item => item.id !== missing).map(item => [item.id, {copies: 1, xp: 0}]))});
+  const met = [];
+  let now = noon;
+  for (let i = 0; i < 6; i++) {
+    const found = wildEncounter(profile, realMenu, {now});
+    const enemy = found.encounter.enemyId;
+    assert.ok(!met.includes(enemy), enemy + ' returned too soon');
+    met.push(enemy);
+    profile = resolveEncounter(found.profile, found.encounter.id, false, realMenu, {now}).profile;
+    now += WILD_COOLDOWN_MS;
+  }
+  assert.equal(met[0], missing);
 });
 
 test('a login reward claimed before the roulette version is reset once and can be claimed again', () => {

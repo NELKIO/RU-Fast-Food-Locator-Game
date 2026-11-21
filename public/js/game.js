@@ -59,11 +59,13 @@ export function freshProfile() {
     team: [],
     visits: {},
     daily: {day: '', pointIds: [], claimed: false},
+    routes: {},
     encounter: null,
     encounterSequence: 0,
     lastScoutAt: null,
     battles: {wins: 0, losses: 0, draws: 0},
     battleIds: {},
+    battleXp: {},
     retired: {},
     recentWild: [],
     login: {day: '', streak: 0},
@@ -86,7 +88,8 @@ function streamRandom(text) {
 // claim the day again the new way.
 const LOGIN_VERSION = 2;
 function cleanLogin(value) {
-  if (!record(value) || value.v !== LOGIN_VERSION || typeof value.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.day)) {
+  if (!record(value) || value.v !== LOGIN_VERSION || typeof value.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.day) ||
+      new Date(value.day + 'T00:00:00Z').toJSON()?.slice(0, 10) !== value.day) {
     return {day: '', streak: 0};
   }
   return {day: value.day, streak: Math.min(DAILY_DAYS, Math.max(1, count(value.streak))), v: LOGIN_VERSION};
@@ -116,8 +119,21 @@ const SYNC_KEY = /^[A-Z2-9]{32}$/;
 // 256 devices: every cleared browser counts as a new one, so the ledger must outlast years of play.
 export const SYNC_LIMITS = Object.freeze({devices: 256, cards: 400, visits: 6000});
 
+function cleanBattleXp(value) {
+  const battleXp = {};
+  if (!record(value)) return battleXp;
+  for (const [id, amount] of Object.entries(value).slice(0, SYNC_LIMITS.cards)) {
+    const fighter = current(validId(id));
+    const xp = count(amount);
+    if (fighter && Object.hasOwn(FIGHTERS, fighter) && xp) {
+      battleXp[fighter] = count((battleXp[fighter] ?? 0) + xp);
+    }
+  }
+  return battleXp;
+}
+
 export function cleanContribution(value) {
-  const entry = {xp: 0, wins: 0, losses: 0, draws: 0, cards: {}, visits: {}};
+  const entry = {xp: 0, wins: 0, losses: 0, draws: 0, cards: {}, battleXp: {}, visits: {}};
   if (!record(value)) return entry;
   for (const key of ['xp', 'wins', 'losses', 'draws']) entry[key] = count(value[key]);
   if (record(value.cards)) {
@@ -133,6 +149,7 @@ export function cleanContribution(value) {
       if (validId(id) && count(visits)) entry.visits[id] = count(visits);
     }
   }
+  entry.battleXp = cleanBattleXp(value.battleXp);
   return entry;
 }
 
@@ -163,6 +180,39 @@ function cleanRoute(value) {
   return {day: value.day, pointIds, claimed: value.claimed === true && pointIds.length === 2};
 }
 
+// The old format retained one route and included its reward in the device's ordinary XP.
+// New rewards are shared by calendar day, so a second device can independently finish the same route.
+function cleanRoutes(value, daily) {
+  const routes = {};
+  for (const [day, row] of Object.entries(record(value) ? value : {})) {
+    const route = cleanRoute({day, pointIds: row?.pointIds});
+    if (!route.day || !route.pointIds.length) continue;
+    const credit = route.pointIds.length === 2 && ['shared', 'legacy'].includes(row.credit) ? row.credit : '';
+    routes[day] = {pointIds: route.pointIds, credit};
+  }
+  if (daily.day && daily.pointIds.length && !routes[daily.day]) {
+    routes[daily.day] = {pointIds: [...daily.pointIds], credit: daily.claimed ? 'legacy' : ''};
+  }
+  return routes;
+}
+
+export function mergeRoutes(histories) {
+  const routes = {};
+  for (const history of histories) {
+    for (const [day, row] of Object.entries(history)) {
+      const prior = routes[day];
+      const pointIds = [...new Set([...(prior?.pointIds ?? []), ...row.pointIds])].sort().slice(0, 2);
+      const legacy = row.credit === 'legacy' || prior?.credit === 'legacy';
+      routes[day] = {pointIds, credit: legacy ? 'legacy' : pointIds.length === 2 ? 'shared' : ''};
+    }
+  }
+  return routes;
+}
+
+export function sharedRouteXp(routes) {
+  return Object.values(routes).filter(row => row.credit === 'shared').length * ROUTE_XP;
+}
+
 // Build new arrays and dictionaries so actions never mutate their input or trust stored JSON.
 export function normalizeProfile(value) {
   const profile = freshProfile();
@@ -189,6 +239,7 @@ export function normalizeProfile(value) {
     }
   }
   profile.daily = cleanRoute(value.daily);
+  profile.routes = cleanRoutes(value.routes, profile.daily);
   const encounter = value.encounter;
   // Older saves also had a 'training' kind; every wild fighter can now be won.
   if (record(encounter) && validId(encounter.id) && validId(encounter.enemyId) &&
@@ -203,6 +254,7 @@ export function normalizeProfile(value) {
   profile.encounterSequence = count(value.encounterSequence);
   profile.lastScoutAt = timestamp(value.lastScoutAt);
   profile.battles = {wins: count(value.battles?.wins), losses: count(value.battles?.losses), draws: count(value.battles?.draws)};
+  profile.battleXp = cleanBattleXp(value.battleXp);
   if (record(value.battleIds)) {
     for (const [id, settled] of Object.entries(value.battleIds)) {
       if (validId(id) && settled === true) profile.battleIds[id] = true;
@@ -278,6 +330,8 @@ function localDay(now) {
 
 export function todayRoute(profile, now = Date.now()) {
   const day = localDay(now);
+  const row = profile?.routes?.[day];
+  if (row) return {day, pointIds: [...row.pointIds], claimed: Boolean(row.credit)};
   const saved = cleanRoute(profile?.daily);
   return saved.day === day ? saved : {day, pointIds: [], claimed: false};
 }
@@ -442,12 +496,14 @@ function spawnWild(saved, items, now, rng, brand = null, visit = false) {
   ensureWildSeed(saved, rng);
   const sequence = saved.encounterSequence + 1;
   rng = streamRandom(saved.wildSeed + ':' + sequence + ':' + (brand ?? ''));
-  const fresh = list => {
-    const left = list.filter(item => !saved.recentWild.includes(String(item.id)));
-    return left.length ? left : list;
-  };
-  const unseen = pool.filter(item => !Object.hasOwn(saved.collection, item.id));
-  const enemy = choose(fresh(unseen.length && unit(rng) < NEW_WILD_ODDS ? unseen : pool), rng);
+  // Exclude recent encounters before favouring new dishes. For a small chain, keep its oldest option.
+  let available = pool;
+  for (const recentId of saved.recentWild) {
+    const others = available.filter(item => String(item.id) !== recentId);
+    if (others.length) available = others;
+  }
+  const unseen = available.filter(item => !Object.hasOwn(saved.collection, item.id));
+  const enemy = choose(unseen.length && unit(rng) < NEW_WILD_ODDS ? unseen : available, rng);
   saved.recentWild = [String(enemy.id), ...saved.recentWild.filter(id => id !== String(enemy.id))].slice(0, RECENT_WILD);
   retire(saved, saved.encounter);
   saved.encounterSequence = sequence;
@@ -498,6 +554,7 @@ export function claimVisit(profile, point, fix, menu, {now = Date.now(), rng = M
   const routeCompleted = !route.claimed && route.pointIds.length === 2;
   if (routeCompleted) route.claimed = true;
   saved.daily = route;
+  saved.routes[route.day] = {pointIds: [...route.pointIds], credit: routeCompleted ? 'shared' : saved.routes[route.day]?.credit ?? ''};
   const playerXp = (visits === 0 ? 12 : 8) + (routeCompleted ? ROUTE_XP : 0);
   saved.xp = count(saved.xp + playerXp);
 
@@ -582,6 +639,8 @@ function finishBattle(saved, outcome, playerXp, cardIds, cardXp) {
     if (!entry) continue;
     const level = levelForXp(entry.xp);
     entry.xp = count(entry.xp + cardXp, XP_THRESHOLDS.at(-1));
+    // Battle awards keep counting past the card's level cap and exclude duplicate and daily XP.
+    if (cardXp) saved.battleXp[id] = count((saved.battleXp[id] ?? 0) + cardXp);
     if (levelForXp(entry.xp) > level) leveledIds.push(id);
   }
   return leveledIds;
@@ -589,13 +648,13 @@ function finishBattle(saved, outcome, playerXp, cardIds, cardXp) {
 
 export function resolveEncounter(profile, encounterId, won, menu, {teamIds, draw = false, now = Date.now(), fought = null, matchId = null} = {}) {
   const saved = normalizeProfile(profile);
-  if (matchId && Object.hasOwn(saved.battleIds, matchId)) return {ok: false, reason: 'already-recorded', profile: saved};
+  const battleId = validId(matchId);
+  if (matchId != null && !battleId) return {ok: false, reason: 'invalid-battle', profile: saved};
+  if (battleId && Object.hasOwn(saved.battleIds, battleId)) return {ok: false, reason: 'already-recorded', profile: saved};
   const current = saved.encounter?.id === encounterId ? saved.encounter : null;
-  // A finished fight is never lost. If a sync took this wild fighter away meanwhile (another device
-  // caught it), the fight still counts against the fighter that was fought: a rare double reward is
-  // fine, a lost one is not. The fight's own ID keeps it from counting twice on this device.
-  const encounter = current ?? (fought && fought.id === encounterId && typeof fought.enemyId === 'string' ? fought : null);
-  if (!encounter) return {ok: false, reason: 'no-encounter', profile: saved};
+  // Linked devices can meet different fighters at the same sequence number. Award the one in the ring.
+  const encounter = fought?.id === encounterId && typeof fought?.enemyId === 'string' ? fought : current;
+  if (!encounter || (!current && !battleId)) return {ok: false, reason: 'no-encounter', profile: saved};
   const outcome = battleOutcome(won, draw);
   if (!outcome) return {ok: false, reason: 'invalid-result', profile: saved};
   const enemy = menuItems(menu).find(item => String(item.id) === encounter.enemyId);
@@ -609,7 +668,7 @@ export function resolveEncounter(profile, encounterId, won, menu, {teamIds, draw
   // Win or lose, the wild fighter leaves and the next one appears after the pause.
   retire(saved, encounter);
   if (current) saved.encounter = null;
-  if (matchId) saved.battleIds[matchId] = true;
+  if (battleId) saved.battleIds[battleId] = true;
   if (timestamp(now) !== null) saved.lastScoutAt = Math.max(saved.lastScoutAt ?? 0, timestamp(now));
   return {
     ok: true, reason: outcome, profile: saved, encounter, card: won ? ownedCard(enemy, saved.collection[enemy.id]) : null,
@@ -764,7 +823,7 @@ export function dailyStatus(profile, now = Date.now()) {
   const saved = normalizeProfile(profile);
   const today = localDay(now);
   const {day, streak} = saved.login;
-  if (day === today) return {claimable: false, today: streak, claimed: streak};
+  if (day >= today) return {claimable: false, today: streak, claimed: streak};
   const next = day && day === dayBefore(today) ? streak % DAILY_DAYS + 1 : 1;
   return {claimable: true, today: next, claimed: next - 1};
 }

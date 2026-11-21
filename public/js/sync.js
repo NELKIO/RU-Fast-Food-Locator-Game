@@ -85,42 +85,49 @@ const base64 = bytes => { let text = ''; for (let i = 0; i < bytes.length; i += 
 
 export async function sealDoc(account, doc, createdAt) {
   const plain = encoder.encode(JSON.stringify(doc));
-  const packed = typeof CompressionStream === 'function' ? await pipe(plain, new CompressionStream('deflate-raw')) : plain;
+  if (plain.length > MAX_DOC_BYTES) throw new Error('document too large');
+  let compressor;
+  try { compressor = new CompressionStream('deflate-raw'); } catch { /* Some browsers only support gzip. */ }
+  const packed = compressor ? await pipe(plain, compressor) : plain;
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, account.aes, packed));
   const event = {
     kind: SYNC_KIND, pubkey: account.pubkey, created_at: createdAt, tags: [['d', SYNC_TAG]],
     content: (packed === plain ? 'p1:' : 'z1:') + base64(new Uint8Array([...iv, ...sealed])),
   };
+  if (event.content.length > MAX_EVENT_CHARS) throw new Error('document too large');
   const digest = await sha256(canonical(event));
   const curve = await schnorr();
   return { ...event, id: hex(digest), sig: hex(await curve.signAsync(digest, account.secret)) };
 }
 
-// Returns the document, or null for anything that is not a valid event of this account.
-export async function openDoc(account, event) {
+// An unsigned or unrelated event carries no account data. An authenticated but unreadable
+// snapshot must stop publication: replacing it could erase a newer format or a compressed backup.
+async function readProfileEvent(account, event) {
+  if (!event || event.kind !== SYNC_KIND || event.pubkey !== account.pubkey || !Number.isSafeInteger(event.created_at) ||
+      typeof event.content !== 'string' || !Array.isArray(event.tags) ||
+      !event.tags.some(tag => Array.isArray(tag) && tag[0] === 'd' && tag[1] === SYNC_TAG) || !await verifyEvent(event)) return null;
   try {
-    if (!event || event.kind !== SYNC_KIND || event.pubkey !== account.pubkey || !Number.isSafeInteger(event.created_at) ||
-        !/^[a-f\d]{64}$/.test(event.id) || !/^[a-f\d]{128}$/.test(event.sig) || typeof event.content !== 'string' ||
-        event.content.length > MAX_EVENT_CHARS || !Array.isArray(event.tags) ||
-        !event.tags.some(tag => Array.isArray(tag) && tag[0] === 'd' && tag[1] === SYNC_TAG)) return null;
-    const digest = await sha256(canonical(event));
-    const curve = await schnorr();
-    if (event.id !== hex(digest) || !await curve.verifyAsync(fromHex(event.sig), digest, fromHex(event.pubkey))) return null;
     const mode = event.content.slice(0, 3);
-    if (mode !== 'z1:' && mode !== 'p1:') return null;
+    if (event.content.length > MAX_EVENT_CHARS || (mode !== 'z1:' && mode !== 'p1:')) return {unreadable: true};
     const body = Uint8Array.from(atob(event.content.slice(3)), ch => ch.charCodeAt(0));
     const packed = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: body.subarray(0, 12) }, account.aes, body.subarray(12)));
     const plain = mode === 'z1:' ? await pipe(packed, new DecompressionStream('deflate-raw')) : packed;
-    if (plain.length > MAX_DOC_BYTES) return null;
-    return JSON.parse(decoder.decode(plain));
+    if (plain.length > MAX_DOC_BYTES) return {unreadable: true};
+    const doc = JSON.parse(decoder.decode(plain));
+    if (!Number.isSafeInteger(doc?.v) || doc.v < 1 || !doc.devices || typeof doc.devices !== 'object' || Array.isArray(doc.devices)) return {unreadable: true};
+    return {doc};
   } catch {
-    return null;
+    return {unreadable: true};
   }
 }
 
+export async function openDoc(account, event) {
+  return (await readProfileEvent(account, event))?.doc ?? null;
+}
+
 // One short-lived connection per relay: read the account's events, or publish one.
-function talk(Socket, url, message, finished, timeoutMs) {
+function talk(Socket, url, message, finished, timeoutMs, frameLimit = MAX_EVENT_CHARS + 4096) {
   return new Promise(resolve => {
     const got = [];
     let socket, done = false;
@@ -137,7 +144,8 @@ function talk(Socket, url, message, finished, timeoutMs) {
     socket.onerror = () => end(false);
     socket.onclose = () => end(false);
     socket.onmessage = ({ data }) => {
-      if (typeof data !== 'string' || data.length > MAX_EVENT_CHARS + 4096) return;
+      if (typeof data !== 'string') return;
+      if (data.length > frameLimit) { end(false); return; }
       let reply;
       try { reply = JSON.parse(data); } catch { return; }
       if (!Array.isArray(reply)) return;
@@ -154,7 +162,9 @@ export async function fetchEvents(account, { relays = SYNC_RELAYS, Socket = glob
     if (reply[0] === 'EVENT' && reply[1] === sub) got.push(reply[2]);
     if ((reply[0] === 'EOSE' || reply[0] === 'CLOSED') && reply[1] === sub) return reply[0] === 'EOSE';
     return undefined;
-  }, timeoutMs).then(result => ({ url, ...result }))));
+  // Allow enough room to authenticate an older uncompressed save before applying the document
+  // limit. An unbounded/non-protocol frame makes only this relay ineligible for publication.
+  }, timeoutMs, 2 * MAX_DOC_BYTES).then(result => ({ url, ...result }))));
   return replies;
 }
 
@@ -203,7 +213,7 @@ export async function queryRelays(filter, { relays = SYNC_RELAYS, Socket = globa
 // The controller the app uses. It pulls, merges into the local profile in one store update,
 // and publishes only when the relays do not already hold the merged document.
 export function createSync({ store, relays = SYNC_RELAYS, Socket = globalThis.WebSocket, clock = () => Date.now(),
-  onStatus = () => {}, debounceMs = 2500, intervalMs = 90_000, paused = () => false } = {}) {
+  onStatus = () => {}, initializeEmpty, debounceMs = 2500, intervalMs = 90_000, paused = () => false } = {}) {
   let status = { state: 'off', at: null, relays: 0, error: null };
   let running = null, timer = null, ticker = null, account = null, accountKey = null, written = null;
   let latestCreated = 0;
@@ -216,40 +226,69 @@ export function createSync({ store, relays = SYNC_RELAYS, Socket = globalThis.We
     return account;
   }
 
+  let reading = null;
+  async function pull(k) {
+    const acc = await accountFor(k);
+    const replies = await fetchEvents(acc, {relays, Socket});
+    const checkedRelays = replies.filter(reply => reply.ok).map(reply => reply.url);
+    const reachable = checkedRelays.length;
+    const opened = [];
+    let unreadable = false;
+    for (const reply of replies) {
+      for (const event of reply.got) {
+        const data = await readProfileEvent(acc, event);
+        if (data?.unreadable) unreadable = true;
+        if (data?.doc) opened.push({url: reply.url, created: event.created_at, doc: data.doc});
+      }
+    }
+    if (key() !== k) return {state: 'off'};
+    if (unreadable) return {state: 'unreadable', relays: reachable};
+    if (!reachable) return {state: 'offline', relays: 0};
+    const now = clock();
+    const newer = opened.some(item => item.doc.v > DOC_VERSION);
+    latestCreated = Math.max(latestCreated, ...opened.map(item => item.created));
+    const result = await store.update(profile => {
+      if (profile.sync?.key !== k) return {ok: false, reason: 'account-changed', profile};
+      let next = mergeProfile(profile, opened.map(item => item.doc), {now});
+      if (!newer && initializeEmpty && !Object.keys(next.collection).length) {
+        const starter = initializeEmpty(next);
+        if (starter.ok) next = mergeProfile(starter.profile, [], {now});
+      }
+      written = stableJson(next);
+      return written === stableJson(profile) ? {ok: false, reason: 'unchanged', profile} : {ok: true, profile: next};
+    });
+    if (result.reason === 'account-changed' || key() !== k) return {state: 'off'};
+    return {state: newer ? 'outdated' : 'ok', reachable, checkedRelays, relays: reachable, at: now, opened, acc, merged: result.profile};
+  }
+
+  // Claims need a completed read and merge. They can share an in-flight read, and can make a
+  // fresh read immediately while a previous run is waiting for slow publication acknowledgements.
+  function read(k) {
+    if (!k) return Promise.resolve({state: 'off'});
+    if (paused()) { schedule(3000); return Promise.resolve({state: 'paused'}); }
+    if (reading?.key === k) return reading.promise;
+    const promise = pull(k).catch(error => ({state: 'error', error: String(error?.message ?? error)}))
+      .finally(() => { if (reading?.promise === promise) reading = null; });
+    reading = {key: k, promise};
+    return promise;
+  }
+
   async function run() {
     const k = key();
-    if (!k) { set({ state: 'off' }); return status; }
-    // A fight in progress keeps its wild fighter: the merge waits until the result is saved.
-    // The caller learns that nothing was checked (the shown status stays as it was).
-    if (paused()) { schedule(3000); return { ...status, state: 'paused' }; }
-    set({ state: 'syncing', error: null });
+    if (!k) { set({state: 'off'}); return status; }
+    if (paused()) { schedule(3000); return {...status, state: 'paused'}; }
+    set({state: 'syncing', error: null});
     try {
-      const acc = await accountFor(k);
-      const replies = await fetchEvents(acc, { relays, Socket });
-      const reachable = replies.filter(reply => reply.ok).length;
-      const opened = [];
-      for (const reply of replies) {
-        for (const event of reply.got) {
-          const doc = await openDoc(acc, event);
-          if (doc) opened.push({ url: reply.url, created: event.created_at, doc });
-        }
+      const phase = await read(k);
+      if (phase.state !== 'ok') {
+        if (phase.state === 'paused') return {...status, state: 'paused'};
+        set({state: phase.state, at: phase.at, relays: phase.relays ?? 0, error: phase.error ?? null});
+        return status;
       }
-      if (!reachable && !opened.length) { set({ state: 'offline', relays: 0 }); return status; }
-      latestCreated = Math.max(latestCreated, ...opened.map(item => item.created));
-      if (key() !== k) return status; // unlinked meanwhile
-      const now = clock();
-      // One store update: the merge always starts from the freshest local profile.
-      const result = await store.update(profile => {
-        const next = mergeProfile(profile, opened.map(item => item.doc), { now });
-        written = stableJson(next);
-        return written === stableJson(profile) ? { ok: false, reason: 'unchanged', profile } : { ok: true, profile: next };
-      });
-      const merged = result.profile;
-      const newer = opened.some(item => item.doc?.v > DOC_VERSION);
+      const {acc, reachable, checkedRelays, opened, merged, at: now} = phase;
       const doc = docOf(merged);
       const text = stableJson(doc);
       const holding = new Set(opened.filter(item => stableJson(item.doc) === text).map(item => item.url));
-      if (newer) { set({ state: 'outdated', at: clock(), relays: reachable }); return status; }
       let published = holding.size;
       if (holding.size < Math.min(3, reachable)) {
         // Never behind what a relay holds, so the relay takes the new version; a clock that is
@@ -260,7 +299,7 @@ export function createSync({ store, relays = SYNC_RELAYS, Socket = globalThis.We
         // to the time of the newest event they already hold.
         if (latestCreated && tries[0] !== latestCreated + 1) tries.push(latestCreated + 1);
         for (const createdAt of tries) {
-          const accepted = await publishEvent(await sealDoc(acc, doc, createdAt), { relays, Socket });
+          const accepted = await publishEvent(await sealDoc(acc, doc, createdAt), { relays: checkedRelays, Socket });
           if (accepted) { latestCreated = Math.max(latestCreated, createdAt); published = Math.max(published, accepted); break; }
         }
       }
@@ -315,6 +354,10 @@ export function createSync({ store, relays = SYNC_RELAYS, Socket = globalThis.We
       clearTimeout(timer);
       await store.update(profile => (profile.sync ? { ok: true, profile: { ...profile, sync: { ...profile.sync, key: null } } } : { ok: false, profile }));
       set({ state: 'off', at: null, relays: 0 });
+    },
+    async readNow() {
+      const {state, relays = 0, at = null} = await read(key());
+      return {state, relays, at};
     },
     syncNow,
     stop() {

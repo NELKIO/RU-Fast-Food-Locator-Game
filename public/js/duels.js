@@ -59,7 +59,7 @@ const rules = `<details class="duel-rules"><summary>Как идёт бой</summ
   <p>Дальше ходите по очереди. Удар и защита дают +1 энергии, максимум ${MAX_ENERGY}. Энергия тратится на фирменный приём — у каждого бойца он свой.</p>
   <p>Чем реже боец, тем больше он умеет: у редкого есть талант, который работает сам, у эпического и легендарного — ещё и суперприём за ${MAX_ENERGY} энергии. Талант легенды делает сразу две вещи.</p>
   <p>Защита вдвое ослабляет следующий удар, если он не «сквозь защиту». Выбитого бойца сразу заменяет следующий из команды. Замена по своей воле стоит хода.</p>
-  <p>Через 48 ходов побеждает команда, у которой осталось больше здоровья. В дуэли с другом у всех базовые характеристики, а команды выравниваются по меньшей.</p></details>`;
+  <p>Через 48 ходов побеждает команда с большей долей оставшегося здоровья. В дуэли с другом число бойцов одинаковое у обеих сторон. Бойцы выходят на первом уровне, если хотя бы один игрок оставил уравнитель включённым.</p></details>`;
 
 // The narrator: one short line about what just happened, from the event the engine produced.
 // `snackers`: the sides whose fighter ate its snack in this event (the engine only gives the sum).
@@ -156,12 +156,14 @@ export function mountDuels(container, options) {
   let wildFighting = false;
   let data, catalog, owned;
   let selected = [];
+  let draftTeam = null;
   function sync() {
     data = read();
     catalog = new Map(data.cards.map(card => [card.id, card]));
     owned = [...new Set(data.owned)].filter(id => catalog.has(id));
-    selected = selected.filter(id => owned.includes(id));
-    if (!selected.length) selected = [...new Set(data.team ?? [])].filter(id => owned.includes(id)).slice(0, 3);
+    const saved = [...new Set(data.team ?? [])].filter(id => owned.includes(id)).slice(0, 3);
+    if (draftTeam?.length === saved.length && saved.every((id, i) => id === draftTeam[i])) draftTeam = null;
+    selected = (draftTeam ?? saved).filter(id => owned.includes(id));
     if (!selected.length) selected = owned.slice(0, 1);
   }
   sync();
@@ -195,8 +197,12 @@ export function mountDuels(container, options) {
 
   // An invite link only opens the room once: after the match, or when the player leaves the room,
   // a reload brings back the arena lobby instead of the finished room.
+  const invited = parseRoomCode(location.hash);
   function forgetInvite() {
-    if (/^#duel=/i.test(location.hash)) history.replaceState(history.state, '', location.pathname + location.search);
+    const code = room?.code ?? invited;
+    if (code && /^#duel=/i.test(location.hash) && parseRoomCode(location.hash) === code) {
+      history.replaceState(history.state, '', location.pathname + location.search);
+    }
   }
 
   function reset(next = 'lobby') {
@@ -220,7 +226,14 @@ export function mountDuels(container, options) {
   }
 
   function saveTeam() {
-    if (selected.length) onTeamChange?.([...selected]);
+    if (!selected.length) return;
+    const ids = [...selected];
+    draftTeam = ids;
+    Promise.resolve(onTeamChange?.(ids)).then(result => {
+      // A slow save of a previous team must not overwrite a newer choice. A future profile
+      // refresh picks up fighters earned after the saved team entered battle.
+      if (result?.ok && draftTeam === ids) draftTeam = null;
+    }).catch(() => {});
   }
 
   function startWild() {
@@ -432,7 +445,7 @@ export function mountDuels(container, options) {
     if (!owned.length) return `<header class="duel-heading"><h2>Арена</h2></header>${empty()}`;
     // The friend duel sits right under the wild fighter: with a big collection the team list is long.
     return `<header class="duel-heading"><h2>Арена</h2></header>${wildBox()}${feedback && mode === 'lobby' ? '<p class="duel-alert" role="status">' + esc(feedback) + '</p>' : ''}${trainerBox()}
-      <section class="duel-friend"><span>${icon('route', 20)}</span><p><strong>С другом по ссылке</strong><small>Честный бой на базовых характеристиках</small></p>
+      <section class="duel-friend"><span>${icon('route', 20)}</span><p><strong>С другом по ссылке</strong><small>В комнате можно выбрать, учитывать ли уровни бойцов</small></p>
         ${button('online', 'Дуэль с другом')}</section>${teamPicker()}${rules}`;
   }
 
@@ -461,7 +474,7 @@ export function mountDuels(container, options) {
         ${copyStatus ? '<p class="duel-note" role="status">' + esc(copyStatus) + '</p>' : ''}
         ${connectionError && !room.peer ? '<p class="duel-alert" role="status">' + esc(connectionError) + '</p>' : ''}
         ${slow && !room.peer ? '<p class="duel-note">Проверь, что друг открыл тот же код. Если соединение долго не появляется, попробуй другую сеть.</p>' : ''}
-      </div>${readyPanel()}${teamPicker(!!room.team, true)}
+      </div>${readyPanel()}${teamPicker(!!room.team, room.equalized)}
       <div class="duel-buttons">${button('lobby', 'Закрыть комнату', { quiet: true })}</div>${rules}`;
   }
 
@@ -494,7 +507,7 @@ export function mountDuels(container, options) {
     const peerKnown = Boolean(room.peer);
     const note = room.matchId ? (room.leveled ? 'Бой с настоящими уровнями бойцов.' : 'Бой на равных: все бойцы первого уровня.')
       : room.fair && (!peerKnown || room.peerFair) ? 'Все бойцы на первом уровне, прокачка не важна.'
-      : room.fair ? 'Соперник хочет бой с уровнями. Выключи уравнитель, чтобы согласиться.'
+      : room.fair ? (room.team ? 'Твоя команда подтверждена. Бой пройдёт на равных.' : 'Соперник хочет бой с уровнями. Выключи уравнитель, чтобы согласиться.')
       : !peerKnown ? 'Уровни учтутся, только если соперник тоже выключит уравнитель.'
       : room.peerFair ? 'Соперник оставил уравнитель — бой будет на равных.'
       : 'Оба выключили уравнитель — бой с настоящими уровнями.';
@@ -998,8 +1011,15 @@ export function mountDuels(container, options) {
     else if (action === 'trainer-roll') { trainerRoll++; trainerFor(); draw(); }
     // The three strongest owned fighters by measured strength and level, the strongest first.
     else if (action === 'team-auto') {
-      const best = suggestTeam(owned.map(id => catalog.get(id)));
-      if (best.length && !room?.team) { selected = best; saveTeam(); trainerFor(); draw(); }
+      const best = suggestTeam(owned.map(id => {
+        const card = catalog.get(id);
+        return room?.equalized ? cardFor(card, 1) : card;
+      }));
+      if (best.length && !room?.team) {
+        selected = best;
+        if (!room) { saveTeam(); trainerFor(); }
+        draw();
+      }
     }
     else if (action.startsWith('trainer-level:')) { data.setTrainerLevel?.(action.slice(14)); trainerFor(); draw(); }
     else if (action === 'trainer-again') { trainerFor(true); startTrainer(); }
@@ -1024,7 +1044,6 @@ export function mountDuels(container, options) {
     if (code) openRoom('guest', code);
     else { feedback = 'Введи десять символов кода или полную ссылку приглашения.'; draw(); page.querySelector('#duel-code')?.focus(); }
   });
-  const invited = parseRoomCode(location.hash);
   if (initialMode === 'wild') startWild();
   else if (invited && mode === 'online' && owned.length) openRoom('guest', invited);
   else draw();

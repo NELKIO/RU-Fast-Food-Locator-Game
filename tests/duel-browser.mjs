@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SIGNAL_RELAYS } from '../public/js/duel-transport.js';
+import { cardFor, suggestTeam } from '../public/js/game.js';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
@@ -31,14 +32,18 @@ const fixture = `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name
     const id = options.get('side') === 'guest' ? 'fries' : 'burger';
     const cards = ${JSON.stringify(sample)};
     const wild = ${JSON.stringify(wildCard)};
-    mountDuels(document.querySelector('main'),{
-      read: () => ({cards, owned: [id], team: [id], wild: {id: 'wild-1', opponent: () => wild}, wildWaitMs: 0}),
+    let owned = [id], team = [id];
+    const arena = mountDuels(document.querySelector('main'),{
+      read: () => ({cards, owned, team, wild: {id: 'wild-1', opponent: () => wild}, wildWaitMs: 0}),
+      onTeamChange: ids => { window.saveTeam = () => { team = ids; arena.refresh(); }; },
       initialMode:options.get('mode')||'online',award:async result=>{
         window.attempts++;
         await new Promise(done=>setTimeout(done,45));
         if (options.has('fail')) throw Error('local test write error');
+        if (result.mode === 'wild' && result.won) { owned = [id, 'fries']; team = [...owned]; }
         window.results.push(result); return {ok:true};
       }});
+    window.refreshArena = () => arena.refresh();
   </script></html>`;
 const server = createServer(async (req, res) => {
   try {
@@ -247,7 +252,14 @@ try {
   await local.getByRole('heading', { name: 'Победа!' }).waitFor();
   assert.deepEqual(await local.evaluate(() => window.results.map(r => [r.mode, r.encounterId, r.won, r.teamIds])),
     [['wild', 'wild-1', true, ['burger']]]);
-  await local.getByRole('button', { name: 'На арену' }).waitFor();
+  await local.getByRole('button', { name: 'На арену' }).click();
+  const allySlot = local.locator('[data-duel-action="pick:fries"]');
+  assert.equal(await allySlot.getAttribute('aria-pressed'), 'true', 'the captured ally is selected for the next fight');
+  await allySlot.click();
+  await local.evaluate(() => window.refreshArena());
+  assert.equal(await allySlot.getAttribute('aria-pressed'), 'false', 'an unrelated refresh preserves a pending manual choice');
+  await local.evaluate(() => window.saveTeam());
+  assert.equal(await allySlot.getAttribute('aria-pressed'), 'false');
   console.log('PASS wild fight from the arena lobby / one result for the encounter / no browser errors');
   await local.context().close();
   const failed = await newPage();
@@ -262,14 +274,15 @@ try {
   // cards and then use only the site's public UI, including the real asynchronous award callback.
   const profileKey = 'fast-food-locator.profile.v1';
   const owner = await newPage(), visitor = await newPage();
-  async function seed(page, id) {
-    await page.addInitScript(({ key, id }) => {
+  async function seed(page, id, xp = { [id]: 0 }) {
+    await page.addInitScript(({ key, id, xp }) => {
       if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({
-        version: 1, collection: { [id]: { copies: 1, xp: 0 } }, team: [id], xp: 0
+        version: 1, collection: Object.fromEntries(Object.entries(xp).map(([card, value]) => [card, { copies: 1, xp: value }])), team: [id], xp: 0
       }));
-    }, { key: profileKey, id });
+    }, { key: profileKey, id, xp });
   }
-  await Promise.all([seed(owner, 'bk-whopper'), seed(visitor, 'dodo-pepperoni')]);
+  const xp = { 'vkusno-hamburger': 270, 'bk-angus-parmigiano': 0, 'bk-whopper': 0, 'bk-double-whopper': 0 };
+  await Promise.all([seed(owner, 'bk-whopper', xp), seed(visitor, 'dodo-pepperoni')]);
   await owner.goto(origin + '/');
   await owner.locator('.main-nav [data-nav="arena"]').click();
   await owner.getByRole('button', { name: 'Дуэль с другом' }).click();
@@ -282,6 +295,23 @@ try {
     document.querySelector('.duel-team').getBoundingClientRect().top,
   ]);
   assert.ok(readyTop < teamTop, 'the ready button comes before the team list on a phone');
+  const menu = JSON.parse(await readFile(resolve(publicDir, 'data/menu.json'), 'utf8'));
+  const picks = menu.filter(card => Object.hasOwn(xp, card.id));
+  async function verifyPicker(leveled) {
+    const cards = picks.map(item => cardFor(item, leveled && xp[item.id] ? 10 : 1));
+    const hamburger = cards.find(card => card.id === 'vkusno-hamburger');
+    const stats = owner.locator('[data-duel-action="card:vkusno-hamburger"] .duel-pick-title small > span');
+    assert.equal((await stats.nth(0).innerText()).trim(), String(hamburger.maxHp));
+    assert.equal((await stats.nth(1).innerText()).trim(), String(hamburger.attack));
+    await owner.getByRole('button', { name: 'Подобрать команду' }).click();
+    const selected = await owner.locator('.duel-slot[aria-pressed="true"]').evaluateAll(slots =>
+      slots.sort((a, b) => Number(a.textContent) - Number(b.textContent)).map(el => el.dataset.duelAction.slice(5)));
+    assert.deepEqual(selected, suggestTeam(cards));
+  }
+  await verifyPicker(false);
+  await Promise.all([owner, visitor].map(page => page.getByRole('switch').click()));
+  await Promise.all([owner, visitor].map(page => page.locator('.duel-equalizer small', { hasText: 'Оба выключили уравнитель' }).waitFor()));
+  await verifyPicker(true);
   await Promise.all([owner, visitor].map(page => page.getByRole('button', { name: 'Подтвердить команду' }).click()));
   await Promise.all([owner, visitor].map(page => page.getByRole('heading', { name: 'Сетевая дуэль' }).waitFor({ timeout: 45_000 })));
   await playToEnd([owner, visitor]);
@@ -298,6 +328,10 @@ try {
   await visitor.locator('#radar-view').waitFor({ state: 'visible' });
   assert.equal(await visitor.locator('[data-room-code]').count(), 0);
   assert.equal(await visitor.locator('#arena-view').isVisible(), false);
+  const nextInvite = inviteCode === 'BBBBBBBBBB' ? 'CCCCCCCCCC' : 'BBBBBBBBBB';
+  await owner.evaluate(code => { location.hash = 'duel=' + code; }, nextInvite);
+  await owner.locator('[data-room-code="' + nextInvite + '"]').waitFor();
+  assert.equal(await owner.evaluate(() => location.hash), '#duel=' + nextInvite);
   assert.deepEqual(errors, []);
   console.log('PASS production index / real menu / #duel deep link / identical match id / exactly one settlement in each saved profile / reload after the match leaves the room');
 } finally {

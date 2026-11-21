@@ -105,6 +105,47 @@ try {
       new URL(route.request().url()).origin === origin ? route.continue() : route.abort(),
     );
   }
+  const restricted = await browser.newContext();
+  await offline(restricted);
+  await restricted.addInitScript(() => Object.defineProperty(window, 'localStorage', {
+    get() { throw new DOMException('Storage is blocked', 'SecurityError'); },
+  }));
+  const restrictedPage = await watchPage(restricted);
+  await restrictedPage.goto(base);
+  await restrictedPage.getByRole('button', { name: 'Поехали' }).click();
+  await restrictedPage.locator('[data-point]').first().waitFor();
+  await restrictedPage.locator('.main-nav [data-nav="arena"]').click();
+  await restrictedPage.getByRole('button', { name: 'Сразиться' }).waitFor();
+  await restricted.close();
+  log('Radar and arena open when reading localStorage throws a SecurityError');
+
+  for (const useWebLocks of [true, false]) {
+    const context = await browser.newContext();
+    await offline(context);
+    if (!useWebLocks) await context.addInitScript(() => Object.defineProperty(navigator, 'locks', { value: undefined }));
+    const authors = new Set();
+    await context.routeWebSocket('**/stats-test', socket => {
+      socket.onMessage(data => {
+        const [type, event] = JSON.parse(String(data));
+        if (type === 'EVENT') {
+          authors.add(event.pubkey);
+          socket.send(JSON.stringify(['OK', event.id, true]));
+        }
+      });
+    });
+    const tabs = await Promise.all([watchPage(context), watchPage(context)]);
+    await Promise.all(tabs.map(tab => tab.goto(base + 'data/menu.json')));
+    const responses = await Promise.all(tabs.map(tab => tab.evaluate(async () => {
+      const { createSiteStats } = await import('../js/site-stats.js');
+      const stats = createSiteStats({ live: true, relays: ['ws://' + location.host + '/stats-test'] });
+      return stats.report({ battles: { wins: 1 } });
+    })));
+    assert.ok(responses.some(Boolean));
+    assert.equal(authors.size, 1, 'both tabs reported under the same key');
+    await context.close();
+  }
+  log('Two tabs share one statistics identity with Web Locks and with the IndexedDB fallback');
+
   const mobile = await browser.newContext({
     viewport: { width: 390, height: 844 },
     isMobile: true,

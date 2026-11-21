@@ -179,6 +179,13 @@ $('dialog').addEventListener('click', (e) => {
 });
 $('dialog').addEventListener('close', () => {
   dialogRun++;
+  if (!$('dialog').open && pendingInvite && !acceptingInvite) {
+    rememberInvite(null);
+    if (!store.read().sync?.key) {
+      store.update(p => p.sync?.key ? {ok: false, profile: p} : grantStarter(p, menu))
+        .then(result => { if (result.ok) { welcome(result.card); ensureWild(); } });
+    }
+  }
 });
 function resumeSound() {
   if (!audioOn) return;
@@ -662,11 +669,10 @@ async function playReel(pool, card, label) {
   return dialogRun === run && $('dialog').open;
 }
 // A linked device asks the others first: otherwise a reward taken a minute ago on the phone would
-// still look free on the laptop. Resolves to true when the shared progress was checked.
+// still look free on the laptop. The read is independent of a pending upload.
 async function syncedBeforeClaim() {
-  if (!profile.sync?.key) return true;
-  const status = await Promise.race([sync.syncNow(), new Promise((resolve) => setTimeout(() => resolve(null), 9000))]);
-  return status?.state === 'ok';
+  if (!profile.sync?.key) return 'ok';
+  return (await sync.readNow()).state;
 }
 async function spinReward() {
   if (!target || claimPending) return;
@@ -790,7 +796,11 @@ let dailyRun = null;
 async function claimDailyReward() {
   if (profile.sync?.key) {
     dailyDialog(null, 'Сверяем прогресс с другими устройствами…');
-    if (!(await syncedBeforeClaim())) {
+    const state = await syncedBeforeClaim();
+    if (state === 'unreadable' || state === 'outdated') {
+      return dailyDialog(null, 'Сохранение не удалось прочитать. Обнови игру или открой её в другом браузере.');
+    }
+    if (state !== 'ok') {
       return dailyDialog(null, 'Нет связи с другими устройствами. Награду можно будет забрать, когда синхронизация пройдёт: так её не заберут дважды.');
     }
     if (!dailyStatus(store.read()).claimable) return dailyDialog(null, 'Награду дня уже забрали на другом устройстве.');
@@ -1257,6 +1267,7 @@ function siteStatsHtml(total, loading) {
 let wildFightActive = false;
 const sync = createSync({
   store,
+  initializeEmpty: p => grantStarter(p, menu),
   paused: () => wildFightActive,
   onStatus: (status) => {
     refreshSyncDialog();
@@ -1268,6 +1279,18 @@ const sync = createSync({
 });
 let syncDialogRun = -1,
   syncKeyShown = false;
+let pendingInvite = null, acceptingInvite = false;
+const inviteSessionKey = 'foodradar.pending-invite.v1';
+function rememberInvite(key) {
+  pendingInvite = key;
+  try {
+    if (key) sessionStorage.setItem(inviteSessionKey, key);
+    else sessionStorage.removeItem(inviteSessionKey);
+  } catch {}
+}
+function storedInvite() {
+  try { return parseSyncKey(sessionStorage.getItem(inviteSessionKey)); } catch { return null; }
+}
 function syncLink(key) {
   const url = new URL(location.href);
   url.search = '';
@@ -1278,6 +1301,7 @@ function syncStatusText() {
   const status = sync.status;
   if (status.state === 'syncing') return 'Синхронизация…';
   if (status.state === 'offline') return 'Нет связи с узлами. Прогресс сохранён здесь и уйдёт при следующей связи.';
+  if (status.state === 'unreadable') return 'Не удалось прочитать облачное сохранение. Обнови игру или открой её в другом браузере.';
   if (status.state === 'outdated') return 'На другом устройстве новая версия игры. Обнови страницу.';
   if (status.state === 'error') return 'Не удалось синхронизировать. Попробуем ещё раз позже.';
   if (status.state === 'ok' && status.at) {
@@ -1333,16 +1357,18 @@ function refreshSyncDialog() {
   if (line) line.textContent = syncStatusText();
 }
 async function linkDevice(key) {
+  if (acceptingInvite) return;
+  acceptingInvite = true;
   syncDialog('main');
   const line = document.createElement('p');
   line.className = 'sync-status';
   line.textContent = 'Связываем и объединяем прогресс…';
   $('dialog-body').querySelector('h2')?.after(line);
-  const result = await sync.link(key);
-  // A new device that had nothing gets its starter only if the shared progress is empty too.
-  if (!Object.keys(store.read().collection).length) {
-    const starter = await store.update((p) => grantStarter(p, menu));
-    if (starter.ok) showToast('Твой первый боец — ' + starter.card.name);
+  let result;
+  try { result = await sync.link(key); }
+  finally {
+    acceptingInvite = false;
+    if (store.read().sync?.key === key) rememberInvite(null);
   }
   syncKeyShown = false;
   syncDialog('main');
@@ -1412,6 +1438,7 @@ $('dialog-body').addEventListener('click', async (e) => {
   } else if (b.hasAttribute('data-sync-unlink')) syncDialog('unlink');
   else if (b.hasAttribute('data-sync-unlink-yes')) {
     await sync.unlink();
+    await store.update(p => p.sync?.key ? {ok: false, profile: p} : grantStarter(p, menu));
     syncDialog('main');
     showToast('Устройство отвязано. Прогресс остался здесь.');
   }
@@ -1622,9 +1649,11 @@ async function init() {
   renderQuests();
   // A link with a sync key: the device joins the shared progress instead of starting over.
   const linkHash = /(?:^|#|&)sync=/i.test(location.hash);
-  const invitedKey = linkHash ? parseSyncKey(location.hash) : null;
+  const invitedKey = linkHash ? parseSyncKey(location.hash) : storedInvite();
+  if (invitedKey && store.read().sync?.key !== invitedKey) rememberInvite(invitedKey);
+  else rememberInvite(null);
   if (linkHash) history.replaceState(history.state, '', location.pathname + location.search);
-  const starter = invitedKey && !Object.keys(store.read().collection).length
+  const starter = invitedKey || store.read().sync?.key
     ? { ok: false }
     : await store.update((p) => grantStarter(p, menu));
   // Older profiles get their wild stream now, so linked devices agree on it at the first sync.
@@ -1645,7 +1674,7 @@ async function init() {
     const key = /(?:^|#|&)sync=/i.test(location.hash) ? parseSyncKey(location.hash) : null;
     if (key) {
       history.replaceState(history.state, '', location.pathname + location.search);
-      if (store.read().sync?.key !== key) syncDialog('confirm:' + key);
+      if (store.read().sync?.key !== key) { rememberInvite(key); syncDialog('confirm:' + key); }
     }
   });
   function refreshTime() {
