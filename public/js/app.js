@@ -1515,7 +1515,7 @@ function switchTab(next, options = {}) {
   if (tab === 'arena' && onlineActive && !options.confirmed && !options.initialMode) {
     openDialog(
       'Покинуть сетевую комнату',
-      '<h2>Выйти из комнаты?</h2><p>Начатую дуэль можно продолжить из арены. Если бой ещё не начался, соперник увидит, что ты покинул комнату.</p><div class="dialog-actions"><button class="primary" data-stay>Остаться</button><button class="outline-btn" data-leave="' +
+      '<h2>Выйти из комнаты?</h2><p>Начатую дуэль или подтверждённую команду можно продолжить из арены, соперник будет ждать твоего возвращения. Если ты ещё не подтвердил команду, комната закроется.</p><div class="dialog-actions"><button class="primary" data-stay>Остаться</button><button class="outline-btn" data-leave="' +
         esc(next) +
         '">Выйти</button></div>',
     );

@@ -31,8 +31,10 @@ export async function makeCodec(code, schnorr, signingSecret) {
   async function decrypt(event, kind, tag, value) {
     if (!event || event.kind !== kind || event.pubkey === id || !Number.isSafeInteger(event.created_at) ||
         !/^[a-f\d]{64}$/.test(event.pubkey) || !/^[a-f\d]{64}$/.test(event.id) || !/^[a-f\d]{128}$/.test(event.sig) ||
-        !Array.isArray(event.tags) || event.tags.length !== 1 || !Array.isArray(event.tags[0]) ||
+        !Array.isArray(event.tags) || event.tags.length < 1 || event.tags.length > 2 || !Array.isArray(event.tags[0]) ||
         event.tags[0].length !== 2 || event.tags[0][0] !== tag || event.tags[0][1] !== value ||
+        // Besides its address an event may carry only an expiry time (NIP-40).
+        (event.tags[1] && !(Array.isArray(event.tags[1]) && event.tags[1].length === 2 && event.tags[1][0] === 'expiration' && /^\d{1,12}$/.test(event.tags[1][1]))) ||
         typeof event.content !== 'string' || event.content.length > 12_000) return null;
     try {
       const digest = await hash(canonical(event));
@@ -55,7 +57,9 @@ export async function makeCodec(code, schnorr, signingSecret) {
   // One address per match and author. Relays see neither the room code nor either team's moves.
   const finalTag = async matchId => hex(await hash('foodradar:duel:final:5:' + topic + ':' + matchId));
   async function sealFinal(to, packet) {
-    return encrypt({to, packet}, FINAL_KIND, [['d', await finalTag(packet.matchId)]]);
+    // Relays may drop the copy after 30 days (NIP-40): a returning opponent has a month to fetch it.
+    const expires = String(Math.floor(Date.now() / 1000) + 30 * 24 * 3600);
+    return encrypt({to, packet}, FINAL_KIND, [['d', await finalTag(packet.matchId)], ['expiration', expires]]);
   }
   async function openFinal(event, peer, matchId) {
     if (event?.pubkey !== peer) return null;

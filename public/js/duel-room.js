@@ -162,8 +162,10 @@ export class DuelRoom {
 
   cancel(reason = 'left', notify = true) {
     if (this.reason || this.finished) return;
-    if (this.team && this.peer && (reason === 'left' || reason === 'timeout')) {
-      // The peer may already have accepted our lineup even if its first state never arrived.
+    // Our own leave or timeout with a confirmed lineup only pauses: the peer may already have
+    // accepted it even if its first state never arrived. A stop from the peer pauses only a running
+    // match; before it, a peer that leaves has no match to come back to.
+    if (this.team && this.peer && (reason === 'left' || reason === 'timeout') && (notify || this.matchId)) {
       this.disconnect(this.peer);
       return;
     }

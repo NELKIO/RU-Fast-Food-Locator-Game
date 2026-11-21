@@ -120,6 +120,10 @@ test('encrypted final can be read later by the original seat, bound to peer, roo
   assert.equal(await returned.openFinal(saved, alice.id, 'another-match'), null);
   assert.equal(await returned.openFinal(saved, bob.id, matchId), null);
   assert.equal(await returned.openFinal({...saved, sig: '0'.repeat(128)}, alice.id, matchId), null);
+  // The copy expires on relays after about a month (NIP-40); any other extra tag is refused.
+  const expiry = saved.tags.find(tag => tag[0] === 'expiration');
+  assert.ok(expiry && Number(expiry[1]) - Date.now() / 1000 > 29 * 24 * 3600);
+  assert.equal(await returned.openFinal({...saved, tags: [...saved.tags.slice(0, 1), ['p', 'x']]}, alice.id, matchId), null);
   const stranger = await makeCodec(code, schnorr);
   assert.equal(await stranger.openFinal(saved, alice.id, matchId), null);
   const wrongRoom = await makeCodec('BBBBB2222A', schnorr, bobKey);

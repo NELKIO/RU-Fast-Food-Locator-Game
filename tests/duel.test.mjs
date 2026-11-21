@@ -953,3 +953,19 @@ test('two clients with different catalogs immediately report an unknown team to 
   assert.deepEqual([host.reason, guest.reason], ['version', 'version']);
   assert.deepEqual([host.matchId, guest.matchId], [null, null]);
 });
+
+test('before the match, a peer that leaves or times out ends the room instead of waiting forever', () => {
+  // The host confirmed its team; the guest joined and closed the room before confirming.
+  const left = pair();
+  left.bind();
+  left.host.ready(['burger']); left.deliver();
+  left.guest.cancel('left'); left.deliver();
+  assert.equal(left.host.reason, 'left', 'the host learns the guest has gone');
+  assert.equal(left.host.lostAt, null, 'and does not wait for a reconnect');
+  // The guest confirmed; the host's room timed out before any match began.
+  const late = pair();
+  late.bind();
+  late.guest.ready(['fries']); late.deliver();
+  late.host.cancel('timeout', true); late.deliver();
+  assert.ok(['timeout', 'left'].includes(late.guest.reason), 'the waiting guest is told, not left hanging');
+});

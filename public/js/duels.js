@@ -26,6 +26,25 @@ const ONLINE_XP = { won: 24, draw: 6, lost: 4 };
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const journal = createDuelJournal();
 let seatReleased = Promise.resolve();
+// Saved duels that need nothing more: results delivered and credited a day ago (until then the
+// result can still be opened), anything untouched for a week, and empty seats of rooms nobody
+// joined. Removed in the background when the arena opens.
+const DUEL_KEEP_MS = 7 * 24 * 3600_000, RESULT_KEEP_MS = 24 * 3600_000;
+export function settled(entry, now = Date.now()) {
+  const snap = entry.snapshot, age = now - (entry.updatedAt ?? 0);
+  if (age > DUEL_KEEP_MS) return true;
+  if (!snap) return age > 3600_000;
+  return snap.winner != null && entry.awarded && snap.peerHasFinal && age > RESULT_KEEP_MS;
+}
+async function tidyJournal() {
+  await seatReleased;
+  for (const entry of journal.list()) {
+    if (!settled(entry)) continue;
+    const unlock = await journal.acquire(entry.code, entry.role).catch(() => null);
+    if (!unlock) continue; // open in another tab
+    try { journal.remove(entry.code, entry.role); } finally { releaseSeat(unlock); }
+  }
+}
 function releaseSeat(unlock) {
   if (unlock) seatReleased = Promise.resolve(unlock()).catch(() => {});
 }
@@ -486,8 +505,9 @@ export function mountDuels(container, options) {
     const unlock = await journal.acquire(code, role).catch(() => null);
     if (unlock) {
       try {
+        // The player chose to drop it: a finished result or a duel the opponent may never come back to.
         const saved = findRoom(code, role);
-        if (saved?.snapshot?.matchId === matchId && saved.awarded && saved.snapshot.peerHasFinal) journal.remove(code, role);
+        if (saved && (!matchId || saved.snapshot?.matchId === matchId)) journal.remove(code, role);
       } finally { releaseSeat(unlock); }
     } else feedback = 'Эта дуэль сейчас открыта в другой вкладке.';
     if (!disposed && !room) draw();
@@ -569,8 +589,8 @@ export function mountDuels(container, options) {
   }
 
   function savedDuels() {
-    const rows = journal.list().filter(({snapshot}) => Array.isArray(snapshot?.history) &&
-      (typeof snapshot.matchId === 'string' || snapshot.phase === 'ready'));
+    const rows = journal.list().filter(entry => !settled(entry) && Array.isArray(entry.snapshot?.history) &&
+      (typeof entry.snapshot.matchId === 'string' || entry.snapshot.phase === 'ready'));
     if (!rows.length) return '';
     const matches = rows.map(({code, role, snapshot, awarded}) => {
       const done = snapshot.winner != null;
@@ -591,7 +611,7 @@ export function mountDuels(container, options) {
       return `<div class="duel-room-main"><span class="duel-label">${esc(status + moves)}</span>
         <strong data-room-code="${esc(code)}">${esc(code.slice(0,5) + '-' + code.slice(5))}</strong>
         <div class="duel-buttons"><button type="button" class="duel-btn" data-duel-action="resume" ${attrs}>${label}</button>
-        ${done && awarded && snapshot.peerHasFinal ? '<button type="button" class="duel-btn duel-quiet" data-duel-action="dismiss" ' + attrs + '>Убрать из списка</button>' : ''}</div></div>`;
+        <button type="button" class="duel-btn duel-quiet" data-duel-action="dismiss" ${attrs}>${done ? 'Убрать из списка' : 'Бросить дуэль'}</button></div></div>`;
     }).join('');
     return '<section class="duel-box"><h3>Сохранённые дуэли</h3>' + matches + '</section>';
   }
@@ -1235,6 +1255,8 @@ export function mountDuels(container, options) {
   });
   if (initialMode === 'wild') startWild();
   else if (!openInvite()) draw();
+  // Old and finished saved duels leave the list by themselves.
+  tidyJournal().then(() => { if (!disposed && !room && mode === 'lobby') draw(); }).catch(() => {});
 
   let suspended = null;
   function pagehide() {
