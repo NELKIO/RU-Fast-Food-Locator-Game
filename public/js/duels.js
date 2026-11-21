@@ -454,9 +454,9 @@ export function mountDuels(container, options) {
     const peerStatus = room.lostAt !== null ? 'Восстанавливаем связь с соперником…'
       : room.peerTeam ? 'Соперник готов к бою' : room.peer ? 'Соперник выбирает команду' : 'Ждём второго игрока';
     return `<header class="duel-heading"><h2>Комната дуэли</h2><p role="status" class="duel-waiting${room.peer ? '' : ' is-waiting'}">${esc(peerStatus)}</p></header>
-      <div class="duel-box"><span class="duel-label">Код приглашения</span>
+      <div class="duel-box duel-room-box"><div class="duel-room-main"><span class="duel-label">Код приглашения</span>
         <output class="duel-room-code" data-room-code="${room.code}">${room.code.slice(0, 5)}-${room.code.slice(5)}</output>
-        <div class="duel-buttons">${button('copy', 'Скопировать ссылку', { icon: 'route' })}</div>
+        </div><div class="duel-buttons duel-room-copy">${button('copy', 'Скопировать ссылку', { icon: 'route' })}</div>${equalizer()}
         ${inviteVisible ? '<input class="duel-share" aria-label="Ссылка на комнату" readonly value="' + esc(inviteUrl()) + '">' : ''}
         ${copyStatus ? '<p class="duel-note" role="status">' + esc(copyStatus) + '</p>' : ''}
         ${connectionError && !room.peer ? '<p class="duel-alert" role="status">' + esc(connectionError) + '</p>' : ''}
@@ -486,7 +486,7 @@ export function mountDuels(container, options) {
         : 'Выбери бойцов ниже: от одного до трёх.';
     return `<section class="duel-ready${room.team ? ' is-done' : selected.length ? ' is-set' : ''}" aria-label="Готовность к бою">
       <div class="duel-ready-row"><div class="duel-ready-slots">${slots}</div><p>${esc(hint)}</p></div>
-      ${readyButton()}${equalizer()}</section>`;
+      ${readyButton()}</section>`;
   }
 
   // The level equaliser: on, everyone fights at level 1 numbers; real levels only when both turn it off.

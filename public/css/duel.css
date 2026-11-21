@@ -482,14 +482,25 @@
 .duel-team-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 10px; }
 .duel-team-head h3 { flex: 1 1 220px; margin: 0; }
 .duel-page .duel-team-head .duel-quiet { border-color: var(--duel-line); padding: 7px 12px; }
-/* The level equaliser: a small switch under the ready button. */
-.duel-equalizer { display: grid; gap: 4px; margin-top: 10px; }
-.duel-switch { display: inline-flex; align-items: center; gap: 10px; width: fit-content; padding: 4px 0; background: none; border: 0; color: var(--duel-ink, inherit); font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; }
+/* The level equaliser: a small switch on the right of the invite code box; under it on a narrow screen. */
+/* Code across the box; under it the copy button and the equaliser side by side. */
+.duel-room-box { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 12px; align-items: stretch; }
+@media (max-width: 560px) {
+  .duel-room-box { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .duel-room-copy .duel-btn { width: 100%; height: 100%; flex-direction: column; justify-content: center; gap: 4px; padding-inline: 8px;
+    font-size: .9rem; white-space: normal; text-align: center; overflow-wrap: normal; word-break: normal; }
+}
+.duel-room-box > :not(.duel-room-copy):not(.duel-equalizer) { grid-column: 1 / -1; }
+.duel-room-main { display: grid; gap: 8px; min-width: 0; }
+.duel-room-copy { margin: 0; }
+.duel-equalizer { display: grid; gap: 4px; align-content: start; justify-items: start; padding: 10px 12px; border: 1px solid var(--duel-line); border-radius: 12px; }
+.duel-switch { display: inline-flex; align-items: center; gap: 8px; padding: 0; background: none; border: 0; color: inherit; font: inherit; font-size: .88rem; font-weight: 700; cursor: pointer; text-align: left; }
 .duel-switch:disabled { opacity: .6; cursor: default; }
-.duel-switch-track { position: relative; width: 38px; height: 22px; border-radius: 11px; background: var(--duel-line); transition: background .2s; flex: none; }
-.duel-switch-track span { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.duel-switch-track { position: relative; width: 36px; height: 21px; border-radius: 11px; background: color-mix(in srgb, currentColor 28%, transparent); transition: background .2s; flex: none; }
+.duel-switch-track span { position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .35); transition: transform .2s; }
 .duel-switch[aria-checked="true"] .duel-switch-track { background: var(--accent, #9ad2a8); }
-.duel-switch[aria-checked="true"] .duel-switch-track span { transform: translateX(16px); }
+.duel-switch[aria-checked="true"] .duel-switch-track span { transform: translateX(15px); }
 .duel-switch:focus-visible { outline: 2px solid var(--accent, #9ad2a8); outline-offset: 3px; border-radius: 6px; }
-.duel-equalizer small { color: var(--duel-muted); font-size: .78rem; line-height: 1.35; }
+.duel-equalizer small { color: var(--duel-muted); font-size: .74rem; line-height: 1.35; }
+@media (max-width: 339px) { .duel-room-box { grid-template-columns: minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { .duel-switch-track, .duel-switch-track span { transition: none; } }
