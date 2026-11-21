@@ -3,8 +3,9 @@ import { applyMove, battleStats, currentFighter, legalMoves, MAX_ENERGY, opener,
 import { smartMove } from './duel-ai.js';
 import { describeSkill, describeTrait, describeTransform } from './fighters.js';
 import { cardFor, suggestTeam } from './game.js';
-import { DuelRoom, newRoomCode, parseRoomCode, RECONNECT_MS } from './duel-room.js';
+import { DuelRoom, newRoomCode, parseRoomCode } from './duel-room.js';
 import { connectDuel } from './duel-transport.js';
+import { createDuelJournal } from './duel-journal.js';
 import { createFx } from './battle-fx.js';
 import { intimidateFx, movePlan, TRANSFORM_FLASH } from './fx-moves.js';
 
@@ -23,6 +24,11 @@ const plural = new Intl.PluralRules('ru');
 const MOVES = { one: 'ход', few: 'хода', many: 'ходов', other: 'хода' };
 const ONLINE_XP = { won: 24, draw: 6, lost: 4 };
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const journal = createDuelJournal();
+let seatReleased = Promise.resolve();
+function releaseSeat(unlock) {
+  if (unlock) seatReleased = Promise.resolve(unlock()).catch(() => {});
+}
 
 function color(brand) {
   return brands[brand]?.color ?? '#b6c97d';
@@ -169,6 +175,7 @@ export function mountDuels(container, options) {
   sync();
   let mode = initialMode === 'online' ? 'online' : 'lobby';
   let local = null, localMatchId = null, wildId = null, wildFought = null, room = null, transport = null, controller = null;
+  let opening = null, releaseRoom = null, session = null, moveStorageBlocked = false;
   let thinking = null, pulse = null, waitingHint = null, holdTimer = null, fxTimer = null, fx = null, fxUntil = 0;
   let disposed = false, rewardState = 'idle', rewardInfo = null, quitPrompt = false, slow = false;
   let inviteVisible = false, copyStatus = '', connectionError = '', feedback = '', currentPath = '';
@@ -186,28 +193,52 @@ export function mountDuels(container, options) {
   }
 
   function stopNetwork() {
+    opening = null;
     clearInterval(pulse);
     clearTimeout(waitingHint);
-    controller?.abort();
-    controller = null;
     room = null;
     transport = null;
+    session = null;
+    moveStorageBlocked = false;
+    controller?.abort();
+    controller = null;
+    releaseSeat(releaseRoom);
+    releaseRoom = null;
     navLock(false);
   }
 
-  // An invite link only opens the room once: after the match, or when the player leaves the room,
-  // a reload brings back the arena lobby instead of the finished room.
-  const invited = parseRoomCode(location.hash);
+  let invited = initialMode === 'online' ? parseRoomCode(location.hash) : null;
   function forgetInvite() {
-    const code = room?.code ?? invited;
+    const code = room?.code ?? opening?.code ?? invited;
     if (code && /^#duel=/i.test(location.hash) && parseRoomCode(location.hash) === code) {
       history.replaceState(history.state, '', location.pathname + location.search);
     }
   }
 
-  function reset(next = 'lobby') {
+  function rememberRoom() {
+    if (!room || !session) return;
+    const snapshot = room.snapshot();
+    if (snapshot) journal.save({...session, snapshot});
+    if (room.finished && room.peerHasFinal && session.awarded) forgetInvite();
+  }
+
+  function leaveRoom(explicit = false) {
+    if (!room) return;
+    if (!room.state && (explicit || !room.snapshot())) {
+      // A version error has no resumable live state, but the previously confirmed lineup does.
+      if (!explicit && room.reason !== 'quit' && findRoom(room.code, session.role)?.snapshot?.phase === 'ready') return;
+      if (!room.reason) room.cancel(explicit && room.peer && room.team ? 'quit' : 'left');
+      journal.remove(room.code, session.role);
+      return;
+    }
+    if (explicit && room.state && !room.finished && !room.reason) room.cancel('quit');
+    rememberRoom();
+    if (room.finished && room.peer) transport?.checkpoint(room.peer, room.finalPacket());
+  }
+
+  function reset(next = 'lobby', explicit = false) {
     if (next !== 'online') forgetInvite();
-    room?.cancel('left');
+    leaveRoom(explicit);
     stopNetwork();
     clearTimeout(thinking);
     clearTimeout(holdTimer);
@@ -321,32 +352,99 @@ export function mountDuels(container, options) {
     queueBot();
   }
 
-  function openRoom(role, code) {
-    if (!owned.length || room) return;
+  function findRoom(code, role = null) {
+    const seats = journal.list().filter(entry => entry.code === code && (!role || entry.role === role));
+    return seats.find(entry => entry.snapshot) ?? seats[0];
+  }
+
+  function seekPeer(current) {
+    if (!current.peer) return;
+    if (!current.reason && current.lostAt !== null) transport?.recover(current.peer);
+    if (current.matchId && !current.peerHasFinal && (current.lostAt !== null || current.reason === 'quit')) {
+      transport?.lookup(current.peer, current.matchId);
+    }
+  }
+
+  async function openRoom(role, code, expectedMatch) {
+    if (room || opening || data.loading) return;
     if (!window.isSecureContext || !window.crypto?.subtle || !window.WebSocket) {
       feedback = 'Для сетевого боя открой игру в современном браузере по HTTPS или на localhost.';
       draw();
       return;
     }
+    // A second tab must not replay and then submit a different move under the same identity.
+    const request = {code, role};
+    opening = request;
+    await seatReleased;
+    if (disposed || opening !== request) return;
+    let unlock;
+    try { unlock = await journal.acquire(code, role); } catch { /* unavailable lock */ }
+    if (disposed || opening !== request) { releaseSeat(unlock); return; }
+    opening = null;
+    if (!unlock) {
+      feedback = 'Не удалось открыть дуэль. Проверь, открыта ли эта комната в другой вкладке.';
+      draw();
+      return;
+    }
+    const saved = findRoom(code, role);
+    const needsSnapshot = expectedMatch !== undefined || !owned.length;
+    if ((needsSnapshot && !saved?.snapshot) || (expectedMatch && saved?.snapshot?.matchId !== expectedMatch)) {
+      releaseSeat(unlock);
+      feedback = 'Сохранённая дуэль уже закрыта или у тебя пока нет бойцов.';
+      draw();
+      return;
+    }
+    const secret = journal.identity(code, role);
+    releaseRoom = unlock;
+    session = {code, role, secret, awarded: saved?.awarded ?? false};
     mode = 'online';
     rewardState = 'idle';
     rewardInfo = null;
     quitPrompt = slow = false;
-    feedback = connectionError = '';
+    feedback = connectionError = currentPath = '';
     controller = new AbortController();
     const current = new DuelRoom({
-      code, role, cards: data.cards, send: (peer, packet) => transport?.send(peer, packet),
-      onChange: draw, levelCard: (card, level) => cardFor(card, level)
+      code, role, cards: data.cards,
+      persistMove(snapshot) {
+        if (room !== current) return false;
+        const stored = journal.commitMove({...session, snapshot});
+        moveStorageBlocked = !stored;
+        return stored;
+      },
+      send(peer, packet) {
+        if (room !== current) return;
+        if (packet.kind === 'state' && current.finished) transport?.checkpoint(peer, packet);
+        if ((packet.kind === 'state' || (packet.kind === 'hello' && packet.team)) && !journal.canAcknowledge(code, role)) return;
+        transport?.send(peer, packet);
+      },
+      onChange() {
+        if (room !== current) return;
+        rememberRoom();
+        draw();
+      },
+      levelCard: (card, level) => cardFor(card, level)
     });
     room = current;
-    navLock(true);
+    if (saved?.snapshot && !current.restore(saved.snapshot)) {
+      stopNetwork();
+      feedback = 'Эту дуэль не удалось восстановить из сохранённых ходов.';
+      draw();
+      return;
+    }
+    if (saved?.snapshot && current.team) selected = [...current.team];
+    if (!current.finished || !current.peerHasFinal || !session.awarded) {
+      const url = new URL(location.href);
+      url.hash = 'duel=' + code;
+      history.replaceState(history.state, '', url);
+    }
     draw();
-    pulse = setInterval(() => current.tick(), 2500);
+    pulse = setInterval(() => { current.tick(); seekPeer(current); }, 2500);
     waitingHint = setTimeout(() => { if (room === current && !room.peer) { slow = true; draw(); } }, 18_000);
     connectDuel(code, {
       up: peer => { if (room === current) current.contact(peer); },
       down: peer => { if (room === current) current.disconnect(peer); },
       message: (peer, packet) => { if (room === current) current.receive(peer, packet); },
+      archive: (peer, packet) => room === current && current.receiveArchive(peer, packet),
       path: (peer, path) => {
         if (room !== current || (current.peer && current.peer !== peer) || currentPath === path) return;
         currentPath = path;
@@ -357,13 +455,42 @@ export function mountDuels(container, options) {
         connectionError = error === 'full' ? 'В комнате уже два игрока.' : 'Нет связи с узлами поиска. Проверь интернет.';
         draw();
       }
-    }, controller.signal).then(result => {
-      if (room === current) transport = result;
+    }, controller.signal, secret).then(result => {
+      if (room !== current) return;
+      transport = result;
+      current.sync();
+      if (current.matchId && current.peer && !current.finished) transport.lookup(current.peer, current.matchId);
+      if (current.finished && current.peer) transport.checkpoint(current.peer, current.finalPacket());
     }).catch(() => {
       if (room !== current || disposed) return;
-      connectionError = 'Не удалось подключиться. Закрой комнату и попробуй ещё раз.';
+      connectionError = 'Не удалось подключиться. Повтори попытку из арены, когда появится связь.';
       draw();
     });
+  }
+
+  function openCode(code) {
+    const saved = findRoom(code);
+    return openRoom(saved?.role ?? 'guest', code, saved?.snapshot?.matchId);
+  }
+
+  function openInvite() {
+    if (!invited || data.loading || (!owned.length && !findRoom(invited)?.snapshot)) return false;
+    const code = invited;
+    invited = null;
+    openCode(code);
+    return true;
+  }
+
+  async function dismissResult(code, role, matchId) {
+    await seatReleased;
+    const unlock = await journal.acquire(code, role).catch(() => null);
+    if (unlock) {
+      try {
+        const saved = findRoom(code, role);
+        if (saved?.snapshot?.matchId === matchId && saved.awarded && saved.snapshot.peerHasFinal) journal.remove(code, role);
+      } finally { releaseSeat(unlock); }
+    } else feedback = 'Эта дуэль сейчас открыта в другой вкладке.';
+    if (!disposed && !room) draw();
   }
 
   function teamPicker(locked = false, online = false) {
@@ -441,10 +568,39 @@ export function mountDuels(container, options) {
       <div class="duel-buttons">${button('map', 'К карте', { primary: true, icon: 'pin' })}</div></section>`;
   }
 
+  function savedDuels() {
+    const rows = journal.list().filter(({snapshot}) => Array.isArray(snapshot?.history) &&
+      (typeof snapshot.matchId === 'string' || snapshot.phase === 'ready'));
+    if (!rows.length) return '';
+    const matches = rows.map(({code, role, snapshot, awarded}) => {
+      const done = snapshot.winner != null;
+      let label = 'Продолжить дуэль', status = 'Дуэль на паузе';
+      if (done) {
+        label = snapshot.peerHasFinal ? 'Открыть результат' : 'Передать результат';
+        status = snapshot.peerHasFinal ? 'Результат получен соперником' : 'Результат ждёт доставки';
+      } else if (snapshot.reason === 'quit') {
+        label = 'Проверить результат';
+        status = 'Бой остановлен';
+      } else if (snapshot.phase === 'ready') {
+        label = 'Вернуться в комнату';
+        status = 'Команда подтверждена';
+      }
+      const matchAttr = snapshot.matchId ? ` data-match-id="${esc(snapshot.matchId)}"` : '';
+      const attrs = `data-code="${esc(code)}" data-role="${esc(role)}"${matchAttr}`;
+      const moves = snapshot.matchId ? ' · ходов: ' + snapshot.history.length : '';
+      return `<div class="duel-room-main"><span class="duel-label">${esc(status + moves)}</span>
+        <strong data-room-code="${esc(code)}">${esc(code.slice(0,5) + '-' + code.slice(5))}</strong>
+        <div class="duel-buttons"><button type="button" class="duel-btn" data-duel-action="resume" ${attrs}>${label}</button>
+        ${done && awarded && snapshot.peerHasFinal ? '<button type="button" class="duel-btn duel-quiet" data-duel-action="dismiss" ' + attrs + '>Убрать из списка</button>' : ''}</div></div>`;
+    }).join('');
+    return '<section class="duel-box"><h3>Сохранённые дуэли</h3>' + matches + '</section>';
+  }
+
   function lobby() {
-    if (!owned.length) return `<header class="duel-heading"><h2>Арена</h2></header>${empty()}`;
+    const saved = savedDuels();
+    if (!owned.length) return `<header class="duel-heading"><h2>Арена</h2></header>${saved}${empty()}`;
     // The friend duel sits right under the wild fighter: with a big collection the team list is long.
-    return `<header class="duel-heading"><h2>Арена</h2></header>${wildBox()}${feedback && mode === 'lobby' ? '<p class="duel-alert" role="status">' + esc(feedback) + '</p>' : ''}${trainerBox()}
+    return `<header class="duel-heading"><h2>Арена</h2></header>${saved}${wildBox()}${feedback && mode === 'lobby' ? '<p class="duel-alert" role="status">' + esc(feedback) + '</p>' : ''}${trainerBox()}
       <section class="duel-friend"><span>${icon('route', 20)}</span><p><strong>С другом по ссылке</strong><small>В комнате можно выбрать, учитывать ли уровни бойцов</small></p>
         ${button('online', 'Дуэль с другом')}</section>${teamPicker()}${rules}`;
   }
@@ -475,7 +631,8 @@ export function mountDuels(container, options) {
         ${connectionError && !room.peer ? '<p class="duel-alert" role="status">' + esc(connectionError) + '</p>' : ''}
         ${slow && !room.peer ? '<p class="duel-note">Проверь, что друг открыл тот же код. Если соединение долго не появляется, попробуй другую сеть.</p>' : ''}
       </div>${readyPanel()}${teamPicker(!!room.team, room.equalized)}
-      <div class="duel-buttons">${button('lobby', 'Закрыть комнату', { quiet: true })}</div>${rules}`;
+      <div class="duel-buttons">${room.team && room.peer ? button('lobby', 'На арену') : ''}
+        ${button('close-room', 'Закрыть комнату', { quiet: true })}</div>${rules}`;
   }
 
   function readyButton() {
@@ -517,6 +674,11 @@ export function mountDuels(container, options) {
   }
 
   function ended() {
+    if (room.reason === 'quit' && room.matchId) {
+      return `<section class="duel-box" data-duel-stopped data-match-id="${esc(room.matchId)}" role="status">
+        <h2>Бой остановлен</h2><p>Один из игроков вышел. Проверяем, успел ли последний ход завершить бой. Если результат придёт, ты получишь награду.</p>
+        ${button('lobby', 'На арену', { primary: true })}</section>`;
+    }
     const detail = {
       timeout: 'Связь с соперником не восстановилась за 25 секунд.',
       left: 'Соперник закрыл комнату.',
@@ -597,11 +759,16 @@ export function mountDuels(container, options) {
 
   function resultText(state, side) {
     if (rewardState === 'failed') {
+      if (room && rewardInfo?.persistent === false) {
+        return '<p role="status">Опыт ещё не начислен. Разреши браузеру сохранять данные и повтори попытку.</p>' +
+          (journal.persistent ? '<p>После перезагрузки результат можно открыть в сохранённых дуэлях на арене.</p>' : '');
+      }
       return rewardInfo?.reason === 'no-encounter'
         ? '<p role="status">Этого дикого бойца уже победили на другом устройстве, поэтому бой не засчитан.</p>'
         : '<p role="status">Не удалось записать результат в профиль.</p>';
     }
     const info = rewardInfo ?? {};
+    if (room && info.reason === 'already-recorded') return '<p>Результат уже учтён в твоём профиле.</p>';
     if (mode === 'wild') {
       const enemy = name(state.teams[1][0].id);
       const xp = info.partyXp ? ` Команда +${info.partyXp} опыта${info.playerXp ? ', ты +' + info.playerXp : ''}.` : '';
@@ -623,12 +790,16 @@ export function mountDuels(container, options) {
   }
 
   function settle(state, side) {
-    if (rewardState !== 'idle') return;
+    if (rewardState !== 'idle' && rewardState !== 'retry') return;
+    if (room && session.awarded) {
+      rewardInfo = {reason: 'already-recorded'};
+      rewardState = 'saved';
+      return;
+    }
     rewardState = 'saving';
-    if (mode === 'online') forgetInvite();
     const won = state.winner === side, drawn = state.winner === 'draw';
-    // The fanfare once the last blow has played out.
-    sfx(drawn ? 'draw' : won ? 'win' : 'lose', Math.max(0, fxUntil - performance.now()) + 250);
+    const celebrate = () => sfx(drawn ? 'draw' : won ? 'win' : 'lose', Math.max(0, fxUntil - performance.now()) + 250);
+    if (!room) celebrate();
     const result = mode === 'wild'
       ? { mode: 'wild', encounterId: wildId, fought: wildFought, won, draw: drawn, teamIds: state.teams[side].map(f => f.id), matchId: localMatchId }
       : mode === 'trainer'
@@ -637,8 +808,14 @@ export function mountDuels(container, options) {
           cardId: state.teams[side][0].id, teamIds: state.teams[side].map(f => f.id), matchId: room?.matchId };
     Promise.resolve().then(() => award?.(result)).then(saved => {
       if (disposed || (room?.matchId ?? localMatchId) !== result.matchId) return;
-      rewardState = saved?.ok === false && saved.reason !== 'already-recorded' ? 'failed' : 'saved';
+      const failed = (room && saved?.persistent === false) || (saved?.ok === false && saved.reason !== 'already-recorded');
+      rewardState = failed ? 'failed' : 'saved';
       rewardInfo = saved ?? null;
+      if (room && session && rewardState === 'saved') {
+        if (saved?.reason !== 'already-recorded') celebrate();
+        session.awarded = saved?.persistent !== false;
+        rememberRoom();
+      }
       draw();
     }).catch(() => {
       if (disposed || (room?.matchId ?? localMatchId) !== result.matchId) return;
@@ -650,29 +827,32 @@ export function mountDuels(container, options) {
   function battleView(state) {
     const side = room?.side ?? 0;
     const settled = state.winner !== null && (!room || room.finished);
+    if (settled) settle(state, side);
     const final = settled && ['saved', 'failed'].includes(rewardState);
     const connected = !room || room.lostAt === null;
-    const enabled = connected && state.winner === null && state.turn === side && !quitPrompt && !hold.some(i => i !== null) && !busy();
-    const status = !connected ? 'Восстанавливаем связь…' : settled && !final ? 'Сохраняем результат…' : state.winner !== null && !final ? 'Подтверждаем результат…'
-      : final ? 'Бой окончен' : state.turn === side ? 'Твой ход' : room ? 'Ход соперника' : 'Соперник думает…';
+    const enabled = (!room || room.actionable) && state.winner === null && state.turn === side && !quitPrompt && !hold.some(i => i !== null) && !busy();
+    const status = final ? 'Бой окончен' : settled ? 'Сохраняем результат…' : !connected ? 'Восстанавливаем связь…'
+      : room && !room.peerHasState ? 'Ждём подтверждения начала от соперника…'
+      : state.turn === side ? 'Твой ход' : room ? 'Ход соперника' : 'Соперник думает…';
     const outcome = state.winner === 'draw' ? 'Ничья' : state.winner === side ? 'Победа!' : 'Поражение';
     const title = final ? outcome : LABELS[mode] ?? LABELS.online;
-    if (settled) settle(state, side);
     const turnClass = state.winner === null ? (state.turn === side ? ' is-my-turn' : ' is-their-turn') : '';
-    return `<header class="duel-bar"><div><span class="duel-label" data-completed-moves="${state.moves}">${esc(status)} · ${state.moves} ${MOVES[plural.select(state.moves)]}</span>
+    return `<header class="duel-bar"${room ? ' data-match-id="' + esc(room.matchId) + '"' : ''}><div><span class="duel-label" data-completed-moves="${state.moves}">${esc(status)} · ${state.moves} ${MOVES[plural.select(state.moves)]}</span>
         <h2 class="${final ? 'duel-outcome is-' + (state.winner === side ? 'win' : state.winner === 'draw' ? 'draw' : 'loss') : ''}">${esc(title)}</h2></div>
       ${room && currentPath ? '<small class="duel-note" data-connection="' + currentPath + '">' + (currentPath === 'direct' ? 'Напрямую' : 'Через ретранслятор') + '</small>' : ''}</header>
       <div class="duel-stage${turnClass}">${fighterPanel(state, 1 - side, false)}
         <p class="duel-log" role="status" aria-live="polite">${esc(story(state.last, name, state, snackers(state)))}</p>
         ${fighterPanel(state, side, true)}</div>
-      ${!connected ? '<p class="duel-alert">Ходы на паузе. Ждём повторного подключения до ' + (RECONNECT_MS / 1000) + ' секунд.</p>' : ''}
+      ${room && !settled && !connected ? '<div class="duel-alert" data-duel-pending role="status"><p>' + (room.pending ? 'Соперник пока не вернулся.' : 'Восстанавливаем связь с соперником…') + ' Ходы сохранены. Дуэль можно продолжить из арены.</p>' + button('lobby', 'На арену', {quiet: true}) + '</div>' : ''}
       ${final ? `<div class="duel-result">${resultText(state, side)}
+          ${room && !room.peerHasFinal ? '<p class="duel-note">Последний ход ждёт доставки. Его можно передать из сохранённых дуэлей.</p>' : ''}
+          ${room && rewardState === 'failed' ? button('retry-award', 'Получить опыт', {primary: true}) : ''}
           <div class="duel-buttons">${mode === 'trainer' ? button('trainer-again', 'Новый тренер', { primary: true, icon: 'battle' }) + button('lobby', 'На арену', { icon: 'arrow' }) : button('lobby', 'На арену', { primary: true, icon: 'arrow' })}${mode === 'wild' ? button('map', 'К карте', { icon: 'pin' }) : ''}</div></div>`
-        : settled ? '<p class="duel-note" role="status">Записываем результат…</p>'
+        : settled ? '<p class="duel-note" role="status">Записываем результат…</p>' + (room ? button('lobby', 'На арену', {quiet: true}) : '')
         : state.winner !== null ? ''
         : controls(state, side, enabled) + (quitPrompt ?
           '<div class="duel-exit"><span>Уйти без награды?</span>' + button('stay', 'Продолжить') + button('quit', 'Уйти') + '</div>' :
-          '<div class="duel-footer">' + button('ask-quit', 'Выйти из боя', { quiet: true }) + '</div>')}`;
+          '<div class="duel-footer">' + (room && connected ? button('lobby', 'На арену', {quiet: true}) : '') + button('ask-quit', 'Выйти из боя', { quiet: true }) + '</div>')}`;
   }
 
   const busy = () => fxUntil > performance.now();
@@ -915,7 +1095,6 @@ export function mountDuels(container, options) {
 
   function draw() {
     if (disposed) return;
-    if (room && room.lostAt !== null && !room.reason) transport?.recover(room.peer);
     const state = room?.state ?? local;
     const key = room?.matchId ?? localMatchId;
     const side = room?.side ?? 0;
@@ -950,6 +1129,12 @@ export function mountDuels(container, options) {
     else if (room) markup = roomView();
     else if (mode === 'online') markup = finder();
     else markup = lobby();
+    if (room && (moveStorageBlocked || !journal.canAcknowledge(room.code, session.role))) {
+      const detail = moveStorageBlocked ? 'Ход не отправлен.' : 'Браузер не записал последнее состояние дуэли.';
+      markup += '<p class="duel-alert" role="status">' + detail + ' Освободи место или разреши сохранение данных, затем перезагрузи игру. На арене можно вернуться к последнему сохранённому ходу.</p>';
+    } else if (!journal.persistent && (room || journal.list().some(entry => entry.snapshot))) {
+      markup += '<p class="duel-alert" role="status">Браузер не сохраняет историю на этом устройстве. Вернуться к дуэли можно, пока вкладка открыта. При перезагрузке последние ходы могут потеряться.</p>';
+    }
     if (markup !== lastHtml) {
       page.innerHTML = markup;
       lastHtml = markup;
@@ -971,7 +1156,7 @@ export function mountDuels(container, options) {
       });
     }
     entering = [false, false];
-    navLock(!!room && !room.reason && !room.finished);
+    navLock(!!room && !room.reason && !room.finished && room.lostAt === null);
     // A wild fight is in progress until its result is saved; device sync waits for it.
     const fighting = !!local && !['saved', 'failed'].includes(rewardState);
     if (fighting !== wildFighting) { wildFighting = fighting; onFightChange?.(fighting); }
@@ -992,7 +1177,8 @@ export function mountDuels(container, options) {
   }
 
   function click(event) {
-    const action = event.target.closest('[data-duel-action]')?.dataset.duelAction;
+    const control = event.target.closest('[data-duel-action]');
+    const action = control?.dataset.duelAction;
     if (!action) return;
     if (action.startsWith('pick:')) {
       const id = action.slice(5);
@@ -1025,11 +1211,14 @@ export function mountDuels(container, options) {
     else if (action === 'trainer-again') { trainerFor(true); startTrainer(); }
     else if (action === 'online') reset('online');
     else if (action === 'create') openRoom('host', newRoomCode());
+    else if (action === 'resume') openRoom(control.dataset.role, control.dataset.code, control.dataset.matchId ?? null);
+    else if (action === 'dismiss') dismissResult(control.dataset.code, control.dataset.role, control.dataset.matchId);
+    else if (action === 'retry-award' && room?.finished && rewardState === 'failed') { rewardState = 'retry'; draw(); }
     else if (action === 'ready') room?.ready(selected);
     else if (action === 'fair') room?.setFair(!room.fair);
     else if (action === 'copy' && room) void copyInvite();
     else if (action === 'ask-quit' || action === 'stay') { quitPrompt = action === 'ask-quit'; draw(); }
-    else if (action === 'quit') { room?.cancel('quit'); reset(); }
+    else if (action === 'quit' || action === 'close-room') reset('lobby', true);
     else if (action === 'lobby') reset();
     else if (action === 'map') onBack?.();
   }
@@ -1041,18 +1230,35 @@ export function mountDuels(container, options) {
   page.addEventListener('submit', event => {
     event.preventDefault();
     const code = parseRoomCode(draftCode);
-    if (code) openRoom('guest', code);
+    if (code) openCode(code);
     else { feedback = 'Введи десять символов кода или полную ссылку приглашения.'; draw(); page.querySelector('#duel-code')?.focus(); }
   });
   if (initialMode === 'wild') startWild();
-  else if (invited && mode === 'online' && owned.length) openRoom('guest', invited);
-  else draw();
+  else if (!openInvite()) draw();
+
+  let suspended = null;
+  function pagehide() {
+    suspended = room ? {code: room.code, role: session.role, matchId: room.snapshot()?.matchId} : opening;
+    rememberRoom();
+    stopNetwork();
+  }
+  function pageshow(event) {
+    if (!event.persisted || !suspended || disposed) return;
+    const {code, role, matchId} = suspended;
+    suspended = null;
+    sync();
+    openRoom(role, code, matchId);
+  }
+  window.addEventListener('pagehide', pagehide);
+  window.addEventListener('pageshow', pageshow);
 
   const cleanup = () => {
     disposed = true;
+    window.removeEventListener('pagehide', pagehide);
+    window.removeEventListener('pageshow', pageshow);
     if (wildFighting) { wildFighting = false; onFightChange?.(false); }
-    if (room) forgetInvite();
-    room?.cancel('left');
+    forgetInvite();
+    leaveRoom();
     clearTimeout(thinking);
     clearTimeout(holdTimer);
     clearTimeout(fxTimer);
@@ -1064,7 +1270,7 @@ export function mountDuels(container, options) {
   cleanup.refresh = () => {
     if (disposed || local || room) return;
     sync();
-    draw();
+    if (!openInvite()) draw();
   };
   return cleanup;
 }

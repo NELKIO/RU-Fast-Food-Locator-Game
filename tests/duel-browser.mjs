@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SIGNAL_RELAYS } from '../public/js/duel-transport.js';
+import { applyMove, battleStats, startBattle } from '../public/js/duel-engine.js';
 import { cardFor, suggestTeam } from '../public/js/game.js';
 
 const require = createRequire(import.meta.url);
@@ -66,7 +67,11 @@ const server = createServer(async (req, res) => {
 function localRelays() {
   const blocked = new URL(SIGNAL_RELAYS[0]).hostname;
   const sites = new Map();
-  const attempts = new Set();
+  const attempts = new Set(), archives = new Map();
+  let allowDelivery = true, liveSender = null;
+  const dTag = event => event.tags.find(tag => tag[0] === 'd')?.[1];
+  const archiveMatches = (event, filter) => filter.kinds?.includes(30078) &&
+    filter.authors?.includes(event.pubkey) && filter['#d']?.includes(dTag(event));
   let outage = false, rejects = 0, publications = 0;
   return {
     async install(context) {
@@ -88,16 +93,30 @@ function localRelays() {
           const [kind, value, ...rest] = JSON.parse(String(raw));
           if (kind === 'REQ') {
             filters.set(value, rest);
+            if (allowDelivery) for (const event of archives.get(host)?.values() ?? []) {
+              if (rest.some(filter => archiveMatches(event, filter))) socket.send(JSON.stringify(['EVENT', value, event]));
+            }
             socket.send(JSON.stringify(['EOSE', value]));
           } else if (kind === 'CLOSE') {
             filters.delete(value);
           } else if (kind === 'EVENT') {
             publications++;
             socket.send(JSON.stringify(['OK', value.id, true, '']));
+            if (value.kind === 30078) {
+              assert.ok(dTag(value), 'an archived result has a replaceable d tag');
+              if (!archives.has(host)) archives.set(host, new Map());
+              const events = archives.get(host), key = value.pubkey + ':' + dTag(value);
+              const old = events.get(key);
+              if (!old || value.created_at > old.created_at || (value.created_at === old.created_at && value.id < old.id)) {
+                events.set(key, value);
+              }
+            }
+            if (!allowDelivery && (value.kind === 30078 || context !== liveSender)) return;
             const topic = value.tags.find(tag => tag[0] === 'x')?.[1];
             for (const [client, subs] of subscribers) {
               for (const [id, request] of subs) {
-                if (request.some(f => f['#x']?.includes(topic) && f.kinds?.includes(value.kind))) {
+                if (request.some(f => value.kind === 30078 ? archiveMatches(value, f) :
+                  f['#x']?.includes(topic) && f.kinds?.includes(value.kind))) {
                   client.send(JSON.stringify(['EVENT', id, value]));
                 }
               }
@@ -132,7 +151,10 @@ function localRelays() {
       return { attempts: [...attempts], rejects, publications,
         subscribers: Object.fromEntries([...sites].map(([host, clients]) => [host, [...clients.values()].map(set => set.size)])) };
     },
-    restore() { outage = false; }
+    restore() { outage = false; },
+    // The final publish is stored and acknowledged; the other player receives no live traffic or archive reads.
+    delivery(value, onlyFrom = null) { allowDelivery = value; liveSender = onlyFrom; },
+    archiveIds() { return new Set([...archives.values()].flatMap(events => [...events.values()].map(event => event.id))); }
   };
 }
 
@@ -145,12 +167,16 @@ try {
     channel: process.env.CHROME_PATH ? undefined : 'chrome',
     args: ['--allow-loopback-in-peer-connection', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
   const relays = localRelays();
-  async function newPage() {
+  async function newPage(existingContext) {
+    if (existingContext) return watchPage(existingContext);
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
       permissions: ['microphone'] });
     await relays.install(context);
     await context.route(/^https?:/, route =>
       new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+    return watchPage(context);
+  }
+  async function watchPage(context) {
     const page = await context.newPage();
     page.on('pageerror', error => errors.push(error.message));
     if (process.env.DUEL_DEBUG) page.on('console', message => console.log('browser', message.type(), message.text()));
@@ -223,10 +249,11 @@ try {
   await mover.locator('[data-duel-action="move:hit"]').click();
   await Promise.all([remaining, leaving].map(page => page.locator('[data-completed-moves="1"]').waitFor()));
   await leaving.context().close();
-  await remaining.getByText('Восстанавливаем связь…', { exact: false }).first().waitFor({ timeout: 22_000 });
-  await remaining.getByRole('heading', { name: 'Матч отменён' }).waitFor({ timeout: 34_000 });
+  await remaining.locator('[data-duel-pending]').filter({ hasText: 'Соперник пока не вернулся' }).waitFor({ timeout: 65_000 });
+  await remaining.locator('[data-duel-action="lobby"]').click();
+  await remaining.locator('[data-duel-action="resume"]').waitFor();
   assert.deepEqual(await remaining.evaluate(() => window.results), []);
-  console.log('PASS manual invite code / WebRTC blocked at both ends / encrypted relay turn / disappeared browser mid-match / grace period / cancellation without a reward');
+  console.log('PASS manual invite code / WebRTC blocked at both ends / encrypted relay turn / disappeared browser mid-match / pending match available in the arena / no premature reward');
   await remaining.context().close();
   const migrated = await match(false);
   const starting = await migrated[0].locator('[data-duel-action="move:hit"]').isEnabled() ? migrated[0] : migrated[1];
@@ -272,68 +299,189 @@ try {
 
   // The production shell owns the URL router and the persisted profile. Bootstrap two earned
   // cards and then use only the site's public UI, including the real asynchronous award callback.
-  const profileKey = 'fast-food-locator.profile.v1';
-  const owner = await newPage(), visitor = await newPage();
-  async function seed(page, id, xp = { [id]: 0 }) {
-    await page.addInitScript(({ key, id, xp }) => {
-      if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({
-        version: 1, collection: Object.fromEntries(Object.entries(xp).map(([card, value]) => [card, { copies: 1, xp: value }])), team: [id], xp: 0
-      }));
-    }, { key: profileKey, id, xp });
+  async function productionRecovery(lostPacket) {
+    const profileKey = 'fast-food-locator.profile.v1';
+    let owner = await newPage(), visitor = await newPage();
+    async function seed(page, id, xp = { [id]: 0 }) {
+      await page.addInitScript(({ key, id, xp }) => {
+        if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({
+          version: 1, collection: Object.fromEntries(Object.entries(xp).map(([card, value]) => [card, { copies: 1, xp: value }])), team: [id], xp: 0
+        }));
+      }, { key: profileKey, id, xp });
+    }
+    const xp = { 'vkusno-hamburger': 270, 'bk-angus-parmigiano': 0, 'bk-whopper': 0, 'bk-double-whopper': 0 };
+    await Promise.all([seed(owner, 'bk-whopper', xp), seed(visitor, 'dodo-pepperoni')]);
+    // Force the encrypted relay path in both profiles so the controlled outage also cuts game traffic.
+    for (const page of [owner, visitor]) await page.context().addInitScript(() => { window.testBlockRtc = true; });
+    await owner.goto(origin + '/');
+    await owner.locator('.main-nav [data-nav="arena"]').click();
+    await owner.getByRole('button', { name: 'Дуэль с другом' }).click();
+    await owner.getByRole('button', { name: 'Создать комнату' }).click();
+    const inviteCode = await owner.locator('[data-room-code]').getAttribute('data-room-code');
+    await visitor.goto(origin + '/#duel=' + inviteCode);
+    // On a phone the start button sits right under the invite code, above the long team list.
+    const [readyTop, teamTop] = await owner.evaluate(() => [
+      document.querySelector('.duel-ready [data-duel-action="ready"]').getBoundingClientRect().top,
+      document.querySelector('.duel-team').getBoundingClientRect().top,
+    ]);
+    assert.ok(readyTop < teamTop, 'the ready button comes before the team list on a phone');
+    const menu = JSON.parse(await readFile(resolve(publicDir, 'data/menu.json'), 'utf8'));
+    const picks = menu.filter(card => Object.hasOwn(xp, card.id));
+    async function verifyPicker(leveled) {
+      const cards = picks.map(item => cardFor(item, leveled && xp[item.id] ? 10 : 1));
+      const hamburger = cards.find(card => card.id === 'vkusno-hamburger');
+      const stats = owner.locator('[data-duel-action="card:vkusno-hamburger"] .duel-pick-title small > span');
+      assert.equal((await stats.nth(0).innerText()).trim(), String(hamburger.maxHp));
+      assert.equal((await stats.nth(1).innerText()).trim(), String(hamburger.attack));
+      await owner.getByRole('button', { name: 'Подобрать команду' }).click();
+      const selected = await owner.locator('.duel-slot[aria-pressed="true"]').evaluateAll(slots =>
+        slots.sort((a, b) => Number(a.textContent) - Number(b.textContent)).map(el => el.dataset.duelAction.slice(5)));
+      assert.deepEqual(selected, suggestTeam(cards));
+    }
+    await verifyPicker(false);
+    await Promise.all([owner, visitor].map(page => page.getByRole('switch').click()));
+    await Promise.all([owner, visitor].map(page => page.locator('.duel-equalizer small', { hasText: 'Оба выключили уравнитель' }).waitFor()));
+    await verifyPicker(true);
+    await Promise.all([owner, visitor].map(page => page.getByRole('button', { name: 'Подтвердить команду' }).click()));
+    await Promise.all([owner, visitor].map(page => page.getByRole('heading', { name: 'Сетевая дуэль' }).waitFor({ timeout: 45_000 })));
+    const pages = [owner, visitor];
+    const contexts = pages.map(page => page.context());
+    const matchId = await owner.locator('.duel-bar').getAttribute('data-match-id');
+    assert.ok(matchId, 'the online battle has a stable match ID');
+    async function expectRound(page, moves) {
+      const bar = page.locator('.duel-bar').filter({ has: page.locator('[data-completed-moves="' + moves + '"]') });
+      await bar.waitFor();
+      assert.equal(await bar.getAttribute('data-match-id'), matchId);
+    }
+    async function resume(page) {
+      await page.locator('.main-nav [data-nav="arena"]').click();
+      await page.locator('[data-duel-action="resume"][data-match-id="' + matchId + '"]').click();
+    }
+    async function reopen(side) {
+      pages[side] = await newPage(contexts[side]);
+      await pages[side].goto(origin + '/');
+      await resume(pages[side]);
+    }
+    async function profile(page) {
+      return page.evaluate(key => JSON.parse(localStorage.getItem(key)), profileKey);
+    }
+
+    // Compute when to interrupt from the real fighters on screen. Every move still goes through the UI.
+    const teams = await Promise.all(pages.map(async (page, side) => {
+      const id = await page.locator('[data-side="me"]').getAttribute('data-fighter');
+      const level = side === 0 && xp[id] ? 10 : 1;
+      return [battleStats(cardFor(menu.find(item => item.id === id), level))];
+    }));
+    const hit = page => page.locator('[data-duel-action="move:hit"]:enabled');
+    const first = await Promise.race(pages.map(async (page, side) => { await hit(page).waitFor(); return side; }));
+    let state = startBattle(teams, first);
+    const initialProfiles = await Promise.all(pages.map(profile));
+    let finisher, lastMove;
+    for (;;) {
+      const side = state.turn, next = applyMove(state, side, 'hit');
+      assert.ok(next && next.moves <= 48);
+      await hit(pages[side]).waitFor();
+      if (next.winner !== null) { finisher = side; lastMove = next; break; }
+      await hit(pages[side]).click();
+      await Promise.all(pages.map(page => expectRound(page, next.moves)));
+      if (next.moves === 1 && lostPacket === 'last move') {
+        // Reload the host and close the guest's tab. Both use only their original browser profiles.
+        await pages[1].close();
+        await pages[0].goto(origin + '/');
+        await pages[0].reload();
+        await resume(pages[0]);
+        await reopen(1);
+        await Promise.all(pages.map(page => expectRound(page, 1)));
+      }
+      state = next;
+    }
+    const other = 1 - finisher;
+    const beforeArchive = relays.archiveIds();
+    // For a lost receipt only the last mover's outgoing live traffic gets through. Archive reads
+    // stay blocked in both directions, so a browser cannot obtain the missing packet another way.
+    const lostReceipt = lostPacket === 'receipt';
+    relays.delivery(false, lostReceipt ? contexts[finisher] : null);
+    if (!lostReceipt) await pages[finisher].evaluate(key => {
+      // Deny only the profile transaction; the duel journal and relay archive still work.
+      const write = Storage.prototype.setItem;
+      window.profileWriteFailures = 0;
+      window.allowProfileWrites = () => { Storage.prototype.setItem = write; };
+      Storage.prototype.setItem = function(name, value) {
+        if (this === localStorage && name === key) {
+          window.profileWriteFailures++;
+          throw new DOMException('Fixture: profile quota reached', 'QuotaExceededError');
+        }
+        return write.call(this, name, value);
+      };
+    }, profileKey);
+    await hit(pages[finisher]).click();
+    await pages[finisher].locator('.duel-result').waitFor();
+    if (lostReceipt) {
+      await pages[other].locator('.duel-result').waitFor();
+      await expectRound(pages[other], lastMove.moves);
+      await pages[finisher].getByText(/Последний ход ждёт доставки/).waitFor();
+      for (const page of pages) assert.deepEqual(Object.keys((await profile(page)).battleIds), [matchId]);
+    } else {
+      await expectRound(pages[other], state.moves);
+      assert.deepEqual((await profile(pages[other])).battleIds, initialProfiles[other].battleIds);
+      const failedResult = pages[finisher].locator('.duel-result');
+      assert.ok(await pages[finisher].evaluate(() => window.profileWriteFailures > 0));
+      await failedResult.getByText(/Опыт ещё не начислен/).waitFor();
+      assert.doesNotMatch(await failedResult.innerText(), /\+\d+ опыта/);
+      const afterFailure = await profile(pages[finisher]);
+      for (const key of ['xp', 'battles', 'battleIds', 'battleXp']) {
+        assert.deepEqual(afterFailure[key], initialProfiles[finisher][key], 'failed profile write must preserve ' + key);
+      }
+      await pages[finisher].evaluate(() => window.allowProfileWrites());
+      await failedResult.locator('[data-duel-action="retry-award"]').click();
+      await failedResult.getByText(/\+\d+ опыта/).waitFor();
+      assert.deepEqual(Object.keys((await profile(pages[finisher])).battleIds), [matchId]);
+    }
+    const archiveDeadline = Date.now() + 12_000;
+    while (![...relays.archiveIds()].some(id => !beforeArchive.has(id)) && Date.now() < archiveDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.ok([...relays.archiveIds()].some(id => !beforeArchive.has(id)), 'the final result reached a durable relay archive');
+    await Promise.all(pages.map(page => page.close()));
+    // A missed move needs the archive while the opponent is still away. With only the receipt lost,
+    // both players must recover their results locally even when no live messages or archive reads arrive.
+    relays.delivery(!lostReceipt);
+    await reopen(other);
+    await pages[other].locator('.duel-result').waitFor({ timeout: 35_000 });
+    await expectRound(pages[other], lastMove.moves);
+    await reopen(finisher);
+    await pages[finisher].locator('.duel-result').waitFor();
+    await expectRound(pages[finisher], lastMove.moves);
+    relays.delivery(true);
+    [owner, visitor] = pages;
+    const profiles = await Promise.all(pages.map(profile));
+    const ids = profiles.map(p => Object.keys(p.battleIds));
+    assert.deepEqual(ids, [[matchId], [matchId]]);
+    assert.deepEqual(profiles.map(p => p.battles.wins).sort(), [0, 1]);
+    assert.deepEqual(profiles.map(p => p.battles.losses).sort(), [0, 1]);
+    assert.deepEqual(profiles.map(p => p.xp).sort((a,b) => a-b), [4, 24]);
+    // The invite opens the room once: after the match a reload brings back the lobby, not the room.
+    await visitor.waitForFunction(() => location.hash === '', undefined, { timeout: 35_000 });
+    await visitor.reload();
+    await visitor.locator('#radar-view').waitFor({ state: 'visible' });
+    assert.equal(await visitor.locator('[data-room-code]').count(), 0);
+    assert.equal(await visitor.locator('#arena-view').isVisible(), false);
+    const afterReload = await profile(visitor);
+    assert.deepEqual(afterReload.battleIds, profiles[1].battleIds);
+    assert.deepEqual(afterReload.battles, profiles[1].battles);
+    assert.equal(afterReload.xp, profiles[1].xp);
+    const nextInvite = inviteCode === 'BBBBBBBBBB' ? 'CCCCCCCCCC' : 'BBBBBBBBBB';
+    await owner.evaluate(code => { location.hash = 'duel=' + code; }, nextInvite);
+    await owner.locator('[data-room-code="' + nextInvite + '"]').waitFor();
+    assert.equal(await owner.evaluate(() => location.hash), '#duel=' + nextInvite);
+    assert.deepEqual(errors, []);
+    await Promise.all(contexts.map(context => context.close()));
+    console.log(lostReceipt
+      ? 'PASS final move delivered / every receipt lost / archive reads disabled / both tabs reopened offline / one reward per player'
+      : 'PASS production index / same match after reload and tab closure / missing final recovered from archive without opponent / profile quota failure retried through the result screen / one reward per player');
   }
-  const xp = { 'vkusno-hamburger': 270, 'bk-angus-parmigiano': 0, 'bk-whopper': 0, 'bk-double-whopper': 0 };
-  await Promise.all([seed(owner, 'bk-whopper', xp), seed(visitor, 'dodo-pepperoni')]);
-  await owner.goto(origin + '/');
-  await owner.locator('.main-nav [data-nav="arena"]').click();
-  await owner.getByRole('button', { name: 'Дуэль с другом' }).click();
-  await owner.getByRole('button', { name: 'Создать комнату' }).click();
-  const inviteCode = await owner.locator('[data-room-code]').getAttribute('data-room-code');
-  await visitor.goto(origin + '/#duel=' + inviteCode);
-  // On a phone the start button sits right under the invite code, above the long team list.
-  const [readyTop, teamTop] = await owner.evaluate(() => [
-    document.querySelector('.duel-ready [data-duel-action="ready"]').getBoundingClientRect().top,
-    document.querySelector('.duel-team').getBoundingClientRect().top,
-  ]);
-  assert.ok(readyTop < teamTop, 'the ready button comes before the team list on a phone');
-  const menu = JSON.parse(await readFile(resolve(publicDir, 'data/menu.json'), 'utf8'));
-  const picks = menu.filter(card => Object.hasOwn(xp, card.id));
-  async function verifyPicker(leveled) {
-    const cards = picks.map(item => cardFor(item, leveled && xp[item.id] ? 10 : 1));
-    const hamburger = cards.find(card => card.id === 'vkusno-hamburger');
-    const stats = owner.locator('[data-duel-action="card:vkusno-hamburger"] .duel-pick-title small > span');
-    assert.equal((await stats.nth(0).innerText()).trim(), String(hamburger.maxHp));
-    assert.equal((await stats.nth(1).innerText()).trim(), String(hamburger.attack));
-    await owner.getByRole('button', { name: 'Подобрать команду' }).click();
-    const selected = await owner.locator('.duel-slot[aria-pressed="true"]').evaluateAll(slots =>
-      slots.sort((a, b) => Number(a.textContent) - Number(b.textContent)).map(el => el.dataset.duelAction.slice(5)));
-    assert.deepEqual(selected, suggestTeam(cards));
-  }
-  await verifyPicker(false);
-  await Promise.all([owner, visitor].map(page => page.getByRole('switch').click()));
-  await Promise.all([owner, visitor].map(page => page.locator('.duel-equalizer small', { hasText: 'Оба выключили уравнитель' }).waitFor()));
-  await verifyPicker(true);
-  await Promise.all([owner, visitor].map(page => page.getByRole('button', { name: 'Подтвердить команду' }).click()));
-  await Promise.all([owner, visitor].map(page => page.getByRole('heading', { name: 'Сетевая дуэль' }).waitFor({ timeout: 45_000 })));
-  await playToEnd([owner, visitor]);
-  await Promise.all([owner, visitor].map(page => page.locator('.duel-result').waitFor()));
-  const profiles = await Promise.all([owner, visitor].map(page => page.evaluate(key => JSON.parse(localStorage.getItem(key)), profileKey)));
-  const ids = profiles.map(p => Object.keys(p.battleIds));
-  assert.equal(ids[0].length, 1); assert.deepEqual(ids[0], ids[1]);
-  assert.deepEqual(profiles.map(p => p.battles.wins).sort(), [0, 1]);
-  assert.deepEqual(profiles.map(p => p.battles.losses).sort(), [0, 1]);
-  assert.deepEqual(profiles.map(p => p.xp).sort((a,b) => a-b), [4, 24]);
-  // The invite opens the room once: after the match a reload brings back the lobby, not the room.
-  assert.equal(await visitor.evaluate(() => location.hash), '');
-  await visitor.reload();
-  await visitor.locator('#radar-view').waitFor({ state: 'visible' });
-  assert.equal(await visitor.locator('[data-room-code]').count(), 0);
-  assert.equal(await visitor.locator('#arena-view').isVisible(), false);
-  const nextInvite = inviteCode === 'BBBBBBBBBB' ? 'CCCCCCCCCC' : 'BBBBBBBBBB';
-  await owner.evaluate(code => { location.hash = 'duel=' + code; }, nextInvite);
-  await owner.locator('[data-room-code="' + nextInvite + '"]').waitFor();
-  assert.equal(await owner.evaluate(() => location.hash), '#duel=' + nextInvite);
-  assert.deepEqual(errors, []);
-  console.log('PASS production index / real menu / #duel deep link / identical match id / exactly one settlement in each saved profile / reload after the match leaves the room');
+  await productionRecovery('last move');
+  await productionRecovery('receipt');
 } finally {
   await browser?.close();
   await new Promise(resolve => server.close(resolve));

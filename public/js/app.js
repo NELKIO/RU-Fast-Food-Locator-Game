@@ -1515,7 +1515,7 @@ function switchTab(next, options = {}) {
   if (tab === 'arena' && onlineActive && !options.confirmed && !options.initialMode) {
     openDialog(
       'Покинуть сетевую комнату',
-      '<h2>Выйти из комнаты?</h2><p>Соперник увидит, что ты вышел. Незавершённый матч закончится без награды.</p><div class="dialog-actions"><button class="primary" data-stay>Остаться</button><button class="outline-btn" data-leave="' +
+      '<h2>Выйти из комнаты?</h2><p>Начатую дуэль можно продолжить из арены. Если бой ещё не начался, соперник увидит, что ты покинул комнату.</p><div class="dialog-actions"><button class="primary" data-stay>Остаться</button><button class="outline-btn" data-leave="' +
         esc(next) +
         '">Выйти</button></div>',
     );
@@ -1574,7 +1574,7 @@ function switchTab(next, options = {}) {
               )
             : result.mode === 'trainer'
               ? await store.update((p) => recordTrainer(p, result))
-              : await store.update((p) => recordBattle(p, result));
+              : await store.update((p) => recordBattle(p, result), { requirePersistence: true });
         if (saved.ok && saved.leveledUp) showToast('Боец получил новый уровень!');
         return saved;
       },

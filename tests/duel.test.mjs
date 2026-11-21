@@ -233,18 +233,27 @@ function pair({ hostCatalog = catalog, guestCatalog = catalog, levelCard = null 
     role, cards, code: 'AAAAA2222A', now: () => time, makeId: () => 'match-12345', onChange() {}, levelCard,
     send: (to, packet) => queue.push({ to, packet: structuredClone(packet) })
   });
-  const host = make('host', hostCatalog);
-  const guest = make('guest', guestCatalog);
-  const deliver = () => {
+  let host = make('host', hostCatalog);
+  let guest = make('guest', guestCatalog);
+  const deliver = (allow = () => true) => {
     for (let count = 0; queue.length; count++) {
       assert.ok(count < 100, 'the protocol must settle without an echo loop');
-      const { to, packet } = queue.shift();
+      const message = queue.shift();
+      if (!allow(message)) continue;
+      const { to, packet } = message;
       (to === 'h' ? host : guest).receive(to === 'h' ? 'g' : 'h', packet);
     }
   };
   const bind = () => { host.contact('g'); guest.contact('h'); deliver(); };
   const ready = () => { bind(); host.ready(['burger', 'cola']); guest.ready(['fries']); deliver(); };
-  return { host, guest, queue, deliver, bind, ready, elapse(ms) { time += ms; } };
+  const reload = (role, snapshot, cards = role === 'host' ? hostCatalog : guestCatalog) => {
+    const fresh = make(role, cards);
+    assert.equal(fresh.restore(snapshot), true);
+    if (role === 'host') host = fresh;
+    else guest = fresh;
+    return fresh;
+  };
+  return { get host() { return host; }, get guest() { return guest; }, queue, deliver, bind, ready, reload, elapse(ms) { time += ms; } };
 }
 
 test('players confirm their teams independently, get equal team size and agree on every turn and the winner', () => {
@@ -258,7 +267,7 @@ test('players confirm their teams independently, get equal team size and agree o
   for (let turn = 0; turn < 7; turn++) {
     const player = turn % 2 === 0 ? host : guest;
     assert.equal(player.move('hit'), true);
-    if (turn === 6) assert.equal(host.finished, false, 'last mover waits for the peer acknowledgment');
+    if (turn === 6) assert.deepEqual([host.finished, host.peerHasFinal], [true, false]);
     deliver();
     assert.deepEqual(host.state, guest.state);
   }
@@ -302,21 +311,106 @@ test('one lost in-flight move is recovered on reconnect; no move is accepted dur
   assert.deepEqual(host.state, guest.state);
 });
 
-test('a guest that missed the initial host hello still receives both lineups and the first turn', () => {
+test('a lineup confirmed before meeting the peer stays private until the seat is checkpointed', () => {
   const { host, guest, queue, deliver } = pair();
   host.ready(['burger']); guest.ready(['fries']);
+  let saved;
+  guest.onChange = () => { saved = guest.snapshot(); };
+  const send = guest.send;
+  guest.send = (peer, packet) => {
+    if (packet.kind === 'hello' && packet.team) {
+      assert.equal(saved?.phase, 'ready');
+      assert.equal(saved.peer, peer);
+      assert.deepEqual(saved.team, packet.team);
+    }
+    send(peer, packet);
+  };
   host.contact('g'); guest.contact('h');
   const initial = queue.splice(0);
+  assert.ok(initial.every(({ packet }) => packet.team === null));
   for (const message of initial) if (message.to === 'h') host.receive('g', message.packet);
-  assert.ok(host.state);
-  queue.length = 0; // Lose the host greeting and initial match packet.
+  queue.length = 0; // Lose the host greeting.
+  assert.equal(host.state, null);
   assert.equal(guest.peer, null);
   host.tick(); guest.tick(); deliver();
   assert.equal(guest.peer, 'h');
   assert.deepEqual(host.state, guest.state);
+  assert.equal(host.actionable, true);
 });
 
-test('silent network partition ends the match on both devices without minting a victory', () => {
+test('a lost first state survives the grace period and a reload of both players', () => {
+  const network = pair();
+  network.bind();
+  network.host.ready(['burger']); network.guest.ready(['fries']);
+  network.deliver(({ packet }) => packet.kind !== 'state');
+  assert.equal(network.host.matchId, 'match-12345');
+  assert.equal(network.host.move('hit'), false);
+  const ready = network.guest.snapshot();
+  assert.deepEqual([ready.phase, ready.matchId, ready.peerTeam, ready.history], ['ready', null, ['burger'], []]);
+  network.host.disconnect('g'); network.guest.disconnect('h');
+  network.elapse(RECONNECT_MS * 3);
+  network.host.tick(); network.guest.tick();
+  assert.deepEqual([network.host.pending, network.guest.pending, network.guest.reason], [true, true, null]);
+  network.queue.length = 0;
+  const host = network.reload('host', network.host.snapshot());
+  const guest = network.reload('guest', ready);
+  host.makeId = () => assert.fail('The host already allocated the match.');
+  assert.equal(guest.ready(['cola']), false);
+  assert.equal(guest.receiveArchive('h', host.statePacket()), false);
+  network.bind();
+  assert.equal(guest.snapshot().phase, 'battle');
+  assert.equal(host.matchId, guest.matchId);
+  assert.equal(host.move('hit'), true);
+  network.deliver();
+  assert.deepEqual(host.state, guest.state);
+});
+
+test('two lost ready messages keep the frozen levels, peer and revisions through reload', () => {
+  const withLevel = level => catalog.map(card => ({ ...card, level }));
+  const levelCard = (card, level) => ({ ...card, maxHp: card.baseHp + 2 * (level - 1) });
+  const network = pair({ hostCatalog: withLevel(3), guestCatalog: withLevel(4), levelCard });
+  network.bind();
+  network.host.setFair(false); network.guest.setFair(false); network.deliver();
+  network.host.ready(['burger']); network.guest.ready(['fries']);
+  network.queue.length = 0;
+  network.host.disconnect('g'); network.guest.disconnect('h');
+  network.elapse(RECONNECT_MS * 3);
+  network.host.tick(); network.guest.tick(); network.queue.length = 0;
+  const host = network.reload('host', network.host.snapshot(), withLevel(9));
+  const guest = network.reload('guest', network.guest.snapshot(), withLevel(10));
+  assert.deepEqual([host.revision, guest.revision, host.peerRevision, guest.peerRevision], [2, 2, 1, 1]);
+  assert.deepEqual([host.peerTeam, guest.peerTeam, host.reason, guest.reason], [null, null, null, null]);
+  host.contact('g');
+  host.receive('g', { v: DUEL_PROTOCOL, side: 1, kind: 'hello', revision: 0, fair: true, team: null });
+  assert.equal(host.peerFair, false);
+  network.bind();
+  assert.deepEqual(host.levels, [{ burger: 3 }, { fries: 4 }]);
+  assert.deepEqual(host.state.teams.map(team => team[0].maxHp), [22, 24]);
+  assert.deepEqual(host.state, guest.state);
+});
+
+test('ready checkpoints reject inconsistent seats or histories and an explicit quit closes the provisional start', () => {
+  const network = pair();
+  network.bind();
+  network.host.ready(['burger']); network.guest.ready(['fries']);
+  network.deliver(({ packet }) => packet.kind !== 'state');
+  const saved = network.guest.snapshot();
+  const fresh = pair().guest;
+  for (const change of [
+    { phase: 'other' }, { matchId: 'impossible-match' }, { history: ['hit'] }, { peerHasFinal: true },
+    { peer: '' }, { team: ['missing'] }, { peerTeam: ['missing'] }, { ownLevels: { fries: 0 } },
+    { peerLevels: { burger: 3 } }, { revision: 0 }, { peerRevision: -1 }, { reason: 'quit' },
+  ]) {
+    assert.equal(fresh.restore({ ...saved, ...change }), false);
+    assert.equal(fresh.snapshot(), null);
+  }
+  network.guest.cancel('quit'); network.deliver();
+  assert.deepEqual([network.guest.reason, network.host.reason], ['quit', 'quit']);
+  assert.equal(network.guest.snapshot(), null);
+  assert.equal(network.host.finished, false);
+});
+
+test('a silent network partition suspends the match on both devices without minting a victory', () => {
   const network = pair();
   network.ready();
   network.elapse(SILENT_MS + 10);
@@ -325,9 +419,11 @@ test('silent network partition ends the match on both devices without minting a 
   network.queue.length = 0;
   network.elapse(RECONNECT_MS + 10);
   network.host.tick(); network.guest.tick();
-  network.deliver();
-  assert.deepEqual([network.host.reason, network.guest.reason], ['timeout', 'timeout']);
+  assert.deepEqual([network.host.pending, network.guest.pending], [true, true]);
+  assert.deepEqual([network.host.reason, network.guest.reason], [null, null]);
   assert.deepEqual([network.host.finished, network.guest.finished], [false, false]);
+  network.deliver();
+  assert.deepEqual([network.host.pending, network.guest.pending], [false, false]);
 });
 
 test('catalog mismatch aborts both seats; leaving a live match also reaches the other seat', () => {
@@ -347,34 +443,171 @@ function finalMoveInFlight() {
   for (let turn = 0; turn < 6; turn++) { (turn % 2 ? guest : host).move('hit'); deliver(); }
   assert.equal(host.move('hit'), true);
   assert.equal(host.state.winner, 0);
-  assert.equal(host.finished, false);
+  assert.equal(host.finished, true);
+  assert.equal(host.peerHasFinal, false);
   return network;
 }
 
-test('a permanent outage before the last move or its first receipt cancels both results', () => {
+test('a lost final packet leaves the other player pending and a lost receipt never cancels a winner', () => {
   for (const deliveredLastMove of [false, true]) {
     const { host, guest, queue, elapse } = finalMoveInFlight();
     if (deliveredLastMove) guest.receive('h', queue.shift().packet);
-    assert.deepEqual([host.finished, guest.finished], [false, false]);
     queue.length = 0;
     host.disconnect('g'); guest.disconnect('h');
     elapse(RECONNECT_MS + 1);
     host.tick(); guest.tick();
-    assert.deepEqual([host.reason, guest.reason], ['timeout', 'timeout']);
-    assert.deepEqual([host.finished, guest.finished], [false, false]);
+    assert.deepEqual([host.reason, guest.reason], [null, null]);
+    assert.deepEqual([host.finished, guest.finished], [true, deliveredLastMove]);
+    assert.equal(host.peerHasFinal, false);
+    if (!deliveredLastMove) assert.equal(guest.pending, true);
+    host.cancel('quit');
+    assert.equal(host.reason, null);
   }
 });
 
-test('reconnecting before the deadline recovers the last move and both receipts', () => {
+test('reconnecting after the grace period recovers the last move and both receipts', () => {
   const { host, guest, queue, elapse, deliver } = finalMoveInFlight();
   queue.length = 0;
   host.disconnect('g'); guest.disconnect('h');
-  elapse(RECONNECT_MS - 1);
+  elapse(RECONNECT_MS * 8);
+  host.tick(); guest.tick(); queue.length = 0;
   host.contact('g'); guest.contact('h'); deliver();
   assert.deepEqual([host.finished, guest.finished], [true, true]);
+  assert.deepEqual([host.peerHasFinal, guest.peerHasFinal], [true, true]);
   assert.equal(host.matchId, guest.matchId);
   assert.deepEqual(host.state, guest.state);
   assert.equal(host.state.winner, 0);
+});
+
+test('a terminal archive completes only the bound journal and does not mark the sender online', () => {
+  const { host, guest } = finalMoveInFlight();
+  const packet = host.finalPacket();
+  const before = guest.snapshot();
+  guest.disconnect('h');
+  const lostAt = guest.lostAt;
+  let updates = 0;
+  guest.onChange = () => updates++;
+  for (const [peer, change] of [
+    ['another-person', {}], ['h', { v: DUEL_PROTOCOL - 1 }], ['h', { side: 1 }],
+    ['h', { matchId: 'another-match' }], ['h', { signature: 'another-lineup' }],
+    ['h', { teams: [['burger'], ['fries']] }], ['h', { levels: [{}, {}] }],
+    ['h', { history: before.history }], ['h', { history: ['guard', ...packet.history.slice(1)] }],
+    ['h', { history: [...packet.history, 'hit'] }],
+  ]) assert.equal(guest.receiveArchive(peer, { ...packet, ...change }), false);
+  assert.equal(updates, 0);
+  assert.deepEqual(guest.snapshot(), before);
+  assert.equal(pair().guest.receiveArchive('h', packet), false);
+  assert.equal(guest.receiveArchive('h', packet), true);
+  assert.equal(guest.receiveArchive('h', packet), true);
+  assert.equal(updates, 1);
+  assert.deepEqual(guest.state, host.state);
+  assert.equal(guest.peerHasFinal, true);
+  assert.equal(guest.lostAt, lostAt);
+  assert.equal(guest.known.has('h'), false);
+});
+
+test('a browser departure preserves the match, and a verified terminal history survives a simultaneous quit', () => {
+  const { host, guest, queue } = finalMoveInFlight();
+  const packet = host.finalPacket();
+  queue.length = 0;
+  guest.cancel('left');
+  assert.equal(guest.reason, null);
+  assert.equal(queue.length, 0);
+  guest.cancel('quit');
+  assert.equal(guest.reason, 'quit');
+  host.receive('g', queue.shift().packet);
+  assert.equal(host.finished, true);
+  assert.equal(host.reason, null);
+  assert.equal(guest.receiveArchive('h', packet), true);
+  assert.equal(guest.finished, true);
+  assert.equal(guest.reason, null);
+  assert.deepEqual(guest.state, host.state);
+});
+
+test('a revived browser uses match-time levels and waits for the bound player and the matching history', () => {
+  const levelCard = (card, level) => ({ ...card, maxHp: card.baseHp + 2 * (level - 1) });
+  const ranked = catalog.map(card => ({ ...card, level: 3 }));
+  const network = pair({ hostCatalog: ranked, guestCatalog: ranked, levelCard });
+  network.bind();
+  network.host.setFair(false); network.guest.setFair(false);
+  network.host.ready(['burger']); network.guest.ready(['fries']); network.deliver();
+  network.host.move('hit'); network.deliver();
+  network.guest.move('hit'); network.deliver();
+  const saved = JSON.parse(JSON.stringify(network.host.snapshot()));
+  const remote = network.guest.statePacket();
+  const fresh = network.reload('host', { ...saved, winner: 1 }, ranked.map(card => ({ ...card, level: 10 })));
+  assert.equal(fresh.state.winner, null);
+  assert.equal(fresh.state.teams[0][0].maxHp, 22);
+  assert.equal(fresh.actionable, false);
+  fresh.contact('somebody-else');
+  fresh.receive('somebody-else', remote);
+  fresh.contact('g');
+  fresh.receive('g', { v: DUEL_PROTOCOL, side: 1, kind: 'hello', revision: 1, team: ['fries'] });
+  fresh.receive('g', { ...remote, history: ['hit'] });
+  fresh.receive('g', { ...remote, matchId: 'different-match' });
+  assert.equal(fresh.actionable, false);
+  fresh.receive('g', remote);
+  assert.equal(fresh.actionable, true);
+  assert.deepEqual(fresh.state, network.guest.state);
+});
+
+test('restore rejects incompatible snapshots atomically and derives the winner from all legal moves', () => {
+  const { host, guest } = finalMoveInFlight();
+  const saved = host.snapshot();
+  const fresh = pair().host;
+  for (const change of [
+    { code: 'BBBBB2222A' }, { side: 1 }, { v: 4 }, { peer: '' }, { matchId: 'x' },
+    { v: DUEL_PROTOCOL + 1 }, { phase: undefined }, { phase: 'other' }, { revision: undefined },
+    { peerRevision: -1 }, { ownLevels: null },
+    { matchId: 'prototype' }, { matchId: 'constructor' }, { matchId: 'match\n12345' },
+    { teams: [['burger'], ['missing']] }, { signature: 'wrong' }, { levels: [{}, {}] },
+    { leveled: true }, { history: [...saved.history, 'hit'] }, { history: ['switch:2'] },
+  ]) {
+    assert.equal(fresh.restore({ ...saved, ...change }), false);
+    assert.equal(fresh.snapshot(), null);
+  }
+  assert.equal(fresh.restore({ ...saved, winner: 1 }), true);
+  assert.equal(fresh.state.winner, 0);
+  assert.deepEqual(fresh.state, host.state);
+  assert.equal(fresh.restore(guest.snapshot()), false);
+  const copy = fresh.snapshot();
+  copy.teams[0].pop();
+  copy.history.pop();
+  assert.deepEqual(fresh.snapshot(), saved);
+});
+
+test('a local move is checkpointed before it is offered to the transport', () => {
+  const network = pair();
+  network.ready();
+  const { host } = network;
+  let saved;
+  host.onChange = () => { saved = host.snapshot(); };
+  host.send = (_, packet) => assert.deepEqual(saved.history, packet.history);
+  assert.equal(host.move('guard'), true);
+});
+
+test('a final move refused by local storage cannot finish the match or reach its peer', () => {
+  const network = pair();
+  network.ready();
+  const { host, guest } = network;
+  for (let i = 0; i < 6; i++) { (i % 2 ? guest : host).move('hit'); network.deliver(); }
+  const before = host.snapshot();
+  let allow = false;
+  const events = [];
+  host.persistMove = snapshot => {
+    assert.deepEqual(snapshot.history, [...before.history, 'hit']);
+    assert.equal(snapshot.winner, 0);
+    events.push('write');
+    return allow;
+  };
+  host.onChange = () => events.push(host.finished ? 'finished' : 'playing');
+  host.send = () => events.push('send');
+  assert.equal(host.move('hit'), false);
+  assert.deepEqual(host.snapshot(), before);
+  assert.deepEqual(events, ['write', 'playing']);
+  allow = true;
+  assert.equal(host.move('hit'), true);
+  assert.deepEqual(events, ['write', 'playing', 'write', 'finished', 'send']);
 });
 
 test('speed decides who opens, equal speed falls back to the tie rule, and odd values are clamped', () => {
@@ -689,8 +922,21 @@ test('a delayed lobby heartbeat cannot reverse an equaliser change or erase a co
   assert.deepEqual(host.state, guest.state);
 });
 
+test('the first host state can arrive before the final equaliser preference and still restore', () => {
+  const network = pair({ levelCard: (card, level) => ({ ...card, level }) });
+  network.bind();
+  network.host.setFair(false); network.guest.setFair(false); network.deliver();
+  network.host.setFair(true);
+  network.host.ready(['burger']); network.guest.ready(['fries']);
+  network.deliver(({ to, packet }) => !(to === 'g' && packet.kind === 'hello'));
+  assert.equal(network.guest.leveled, false);
+  assert.equal(network.guest.peerFair, true);
+  const restored = network.reload('guest', network.guest.snapshot());
+  assert.deepEqual(restored.state, network.host.state);
+});
+
 test('a legacy peer receives an update notice in the protocol it understands', () => {
-  for (const version of [2, 3]) {
+  for (const version of [2, 3, 4]) {
     const { guest, queue } = pair();
     guest.contact('h'); queue.length = 0;
     guest.receive('h', { v: version, side: 0, kind: 'hello', team: null });
