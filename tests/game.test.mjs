@@ -204,8 +204,8 @@ test('a wild fighter is sized to the team, so any rarity is a fair fight', () =>
   const one = [cardFor(items.find(item => item.id === 'bk-fries'))];
   const alone = wildFighter(encounter, items, one);
   const power = card => card.maxHp * card.attack;
-  // A common team: strength 0.8 with no rarity bonus.
-  assert.ok(Math.abs(power(alone) / power(one[0]) - 0.8) < 0.15, power(alone));
+  // A common team: strength 0.85 with no rarity bonus.
+  assert.ok(Math.abs(power(alone) / power(one[0]) - 0.85) < 0.15, power(alone));
   assert.ok(alone.skill.power < base.skill.power && alone.skill.power >= 1);
   assert.equal(alone.hp, alone.maxHp);
   const three = ['bk-fries', 'bk-whopper', 'vkusno-big-hit'].map(id => cardFor(items.find(item => item.id === id), 5));
