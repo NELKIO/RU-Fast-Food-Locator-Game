@@ -1,3 +1,4 @@
+import { createDuelMailbox } from './duel-mailbox.js';
 import { makeCodec, openRelays } from './duel-relay.js';
 
 // The direct data channel has priority. A second signed, encrypted path also
@@ -10,10 +11,12 @@ export const SIGNAL_RELAYS = Object.freeze([
   'wss://relay.nostr.net'
 ]);
 
-export async function connectDuel(code, handlers, signal) {
+export async function connectDuel(code, handlers, signal, signingSecret) {
   const { joinRoom, schnorr } = await import('../vendor/duel-trystero-0.27.0.js');
-  const codec = await makeCodec(code, schnorr);
+  const codec = await makeCodec(code, schnorr, signingSecret);
   if (signal.aborted) return;
+  const mailbox = createDuelMailbox(codec, SIGNAL_RELAYS, (peer, packet) =>
+    !signal.aborted && handlers.archive?.(peer, packet));
   let room;
   if (typeof RTCPeerConnection === 'function' && typeof Promise.withResolvers === 'function') {
     room = joinRoom({
@@ -122,6 +125,8 @@ export async function connectDuel(code, handlers, signal) {
     }).catch(() => {});
   }, { once: true });
   return {
+    checkpoint(peer, packet) { void mailbox.checkpoint(peer, packet).catch(() => {}); },
+    lookup(peer, matchId) { void mailbox.lookup(peer, matchId).catch(() => {}); },
     recover(peer) {
       if (!peer || !direct.has(peer) || stalled.has(peer) || signal.aborted) return;
       stalled.add(peer);

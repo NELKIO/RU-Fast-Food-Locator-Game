@@ -925,6 +925,7 @@ export function createProfileStore({storage, key = 'fast-food-locator.profile.v1
   }
   let persistent = Boolean(storage);
   let cached = freshProfile();
+  let lastStored = null;
   const listeners = new Set();
 
   function read() {
@@ -932,6 +933,7 @@ export function createProfileStore({storage, key = 'fast-food-locator.profile.v1
       let raw;
       try { raw = storage.getItem(key); } catch { persistent = false; }
       if (persistent) {
+        lastStored = raw;
         try { cached = normalizeProfile(raw === null ? null : JSON.parse(raw)); } catch { cached = freshProfile(); }
       }
     }
@@ -944,33 +946,54 @@ export function createProfileStore({storage, key = 'fast-food-locator.profile.v1
     }
   }
 
-  function apply(change) {
-    const result = change(read());
+  function unavailable() {
+    return {ok: false, reason: 'storage-unavailable', profile: normalizeProfile(cached), persistent: false};
+  }
+
+  function apply(change, requirePersistence) {
+    const before = read();
+    const recovering = requirePersistence && !persistent;
+    if (recovering) {
+      // A previously blocked tab may retry against its last disk version. If another tab
+      // has since changed it, leave both profiles intact until this one is reloaded.
+      try { if (!storage || storage.getItem(key) !== lastStored) return unavailable(); }
+      catch { return unavailable(); }
+    }
+    const result = change(before);
     if (!record(result) || !record(result.profile)) throw new TypeError('Изменение должно вернуть профиль синхронно');
     const next = normalizeProfile(result.profile);
-    if (result.ok !== false) {
-      if (persistent) {
-        try { storage.setItem(key, JSON.stringify(next)); } catch { persistent = false; }
+    const changed = result.ok !== false;
+    if ((changed && persistent) || recovering) {
+      try {
+        const raw = JSON.stringify(changed ? next : cached);
+        storage.setItem(key, raw);
+        lastStored = raw;
+        persistent = true;
+      } catch {
+        if (requirePersistence) return unavailable();
+        persistent = false;
       }
+    }
+    if (changed) {
       cached = next;
       notify();
     }
     return {...result, profile: normalizeProfile(next), persistent};
   }
 
-  async function update(change) {
-    if (!persistent || !locks?.request) return apply(change);
+  async function update(change, {requirePersistence = false} = {}) {
+    if ((!persistent && !requirePersistence) || !locks?.request) return apply(change, requirePersistence);
     let acquired = false;
     try {
       return await locks.request(key, {mode: 'exclusive'}, () => {
         acquired = true;
-        return apply(change);
+        return apply(change, requirePersistence);
       });
     } catch (error) {
       // An embedded browser can expose the Web Locks API and deny its use.
       if (acquired || !['SecurityError', 'NotAllowedError', 'NotSupportedError'].includes(error?.name)) throw error;
       locks = null;
-      return apply(change);
+      return apply(change, requirePersistence);
     }
   }
 
