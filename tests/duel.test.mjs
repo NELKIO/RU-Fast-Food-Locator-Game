@@ -599,3 +599,50 @@ test('transformation: once per battle for energy, new stats and moves, and an ef
   // Both duel peers see the same form: battleStats carries it.
   assert.equal(battleStats({ id: 'x', hp: 10, attack: 3, transform: form }).transform.effect.cost, 0);
 });
+
+test('level equaliser: levels count only when both players switch it off, each at the level its owner has', () => {
+  // Each player owns its own fighters at a level; the catalog card carries it.
+  const levelCard = (card, level) => ({ ...card, level, maxHp: card.baseHp + 2 * (level - 1), attack: card.baseAttack + Math.floor((level - 1) / 2) });
+  const leveledCatalog = mine => catalog.map(card => ({ ...card, level: mine.includes(card.id) ? 7 : 1 }));
+  const build = (hostFair, guestFair) => {
+    let time = 1_000;
+    const queue = [];
+    const make = (role, cards) => new DuelRoom({ role, cards, code: 'AAAAA2222A', now: () => time, makeId: () => 'match-12345', onChange() {}, levelCard,
+      send: (to, packet) => queue.push({ to, packet: structuredClone(packet) }) });
+    const host = make('host', leveledCatalog(['burger'])), guest = make('guest', leveledCatalog(['fries']));
+    const deliver = () => { while (queue.length) { const { to, packet } = queue.shift(); (to === 'h' ? host : guest).receive(to === 'h' ? 'g' : 'h', packet); } };
+    host.contact('g'); guest.contact('h'); deliver();
+    host.setFair(hostFair); guest.setFair(guestFair); deliver();
+    assert.equal(guest.peerFair, hostFair, 'each sees the other side\'s choice');
+    host.ready(['burger']); guest.ready(['fries']); deliver();
+    return { host, guest };
+  };
+  // Both off: the host's burger at level 7 (18 + 12 HP), the guest's fries at level 7 too.
+  const both = build(false, false);
+  assert.equal(both.host.leveled, true);
+  assert.equal(both.guest.leveled, true, 'the guest agrees on the same leveled match');
+  assert.deepEqual([both.host.state.teams[0][0].maxHp, both.host.state.teams[1][0].maxHp], [30, 30]);
+  assert.equal(both.host.signature, both.guest.signature);
+  // One of them keeps it on: base numbers for everyone, as before.
+  for (const [h, g] of [[false, true], [true, false], [true, true]]) {
+    const room = build(h, g);
+    assert.equal(room.host.leveled, false);
+    assert.deepEqual([room.host.state.teams[0][0].maxHp, room.host.state.teams[1][0].maxHp], [18, 18]);
+    assert.equal(room.host.signature, room.guest.signature);
+  }
+  // After the team is confirmed the equaliser is fixed.
+  assert.equal(both.host.setFair(true), false);
+});
+
+test('level equaliser: a host cannot force levels on a guest that kept it on, nor inflate the guest\'s levels', () => {
+  const levelCard = (card, level) => ({ ...card, level, maxHp: card.baseHp + 2 * (level - 1), attack: card.baseAttack });
+  const { guest } = pair();
+  guest.levelCard = levelCard;
+  guest.contact('h');
+  guest.receive('h', { v: 3, side: 0, kind: 'hello', team: ['burger'], fair: false, levels: { burger: 9 } });
+  guest.ready(['fries']);
+  guest.receive('h', { v: 3, side: 0, kind: 'state', matchId: 'match-12345', teams: [['burger'], ['fries']], signature: 'x',
+    leveled: true, levels: [{ burger: 9 }, { fries: 1 }], history: [] });
+  assert.equal(guest.state, null);
+  assert.equal(guest.reason, 'version', 'the guest refuses a leveled match it did not agree to');
+});

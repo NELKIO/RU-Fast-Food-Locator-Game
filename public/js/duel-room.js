@@ -1,5 +1,18 @@
 import { applyMove, battleStats, MAX_TEAM, MAX_TURNS, opener, startBattle, validTeam } from './duel-engine.js';
 
+const MAX_LEVEL = 10;
+// Levels of a team as sent by a peer: one integer 1–10 per fighter of that team, nothing else.
+function cleanLevels(levels, team) {
+  if (!Array.isArray(team) || !levels || typeof levels !== 'object') return null;
+  const out = {};
+  for (const id of team) {
+    const level = levels[id];
+    if (!Number.isSafeInteger(level) || level < 1 || level > MAX_LEVEL) return null;
+    out[id] = level;
+  }
+  return out;
+}
+
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 // Version 3: freeze, sleep, heartburn and other new effects change the engine, so version-2 clients must not join.
 const PROTOCOL = 3;
@@ -24,7 +37,8 @@ function sameTeam(left, right) {
 }
 
 export class DuelRoom {
-  constructor({ code, role, cards, send, onChange, now = Date.now, makeId = () => crypto.randomUUID() }) {
+  // `levelCard(card, level)` builds a card at a level (game.js cardFor); without it levels never count.
+  constructor({ code, role, cards, send, onChange, now = Date.now, makeId = () => crypto.randomUUID(), levelCard = null }) {
     this.code = code;
     this.side = role === 'host' ? 0 : 1;
     this.catalog = new Map(cards.map(card => [card.id, card]));
@@ -45,6 +59,25 @@ export class DuelRoom {
     this.lostAt = null;
     this.reason = null;
     this.settledAlone = false;
+    // The level equaliser: on by default. Real levels count only when both players turned it off.
+    this.levelCard = levelCard;
+    this.fair = true;
+    this.peerFair = true;
+    this.peerLevels = null;
+    this.leveled = false;
+  }
+
+  // Before the own team is confirmed the player may switch the equaliser; the peer is told at once.
+  setFair(fair) {
+    if (this.team || this.matchId || this.reason || !this.levelCard) return false;
+    this.fair = Boolean(fair);
+    this.hello(this.peer);
+    this.onChange();
+    return true;
+  }
+
+  ownLevels() {
+    return this.team ? Object.fromEntries(this.team.map(id => [id, this.catalog.get(id)?.level ?? 1])) : null;
   }
 
   // The outcome is fixed once the last move is played. If the peer's acknowledgment never
@@ -72,7 +105,7 @@ export class DuelRoom {
   }
 
   hello(peer) {
-    this.packet(peer, { kind: 'hello', team: this.team });
+    this.packet(peer, { kind: 'hello', team: this.team, fair: this.fair, levels: this.fair ? null : this.ownLevels() });
   }
 
   ready(ids) {
@@ -106,9 +139,14 @@ export class DuelRoom {
   }
 
   // Both devices build all statistics from their own catalog. Only item IDs cross the connection.
-  setup(teams) {
+  // With the equaliser on, every fighter fights at its base (level 1) numbers; off on both sides,
+  // each fighter at the level its owner sent.
+  setup(teams, leveled = false, levels = null) {
     const size = Math.min(...teams.map(team => team.length));
-    const stats = teams.map(team => team.slice(0, size).map(id => battleStats(this.catalog.get(id), true)));
+    const stats = teams.map((team, t) => team.slice(0, size).map(id => {
+      const card = this.catalog.get(id);
+      return leveled ? battleStats(this.levelCard(card, levels[t][id]), false) : battleStats(card, true);
+    }));
     // The faster lead fighter opens; on equal speed the room code decides.
     const first = opener(stats, ALPHABET.indexOf(this.code.at(-1)) % 2);
     return { signature: JSON.stringify(stats), state: startBattle(stats, first) };
@@ -117,7 +155,9 @@ export class DuelRoom {
   startIfHost() {
     if (this.side || this.matchId || !this.team || !this.peerTeam || this.reason) return;
     this.teams = [this.team, this.peerTeam];
-    const setup = this.setup(this.teams);
+    this.leveled = !this.fair && !this.peerFair && !!this.peerLevels && !!this.levelCard;
+    this.levels = this.leveled ? [this.ownLevels(), this.peerLevels] : null;
+    const setup = this.setup(this.teams, this.leveled, this.levels);
     this.matchId = this.makeId();
     this.signature = setup.signature;
     this.state = setup.state;
@@ -128,7 +168,7 @@ export class DuelRoom {
     if (!this.matchId || this.reason) return;
     this.packet(this.peer, {
       kind: 'state', matchId: this.matchId, teams: this.teams, signature: this.signature,
-      history: [...this.history]
+      leveled: this.leveled, levels: this.levels, history: [...this.history]
     });
   }
 
@@ -163,10 +203,17 @@ export class DuelRoom {
       const newlyReady = !this.peerTeam && data.team !== null;
       this.peer = peer;
       if (newlyReady) this.peerTeam = [...data.team];
+      // The peer's equaliser (older versions do not send it: on). Its levels come with its team.
+      const peerFair = data.fair !== false;
+      const switched = peerFair !== this.peerFair;
+      if (!this.matchId) {
+        this.peerFair = peerFair;
+        this.peerLevels = !peerFair && this.peerTeam ? cleanLevels(data.levels, this.peerTeam) : null;
+      }
       this.touch();
       if (joined) this.hello(peer);
       this.startIfHost();
-      if (joined || newlyReady) this.onChange();
+      if (joined || newlyReady || switched) this.onChange();
       return;
     }
     if (peer !== this.peer) return;
@@ -193,7 +240,15 @@ export class DuelRoom {
       if (!this.side || !Array.isArray(data.teams) || data.teams.length !== 2 ||
           !validTeam(data.teams[0], this.catalog) || !sameTeam(data.teams[1], this.team) ||
           (this.peerTeam && !sameTeam(data.teams[0], this.peerTeam))) return;
-      const setup = this.setup(data.teams);
+      // Levels count only with both equalisers off; the guest checks its own levels went in as sent.
+      const leveled = data.leveled === true;
+      if (leveled && (this.fair || !this.levelCard || !Array.isArray(data.levels) ||
+          !cleanLevels(data.levels[0], data.teams[0]) || JSON.stringify(cleanLevels(data.levels[1], this.team)) !== JSON.stringify(this.ownLevels()))) {
+        this.cancel('version');
+        return;
+      }
+      const levels = leveled ? [cleanLevels(data.levels[0], data.teams[0]), cleanLevels(data.levels[1], this.team)] : null;
+      const setup = this.setup(data.teams, leveled, levels);
       if (setup.signature !== data.signature) {
         this.cancel('version');
         return;
@@ -203,6 +258,8 @@ export class DuelRoom {
       this.signature = setup.signature;
       this.state = setup.state;
       this.matchId = data.matchId;
+      this.leveled = leveled;
+      this.levels = levels;
       started = true;
     }
     if (data.matchId !== this.matchId || data.signature !== this.signature) return;

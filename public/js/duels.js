@@ -2,7 +2,7 @@ import { brands, countdown, esc, icon, rarityNames, transformBadge } from './ui.
 import { applyMove, battleStats, currentFighter, legalMoves, MAX_ENERGY, opener, startBattle } from './duel-engine.js';
 import { smartMove } from './duel-ai.js';
 import { describeSkill, describeTrait, describeTransform } from './fighters.js';
-import { suggestTeam } from './game.js';
+import { cardFor, suggestTeam } from './game.js';
 import { DuelRoom, newRoomCode, parseRoomCode, RECONNECT_MS } from './duel-room.js';
 import { connectDuel } from './duel-transport.js';
 import { createFx } from './battle-fx.js';
@@ -323,7 +323,7 @@ export function mountDuels(container, options) {
     controller = new AbortController();
     const current = new DuelRoom({
       code, role, cards: data.cards, send: (peer, packet) => transport?.send(peer, packet),
-      onChange: draw
+      onChange: draw, levelCard: (card, level) => cardFor(card, level)
     });
     room = current;
     navLock(true);
@@ -486,7 +486,21 @@ export function mountDuels(container, options) {
         : 'Выбери бойцов ниже: от одного до трёх.';
     return `<section class="duel-ready${room.team ? ' is-done' : selected.length ? ' is-set' : ''}" aria-label="Готовность к бою">
       <div class="duel-ready-row"><div class="duel-ready-slots">${slots}</div><p>${esc(hint)}</p></div>
-      ${readyButton()}</section>`;
+      ${readyButton()}${equalizer()}</section>`;
+  }
+
+  // The level equaliser: on, everyone fights at level 1 numbers; real levels only when both turn it off.
+  function equalizer() {
+    const peerKnown = Boolean(room.peer);
+    const note = room.matchId ? (room.leveled ? 'Бой с настоящими уровнями бойцов.' : 'Бой на равных: все бойцы первого уровня.')
+      : room.fair && (!peerKnown || room.peerFair) ? 'Все бойцы на первом уровне, прокачка не важна.'
+      : room.fair ? 'Соперник хочет бой с уровнями. Выключи уравнитель, чтобы согласиться.'
+      : !peerKnown ? 'Уровни учтутся, только если соперник тоже выключит уравнитель.'
+      : room.peerFair ? 'Соперник оставил уравнитель — бой будет на равных.'
+      : 'Оба выключили уравнитель — бой с настоящими уровнями.';
+    return `<div class="duel-equalizer"><button type="button" class="duel-switch" data-duel-action="fair" role="switch" aria-checked="${room.fair}"
+        ${room.team || room.matchId ? 'disabled' : ''}><span class="duel-switch-track" aria-hidden="true"><span></span></span>Уравнять уровни</button>
+      <small>${esc(note)}</small></div>`;
   }
 
   function ended() {
@@ -992,6 +1006,7 @@ export function mountDuels(container, options) {
     else if (action === 'online') reset('online');
     else if (action === 'create') openRoom('host', newRoomCode());
     else if (action === 'ready') room?.ready(selected);
+    else if (action === 'fair') room?.setFair(!room.fair);
     else if (action === 'copy' && room) void copyInvite();
     else if (action === 'ask-quit' || action === 'stay') { quitPrompt = action === 'ask-quit'; draw(); }
     else if (action === 'quit') { room?.cancel('quit'); reset(); }

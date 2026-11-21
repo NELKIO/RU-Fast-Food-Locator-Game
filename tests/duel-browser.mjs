@@ -151,7 +151,7 @@ try {
     if (process.env.DUEL_DEBUG) page.on('console', message => console.log('browser', message.type(), message.text()));
     return page;
   }
-  async function match(invite, restricted = false) {
+  async function match(invite, restricted = false, leveled = false) {
     const host = await newPage();
     await host.goto(origin + '/fixture' + (restricted ? '?restricted=1' : ''));
     await host.getByRole('button', { name: 'Создать комнату' }).click();
@@ -161,6 +161,13 @@ try {
     if (!invite) {
       await guest.getByLabel('Код или ссылка').fill(code);
       await guest.getByRole('button', { name: 'Войти' }).click();
+    }
+    if (leveled) {
+      // Both switch the level equaliser off; each sees the other's choice over the real connection.
+      await host.locator('.duel-waiting', { hasText: 'Соперник выбирает команду' }).waitFor({ timeout: 50_000 });
+      await host.locator('[data-duel-action="fair"]').click();
+      await guest.locator('[data-duel-action="fair"]').click();
+      for (const page of [host, guest]) await page.locator('.duel-equalizer small', { hasText: 'Оба выключили уравнитель' }).waitFor({ timeout: 50_000 });
     }
     await host.getByRole('button', { name: 'Подтвердить команду' }).click();
     await guest.getByRole('button', { name: 'Подтвердить команду' }).click();
@@ -206,7 +213,7 @@ try {
   console.log('PASS 390px / two browser contexts / one unavailable signaling relay at discovery / actual WebRTC / all relays stopped after discovery / identical outcome and one reward per player');
   await host.context().close(); await guest.context().close();
   relays.restore();
-  const [remaining, leaving] = await match(false, true);
+  const [remaining, leaving] = await match(false, true, true);
   const mover = await remaining.locator('[data-duel-action="move:hit"]').isEnabled() ? remaining : leaving;
   await mover.locator('[data-duel-action="move:hit"]').click();
   await Promise.all([remaining, leaving].map(page => page.locator('[data-completed-moves="1"]').waitFor()));
