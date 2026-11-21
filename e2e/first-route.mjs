@@ -4,6 +4,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { checkDesktopZoom, checkMobilePinch, observeMapZoom } from './map-zoom.mjs';
 
 // Serve at the real Pages-style subpath so root-relative assets break this test.
 const root = fileURLToPath(new URL('../public/', import.meta.url));
@@ -390,6 +391,7 @@ try {
   });
   await offline(denied);
   const q = await watchPage(denied);
+  await observeMapZoom(q);
   await q.goto(base);
   await q.getByRole('button', { name: 'Поехали' }).click();
   await q.locator('[data-point]').first().waitFor();
@@ -400,6 +402,8 @@ try {
   assert.equal(await q.locator('#map-location').textContent(), 'Москва · обзор');
   assert.equal(await q.locator('[data-act="claim"]').count(), 0);
   await checkWidth(q);
+  await checkMobilePinch(q);
+  log('Two-finger pinch changes the mobile map in both directions and preserves page scale');
   await q.locator('.main-nav [data-nav="arena"]').click();
   await q.getByRole('button', { name: 'Сразиться' }).click();
   await battle(q);
@@ -448,6 +452,7 @@ try {
     }
   });
   const d = await watchPage(desktop);
+  await observeMapZoom(d);
   await d.goto(base);
   await d.getByRole('button', { name: 'Поехали' }).click();
   await d.locator('[data-point]').first().waitFor();
@@ -501,12 +506,12 @@ try {
   assert.equal(await d.locator('#map-size').getAttribute('aria-pressed'), 'true');
   await d.keyboard.press('Escape');
   assert.equal(await d.locator('#map-size').getAttribute('aria-pressed'), 'false');
-  await d.locator('#zoom-in').click();
-  await d.locator('#zoom-out').click();
   await d.locator('#sound').click();
   assert.equal(await d.locator('#sound').getAttribute('aria-pressed'), 'false');
   await checkWidth(d);
   await capture(d, 'desktop-radar');
+  await checkDesktopZoom(d);
+  log('Map zoom stays anchored and the page scrolls outside the map');
   assert.deepEqual(errors, []);
   assert.deepEqual(missing, []);
   log('Desktop map controls, sound toggle, clean runtime and all local resources present');

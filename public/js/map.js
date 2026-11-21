@@ -19,8 +19,10 @@ export function makeMap({ onPick, venues }) {
   const L = window.L;
   const map = L.map('map', {
     zoomControl: false,
-    scrollWheelZoom: false,
-    zoomSnap: 1,
+    scrollWheelZoom: true,
+    touchZoom: true,
+    zoomSnap: 0.25,
+    bounceAtZoomLimits: false,
     minZoom: 3,
     maxZoom: 19,
     attributionControl: true,
@@ -256,6 +258,10 @@ export function makeMap({ onPick, venues }) {
   map.on('zoomstart', () => map.closePopup());
   function recenter() {
     map.flyTo(point(fix || MOSCOW), Math.max(14, map.getZoom()), { duration: 0.5 });
+  }
+  // Wheel events on the toolbar still reach Leaflet. A button tap should only run its own action.
+  for (const button of map.getContainer().querySelectorAll('.map-top button, .map-tools button')) {
+    L.DomEvent.disableClickPropagation(button);
   }
   document.getElementById('zoom-in').onclick = () => map.zoomIn();
   document.getElementById('zoom-out').onclick = () => map.zoomOut();
