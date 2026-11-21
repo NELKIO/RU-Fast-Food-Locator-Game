@@ -2,10 +2,12 @@ import { makeSfx } from './sfx.js';
 import { createSiteStats } from './site-stats.js';
 import { brands, icon, brandMark, esc, rarityNames, formatDistance, formatWait, formatCountdown, countdown, transformBadge } from './ui.js';
 import { makeMap, MOSCOW } from './map.js';
+import { watchGps } from './gps-watch.js';
 import { applyAppearance, normalizeTheme, themeOptions, themes } from './themes.js';
 import {
   createProfileStore,
   nearestRestaurants,
+  distanceMeters,
   visitStatus,
   claimVisit,
   cardFor,
@@ -29,6 +31,8 @@ import {
   recordBattle,
   WILD_COOLDOWN_MS,
   GPS_RULES,
+  INITIAL_GPS_TRACK,
+  updateGpsTrack,
 } from './game.js';
 import { describeSkill, describeTrait, describeTransform } from './fighters.js';
 import { mountDuels } from './duels.js';
@@ -111,9 +115,9 @@ let profile = store.read(),
   brand = Object.hasOwn(brands, prefs.brand) ? prefs.brand : 'all';
 let selected = null,
   target = null,
-  fix = null,
+  gpsTrack = INITIAL_GPS_TRACK,
   map = null,
-  geoWatch = null,
+  stopGps = null,
   geoMessage = '',
   geoRetry = false,
   requesting = false;
@@ -179,6 +183,13 @@ $('dialog').addEventListener('click', (e) => {
 });
 $('dialog').addEventListener('close', () => {
   dialogRun++;
+  if (!$('dialog').open && pendingInvite && !acceptingInvite) {
+    rememberInvite(null);
+    if (!store.read().sync?.key) {
+      store.update(p => p.sync?.key ? {ok: false, profile: p} : grantStarter(p, menu))
+        .then(result => { if (result.ok) { welcome(result.card); ensureWild(); } });
+    }
+  }
 });
 function resumeSound() {
   if (!audioOn) return;
@@ -230,7 +241,10 @@ listen('sound', () => {
 });
 updateSound();
 
-// GPS starts by itself when the page opens. The player only sees it when something is wrong.
+function visitFix() {
+  return gpsTrack.status === 'ready' ? gpsTrack.fix : null;
+}
+
 function askGps() {
   if (!navigator.geolocation || !window.isSecureContext) {
     geoMessage =
@@ -239,31 +253,26 @@ function askGps() {
     renderGeo();
     return;
   }
-  if (geoWatch !== null) navigator.geolocation.clearWatch(geoWatch);
+  stopGps?.();
   requesting = true;
   geoMessage = '';
   renderGeo();
-  geoWatch = navigator.geolocation.watchPosition(
+  stopGps = watchGps(navigator.geolocation,
     (position) => {
-      const c = position.coords;
-      if (!Number.isFinite(c.latitude) || !Number.isFinite(c.longitude)) return;
-      const first = fix === null;
-      fix = {
-        lat: c.latitude,
-        lon: c.longitude,
-        accuracy: c.accuracy,
-        timestamp: position.timestamp,
-      };
+      const previous = gpsTrack;
+      gpsTrack = updateGpsTrack(previous, position);
       requesting = false;
-      geoMessage = '';
+      geoMessage = gpsTrack.status === 'empty' ? 'GPS не передал координаты. Попробуй ещё раз.' : '';
+      geoRetry = Boolean(geoMessage);
+      const first = !previous.fix && Boolean(gpsTrack.fix);
       if (first && !target) selected = null;
-      renderRadar({ center: first });
-      renderGeo();
+      renderRadar({ center: first, follow: previous.status !== 'ready' && gpsTrack.status === 'ready' });
+      return gpsTrack.candidate;
     },
     (error) => {
       requesting = false;
       // A watch keeps trying after a timeout; a known position is still better than an alarm.
-      if (error.code !== 1 && fix) {
+      if (error.code !== 1 && gpsTrack.fix) {
         renderGeo();
         return;
       }
@@ -275,15 +284,14 @@ function askGps() {
       geoMessage = reasons[error.code] || 'Не удалось определить местоположение.';
       geoRetry = true;
       if (error.code === 1) {
-        navigator.geolocation.clearWatch(geoWatch);
-        geoWatch = null;
-        fix = null;
+        stopGps?.();
+        stopGps = null;
+        gpsTrack = INITIAL_GPS_TRACK;
         if (!target) selected = null;
       }
       renderRadar({ center: error.code === 1 });
-      renderGeo();
     },
-    { enableHighAccuracy: true, maximumAge: 10000, timeout: 18000 },
+    gpsTrack.candidate,
   );
 }
 $('geo-status').addEventListener('click', (e) => {
@@ -291,20 +299,32 @@ $('geo-status').addEventListener('click', (e) => {
 });
 
 function renderGeo() {
+  const { fix, status } = gpsTrack;
+  const stale = fix && Date.now() - fix.timestamp > GPS_RULES.maxAgeMs;
+  const live = status === 'ready' && !stale;
+  const [label, origin] = !fix ? ['Центр обзора', 'центра Москвы']
+    : live ? ['Твоя позиция', 'твоей позиции']
+    : fix.accuracy > GPS_RULES.maxAccuracy ? ['Примерная позиция', 'примерной позиции']
+    : ['Последняя позиция', 'последней позиции'];
   text(
     $('map-location'),
-    fix ? 'Ты здесь · ±' + Math.round(fix.accuracy) + ' м' : requesting ? 'Ищем тебя…' : 'Москва · обзор',
+    fix ? (live ? 'Ты здесь' : label) + ' · ±' + Math.round(fix.accuracy) + ' м' : requesting ? 'Ищем тебя…' : 'Москва · обзор',
   );
-  $('map-location').parentElement.classList.toggle('live', Boolean(fix));
-  $('map-location').parentElement.classList.toggle('searching', requesting && !fix);
-  text($('map-key-label'), fix ? 'Твоя позиция' : 'Центр обзора');
+  $('map-location').parentElement.classList.toggle('live', live);
+  $('map-location').parentElement.classList.toggle('searching', (requesting && !fix) || status === 'confirming');
+  text($('map-key-label'), label);
+  map?.setPositionLabel(label, live);
+  text($('near-origin'), 'По прямой от ' + origin);
   let notice = geoMessage,
     retry = Boolean(geoMessage) && geoRetry;
-  if (!notice && fix && Date.now() - fix.timestamp > GPS_RULES.maxAgeMs) {
+  if (!notice && status === 'confirming') {
+    notice = 'Резкий скачок GPS. На карте последняя подтверждённая позиция. Ждём повторного измерения.';
+    retry = true;
+  } else if (!notice && (stale || status === 'stale')) {
     notice = 'Координаты давно не обновлялись.';
     retry = true;
-  } else if (!notice && fix?.accuracy > GPS_RULES.maxAccuracy)
-    notice = 'GPS пока неточен: для отметки нужна погрешность до 120 м. На открытом месте сигнал лучше.';
+  } else if (!notice && status === 'inaccurate')
+    notice = 'GPS пока неточен. Для отметки нужна погрешность до 120 м. На открытом месте сигнал лучше.';
   if (!notice && !store.persistent)
     notice = 'Браузер ограничил хранение данных. Прогресс доступен до закрытия страницы.';
   html(
@@ -376,7 +396,7 @@ function chooseTarget(venue) {
   readyNotified = false;
   savePref('target', target.id);
   renderRadar();
-  if (!fix && !requesting) askGps();
+  if (!gpsTrack.fix && !requesting) askGps();
 }
 $('venue-list').addEventListener('click', (e) => {
   const row = e.target.closest('[data-point]');
@@ -384,6 +404,7 @@ $('venue-list').addEventListener('click', (e) => {
 });
 function renderNearby(options = {}) {
   if (!venues.length) return;
+  const { fix } = gpsTrack;
   const origin = fix || MOSCOW;
   nearby = nearestRestaurants(venues, brand, origin, 7);
   if (!selected) selected = nearby[0] ? lookup(nearby[0].id) : null;
@@ -415,10 +436,10 @@ function renderNearby(options = {}) {
     .join('');
   html(wrapper, rows || '<p class="empty">Для этой сети пока нет точек.</p>');
   text($('near-total'), list.length);
-  text($('near-origin'), fix ? 'По прямой от твоей позиции' : 'По прямой от центра Москвы');
   map?.update({ brand, selected, target, fix }, options);
 }
 function renderRoute() {
+  const { fix } = gpsTrack;
   const box = $('route-box');
   $('radar-view').classList.toggle('is-tracking', Boolean(target));
   if (!selected) {
@@ -471,16 +492,18 @@ function renderRoute() {
     );
     return;
   }
-  const state = visitStatus(profile, target, fix);
+  const state = visitStatus(profile, target, visitFix());
+  const reason = state.reason === 'no-location' && gpsTrack.status !== 'empty' ? gpsTrack.status : state.reason;
   const reasons = {
     ready: 'Ты в радиусе точки. Награда доступна.',
     'no-location': requesting ? 'Определяем, где ты…' : 'Нужна геолокация, чтобы подтвердить посещение.',
     stale: 'Координаты устарели. Обнови GPS.',
     inaccurate: 'Нужен более точный сигнал GPS.',
+    confirming: 'Ждём подтверждения новой позиции.',
     'too-far': 'Подойди к цели на ' + Math.round(state.radius || 65) + ' м.',
     cooldown: 'Следующая находка через ' + formatWait(state.remainingMs) + '.',
   };
-  const gpsAction = ['no-location', 'stale', 'inaccurate'].includes(state.reason) && !requesting;
+  const gpsAction = ['no-location', 'stale', 'inaccurate'].includes(reason) && !requesting;
   const searching = requesting && !fix;
   // Only a real next step gets a button; while walking there is nothing to press.
   const action =
@@ -503,11 +526,11 @@ function renderRoute() {
       ' Цель · ' +
       esc(brands[target.brand].name) +
       '</div><div class="route-stat">' +
-      (fix ? formatDistance(state.distance) : 'Нужен GPS') +
+      (fix ? formatDistance(distanceMeters(target, fix)) : 'Нужен GPS') +
       '</div><p class="route-detail">' +
       esc(target.address) +
       '<br>' +
-      esc(reasons[state.reason] || 'Проверяем позицию…') +
+      esc(reasons[reason] || 'Проверяем позицию…') +
       '</p><div class="route-row">' +
       feature +
       '<button type="button" class="route-cancel" data-act="cancel" aria-label="Отменить цель" title="Отменить цель">' +
@@ -521,12 +544,14 @@ function proximity() {
     readyNotified = false;
     return;
   }
+  const fix = visitFix();
+  if (!fix) return;
   const status = visitStatus(profile, target, fix);
   if (status.ok && !readyNotified) {
     readyNotified = true;
     arrival();
   }
-  if (fix && status.distance > status.radius + 25) readyNotified = false;
+  if (status.distance > status.radius + 25) readyNotified = false;
 }
 function renderRadar(options = {}) {
   renderNearby(options);
@@ -662,11 +687,10 @@ async function playReel(pool, card, label) {
   return dialogRun === run && $('dialog').open;
 }
 // A linked device asks the others first: otherwise a reward taken a minute ago on the phone would
-// still look free on the laptop. Resolves to true when the shared progress was checked.
+// still look free on the laptop. The read is independent of a pending upload.
 async function syncedBeforeClaim() {
-  if (!profile.sync?.key) return true;
-  const status = await Promise.race([sync.syncNow(), new Promise((resolve) => setTimeout(() => resolve(null), 9000))]);
-  return status?.state === 'ok';
+  if (!profile.sync?.key) return 'ok';
+  return (await sync.readNow()).state;
 }
 async function spinReward() {
   if (!target || claimPending) return;
@@ -679,7 +703,7 @@ async function spinReward() {
       showToast('Сверяем прогресс с другими устройствами…');
       await syncedBeforeClaim();
     }
-    result = await store.update((p) => claimVisit(p, point, fix, menu));
+    result = await store.update((p) => claimVisit(p, point, visitFix(), menu));
   } finally {
     claimPending = false;
   }
@@ -790,7 +814,12 @@ let dailyRun = null;
 async function claimDailyReward() {
   if (profile.sync?.key) {
     dailyDialog(null, 'Сверяем прогресс с другими устройствами…');
-    if (!(await syncedBeforeClaim())) {
+    const state = await syncedBeforeClaim();
+    if (state === 'outdated') return dailyDialog(null, 'На другом устройстве новая версия игры. Обнови страницу, чтобы забрать награду.');
+    if (state === 'unreadable') {
+      return dailyDialog(null, 'Сохранение не удалось прочитать. Обнови игру или открой её в другом браузере.');
+    }
+    if (state !== 'ok') {
       return dailyDialog(null, 'Нет связи с другими устройствами. Награду можно будет забрать, когда синхронизация пройдёт: так её не заберут дважды.');
     }
     if (!dailyStatus(store.read()).claimable) return dailyDialog(null, 'Награду дня уже забрали на другом устройстве.');
@@ -1257,6 +1286,7 @@ function siteStatsHtml(total, loading) {
 let wildFightActive = false;
 const sync = createSync({
   store,
+  initializeEmpty: p => grantStarter(p, menu),
   paused: () => wildFightActive,
   onStatus: (status) => {
     refreshSyncDialog();
@@ -1268,6 +1298,18 @@ const sync = createSync({
 });
 let syncDialogRun = -1,
   syncKeyShown = false;
+let pendingInvite = null, acceptingInvite = false;
+const inviteSessionKey = 'foodradar.pending-invite.v1';
+function rememberInvite(key) {
+  pendingInvite = key;
+  try {
+    if (key) sessionStorage.setItem(inviteSessionKey, key);
+    else sessionStorage.removeItem(inviteSessionKey);
+  } catch {}
+}
+function storedInvite() {
+  try { return parseSyncKey(sessionStorage.getItem(inviteSessionKey)); } catch { return null; }
+}
 function syncLink(key) {
   const url = new URL(location.href);
   url.search = '';
@@ -1278,6 +1320,7 @@ function syncStatusText() {
   const status = sync.status;
   if (status.state === 'syncing') return 'Синхронизация…';
   if (status.state === 'offline') return 'Нет связи с узлами. Прогресс сохранён здесь и уйдёт при следующей связи.';
+  if (status.state === 'unreadable') return 'Не удалось прочитать облачное сохранение. Обнови игру или открой её в другом браузере.';
   if (status.state === 'outdated') return 'На другом устройстве новая версия игры. Обнови страницу.';
   if (status.state === 'error') return 'Не удалось синхронизировать. Попробуем ещё раз позже.';
   if (status.state === 'ok' && status.at) {
@@ -1333,16 +1376,18 @@ function refreshSyncDialog() {
   if (line) line.textContent = syncStatusText();
 }
 async function linkDevice(key) {
+  if (acceptingInvite) return;
+  acceptingInvite = true;
   syncDialog('main');
   const line = document.createElement('p');
   line.className = 'sync-status';
   line.textContent = 'Связываем и объединяем прогресс…';
   $('dialog-body').querySelector('h2')?.after(line);
-  const result = await sync.link(key);
-  // A new device that had nothing gets its starter only if the shared progress is empty too.
-  if (!Object.keys(store.read().collection).length) {
-    const starter = await store.update((p) => grantStarter(p, menu));
-    if (starter.ok) showToast('Твой первый боец — ' + starter.card.name);
+  let result;
+  try { result = await sync.link(key); }
+  finally {
+    acceptingInvite = false;
+    if (store.read().sync?.key === key) rememberInvite(null);
   }
   syncKeyShown = false;
   syncDialog('main');
@@ -1412,6 +1457,7 @@ $('dialog-body').addEventListener('click', async (e) => {
   } else if (b.hasAttribute('data-sync-unlink')) syncDialog('unlink');
   else if (b.hasAttribute('data-sync-unlink-yes')) {
     await sync.unlink();
+    await store.update(p => p.sync?.key ? {ok: false, profile: p} : grantStarter(p, menu));
     syncDialog('main');
     showToast('Устройство отвязано. Прогресс остался здесь.');
   }
@@ -1622,9 +1668,11 @@ async function init() {
   renderQuests();
   // A link with a sync key: the device joins the shared progress instead of starting over.
   const linkHash = /(?:^|#|&)sync=/i.test(location.hash);
-  const invitedKey = linkHash ? parseSyncKey(location.hash) : null;
+  const invitedKey = linkHash ? parseSyncKey(location.hash) : storedInvite();
+  if (invitedKey && store.read().sync?.key !== invitedKey) rememberInvite(invitedKey);
+  else rememberInvite(null);
   if (linkHash) history.replaceState(history.state, '', location.pathname + location.search);
-  const starter = invitedKey && !Object.keys(store.read().collection).length
+  const starter = invitedKey || store.read().sync?.key
     ? { ok: false }
     : await store.update((p) => grantStarter(p, menu));
   // Older profiles get their wild stream now, so linked devices agree on it at the first sync.
@@ -1645,7 +1693,7 @@ async function init() {
     const key = /(?:^|#|&)sync=/i.test(location.hash) ? parseSyncKey(location.hash) : null;
     if (key) {
       history.replaceState(history.state, '', location.pathname + location.search);
-      if (store.read().sync?.key !== key) syncDialog('confirm:' + key);
+      if (store.read().sync?.key !== key) { rememberInvite(key); syncDialog('confirm:' + key); }
     }
   });
   function refreshTime() {

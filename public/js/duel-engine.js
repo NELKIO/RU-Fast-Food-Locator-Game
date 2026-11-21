@@ -125,7 +125,10 @@ export function startBattle(teams, first = 0, {tempo = true} = {}) {
     throw new RangeError('Для боя нужны две команды по 1–3 бойца');
   }
   const sides = teams.map(team => team.map(newFighter));
-  if (tempo) sides[1 - first][0].energy = START_ENERGY + 1;
+  if (tempo) {
+    const second = sides[1 - first][0];
+    second.energy = Math.min(MAX_ENERGY, second.energy + 1);
+  }
   const state = {teams: sides, active: [0, 0], turn: first, moves: 0, winner: null, last: null};
   intimidate(state, first, null);
   intimidate(state, 1 - first, null);
@@ -289,6 +292,11 @@ function settleKnockout(state, side) {
   }
 }
 
+// Total base damage shown on the card, before each strike's talents, armour and shield.
+export function skillDamage(skill, attack) {
+  return Math.max(0, Math.round(attack + skill.power));
+}
+
 function useSkill(state, event, fighter, target, skill) {
   fighter.energy -= skill.cost;
   event.skill = skill.name;
@@ -305,19 +313,17 @@ function useSkill(state, event, fighter, target, skill) {
     event.effects.push('purge');
   }
   if (Number.isFinite(skill.power)) {
-    let amount = fighter.attack + skill.power;
-    if (skill.execute && target.hp * 2 <= target.maxHp) {
-      amount += skill.execute;
-      event.executed = true;
-    }
+    const execute = target.hp * 2 <= target.maxHp ? skill.execute ?? 0 : 0;
+    if (execute) event.executed = true;
+    const amount = skillDamage(skill, fighter.attack + execute);
     // A flurry splits the blow into separate strikes: guard softens only the first, armour every
     // one, and a second strike gets through a last stand.
     const hits = Math.min(4, Math.max(1, skill.hits ?? 1));
     if (hits === 1) event.damage = strike(event, fighter, target, amount, skill.pierce);
     else {
-      const each = Math.max(1, Math.round(amount / hits));
+      const each = Math.floor(amount / hits), remainder = amount % hits;
       for (let i = 0; i < hits && target.hp > 0; i++) {
-        event.damage += strike(event, fighter, target, each, skill.pierce);
+        event.damage += strike(event, fighter, target, each + (i < remainder ? 1 : 0), skill.pierce);
         event.hits++;
       }
     }

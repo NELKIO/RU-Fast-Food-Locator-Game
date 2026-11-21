@@ -338,6 +338,7 @@ h3 {
   position: absolute;
   inset: 0;
   z-index: 0;
+  touch-action: none;
   background-color: #222b30;
   background-image:
     linear-gradient(#35424955 1px, transparent 1px),
@@ -345,15 +346,21 @@ h3 {
   background-size: 40px 40px;
   font-family: inherit;
 }
+.map-top,
+.map-tools,
+.map-key {
+  z-index: 800; /* Above Leaflet's marker and popup panes. */
+  pointer-events: none;
+}
 .map-top {
   position: absolute;
   inset: 14px 14px auto;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  pointer-events: none;
 }
-.map-top > * {
+.map-top button,
+.map-tools button {
   pointer-events: auto;
 }
 .map-tag,
@@ -426,7 +433,6 @@ h3 {
   font-size: 11px;
   gap: 7px;
   padding: 5px 8px;
-  pointer-events: none;
 }
 .map-key b {
   width: 8px;

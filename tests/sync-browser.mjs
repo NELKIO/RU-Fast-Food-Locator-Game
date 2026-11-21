@@ -31,15 +31,18 @@ const server = createServer(async (req, res) => {
 // Each relay keeps the newest event per author, kind and d tag, like real NIP-01 relays.
 function relays() {
   const stored = new Map();
+  const offline = new WeakSet();
   let publishes = 0;
   return {
     stored,
+    offline,
     get publishes() { return publishes; },
     async install(context) {
       await context.routeWebSocket(/.*/, socket => {
         const url = socket.url().replace(/\/$/, '');
         assert.ok(SYNC_RELAYS.includes(url), 'unexpected connection ' + url);
         socket.onMessage(raw => {
+          if (offline.has(context)) { socket.close(); return; }
           const [kind, a, b] = JSON.parse(String(raw));
           if (kind === 'REQ') {
             const event = stored.get(url);
@@ -225,6 +228,35 @@ try {
   await fresh.locator('[data-sync-status]', { hasText: 'Синхронизировано' }).waitFor({ timeout: 15_000 });
   assert.equal(counters(await saved(fresh)), counters(await saved(phone)), 'nothing added, nothing lost');
   console.log('PASS reload keeps the link / a new device joins without a stray starter');
+
+  const declined = await open('declined', {width: 390, height: 844});
+  await declined.goto(link);
+  await declined.locator('[data-sync-confirm]').waitFor();
+  await declined.reload();
+  await declined.locator('[data-sync-confirm]').waitFor();
+  await declined.getByRole('button', {name: 'Отмена'}).click();
+  await declined.getByRole('heading', {name: /Твой первый боец/}).waitFor();
+  const solo = await saved(declined);
+  assert.equal(Object.keys(solo.collection).length, 1);
+  assert.equal(solo.team.length, 1);
+  await declined.reload();
+  assert.deepEqual((await saved(declined)).collection, solo.collection);
+
+  const offlineJoin = await open('offline join', {width: 390, height: 844});
+  net.offline.add(offlineJoin.context());
+  await offlineJoin.goto(link);
+  await offlineJoin.locator('[data-sync-confirm]').click();
+  await offlineJoin.locator('[data-sync-status]', {hasText: 'Нет связи'}).waitFor();
+  assert.deepEqual((await saved(offlineJoin)).collection, {});
+  await offlineJoin.reload();
+  await openSync(offlineJoin);
+  await offlineJoin.locator('[data-sync-status]', {hasText: 'Нет связи'}).waitFor();
+  assert.deepEqual((await saved(offlineJoin)).collection, {});
+  net.offline.delete(offlineJoin.context());
+  await offlineJoin.locator('[data-sync-now]').click();
+  await offlineJoin.locator('[data-sync-status]', {hasText: 'Синхронизировано'}).waitFor();
+  assert.equal(counters(await saved(offlineJoin)), counters(await saved(phone)));
+  console.log('PASS pending invitation survives reload; cancellation gives one starter; offline join waits across reload');
 
   // Unlink: progress stays, syncing stops.
   await openSync(phone);

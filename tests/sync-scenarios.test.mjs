@@ -2,6 +2,7 @@
 // restores from old backups, clocks that are wrong by a year, partitions, relays that serve old
 // versions, account switches. Every scenario checks the exact numbers, not just "looks merged".
 import assert from 'node:assert/strict';
+import {recordVisit, routeBonus} from './sync-route-oracle.mjs';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
@@ -28,13 +29,14 @@ function counters(p) {
     xp: p.xp, wins: p.battles.wins, losses: p.battles.losses, draws: p.battles.draws,
     cards: sorted(Object.fromEntries(Object.entries(p.collection).map(([id, c]) => [id, c.copies]))),
     cardXp: sorted(Object.fromEntries(Object.entries(p.collection).map(([id, c]) => [id, c.xp]))),
+    battleXp: sorted(p.battleXp),
     visits: sorted(Object.fromEntries(Object.entries(p.visits).map(([id, v]) => [id, v.count]))),
   };
 }
-const zero = () => ({ xp: 0, wins: 0, losses: 0, draws: 0, cards: {}, cardXp: {}, visits: {} });
+const zero = () => ({ xp: 0, wins: 0, losses: 0, draws: 0, cards: {}, cardXp: {}, battleXp: {}, visits: {} });
 function add(total, delta, sign = 1) {
   for (const key of ['xp', 'wins', 'losses', 'draws']) total[key] += sign * delta[key];
-  for (const field of ['cards', 'cardXp', 'visits']) {
+  for (const field of ['cards', 'cardXp', 'battleXp', 'visits']) {
     for (const [id, n] of Object.entries(delta[field])) total[field][id] = (total[field][id] ?? 0) + sign * n;
   }
   return total;
@@ -57,6 +59,7 @@ class Device {
     if (result.ok === false) return result;
     this.profile = normalizeProfile(result.profile);
     add(this.earned, diff(counters(this.profile), before));
+    recordVisit(this, before.visits, result);
     return result;
   }
   visit(point, now) { return this.act(p => claimVisit(p, point, fixAt(point, now), menu, { now, rng: this.random })); }
@@ -119,9 +122,10 @@ function assertExact(devices, label = '') {
   for (const d of devices) {
     assert.equal(view(d.profile), reference, `${label}${d.name} sees the same profile`);
     const c = counters(d.profile);
-    assert.equal(c.xp, total.xp, label + 'player XP');
+    assert.equal(c.xp, total.xp + routeBonus(devices), label + 'player XP');
     assert.deepEqual([c.wins, c.losses, c.draws], [total.wins, total.losses, total.draws], label + 'battles');
     assert.deepEqual(c.cards, Object.fromEntries(Object.entries(total.cards).filter(([, n]) => n).sort()), label + 'copies');
+    assert.deepEqual(c.battleXp, Object.fromEntries(Object.entries(total.battleXp).filter(([, n]) => n)), label + 'battle XP');
     assert.deepEqual(c.visits, Object.fromEntries(Object.entries(total.visits).filter(([, n]) => n).sort()), label + 'visits');
     for (const [id, xp] of Object.entries(c.cardXp)) assert.ok(xp <= CARD_XP_CAP && xp >= Math.min(CARD_XP_CAP, total.cardXp[id] ?? 0), `${label}${id} XP`);
     assert.ok(d.profile.team.length >= 1 && d.profile.team.every(id => d.profile.collection[id]), label + 'team is owned');
@@ -410,11 +414,13 @@ test('restoring a backup that held offline progress not yet synced loses nothing
   for (let i = 0; i < 4; i++) a.play(now += HOUR);
   settleAll([a, b], relays, now + HOUR);
   const truth = add(add(zero(), a.earned), b.earned);
+  truth.xp += routeBonus([a, b]);
   const got = counters(a.profile);
   assert.equal(view(a.profile), view(b.profile), 'still one profile on both devices');
   assert.ok(got.xp >= truth.xp && got.xp <= truth.xp + offline.xp, `XP ${got.xp}: nothing lost, at most the offline part twice`);
   for (const key of ['wins', 'losses', 'draws']) assert.ok(got[key] >= truth[key] && got[key] <= truth[key] + offline[key], key);
   for (const [id, n] of Object.entries(truth.cards)) if (n) assert.ok(got.cards[id] >= n && got.cards[id] <= n + (offline.cards[id] ?? 0), id);
+  for (const [id, n] of Object.entries(truth.battleXp)) if (n) assert.ok(got.battleXp[id] >= n && got.battleXp[id] <= n + (offline.battleXp[id] ?? 0), id);
   for (const [id, n] of Object.entries(truth.visits)) if (n) assert.ok(got.visits[id] >= n && got.visits[id] <= n + (offline.visits[id] ?? 0), id);
 });
 
@@ -527,4 +533,53 @@ test('a fight is never lost: the wild fighter caught on another device during th
   settleAll([a, b], relays, at + 200_000);
   for (const d of [a, b]) assert.ok(d.profile.collection[fought.enemyId].copies >= 2, d.name);
   assertExact([a, b]);
+});
+
+test('routes earn exactly one bonus per day after independent completions, late delivery and replay', () => {
+  const {devices: [a, b], relays} = linked(2, 51);
+  const firstDay = T0, nextDay = firstDay + 86_400_000;
+  a.visit(venues[1], firstDay); b.visit(venues[2], firstDay);
+  a.visit(venues[3], nextDay); a.visit(venues[4], nextDay);
+  b.visit(venues[5], nextDay); b.visit(venues[6], nextDay);
+  const docs = [a, b].map(d => docOf(mergeProfile(d.profile)));
+  const expected = 6 * 12 + 2 * 25;
+  for (const source of [docs, [...docs].reverse(), [...docs, ...docs]]) {
+    const merged = mergeProfile(freshProfile(), source);
+    assert.equal(merged.xp, expected);
+    assert.equal(merged.daily.claimed, true);
+    assert.equal(mergeProfile(merged, source).xp, expected);
+  }
+  settleAll([a, b], relays, nextDay + HOUR);
+  assertExact([a, b]);
+  assert.equal(a.profile.xp, expected);
+});
+
+test('v1 route rewards keep their original XP and repair an old unpaid two-point route once', () => {
+  const day = '2026-11-20', points = ['before-one', 'before-two'];
+  const oldRoute = {day, pointIds: points, claimed: true};
+  const oldDoc = {v: 1, daily: oldRoute, devices: {legacyphone: {xp: 49}}};
+  const migrated = mergeProfile({...freshProfile(), xp: 49, daily: oldRoute}, [], {device: 'legacyphone'});
+  const follow = mergeProfile(migrated, [oldDoc, docOf(migrated)]);
+  assert.equal(follow.xp, 49);
+  assert.equal(follow.daily.claimed, true);
+  const unpaid = {...oldDoc, daily: {...oldRoute, claimed: false}, devices: {legacyphone: {xp: 24}}};
+  const repaired = mergeProfile(freshProfile(), [unpaid]);
+  assert.equal(repaired.xp, 49);
+  assert.equal(mergeProfile(repaired, [unpaid, docOf(repaired)]).xp, 49);
+  // The original phone later uploads the same day's paid legacy XP. Its bonus is already baked in.
+  assert.equal(mergeProfile(repaired, [oldDoc]).xp, 49);
+});
+
+test('an old client that read a v2 route preserves the shared bonus when it upgrades', () => {
+  const {devices: [a], relays} = linked(1, 57);
+  a.visit(venues[1], T0); a.visit(venues[2], T0);
+  settleAll([a], relays, T0 + HOUR);
+  const doc = docOf(a.profile);
+  // The v1 reader knew these fields and summed only the old device counters.
+  const reader = {xp: 24, daily: doc.daily, sync: {device: 'oldreader', devices: doc.devices}};
+  assert.equal(doc.daily.claimed, false);
+  const upgraded = mergeProfile(reader, [doc]);
+  assert.equal(upgraded.xp, 49);
+  assert.equal(upgraded.daily.claimed, true);
+  assert.equal(mergeProfile(upgraded, [doc, docOf(upgraded)]).xp, 49);
 });

@@ -14,8 +14,8 @@ function cleanLevels(levels, team) {
 }
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-// Version 3: freeze, sleep, heartburn and other new effects change the engine, so version-2 clients must not join.
-const PROTOCOL = 3;
+// Version 4 changes combat rules and makes a completed match wait for both final receipts.
+export const DUEL_PROTOCOL = 4;
 export const SILENT_MS = 12_000;
 export const RECONNECT_MS = 25_000;
 
@@ -58,19 +58,23 @@ export class DuelRoom {
     this.lastSeen = 0;
     this.lostAt = null;
     this.reason = null;
-    this.settledAlone = false;
+    this.peerConfirmedFinal = false;
     // The level equaliser: on by default. Real levels count only when both players turned it off.
     this.levelCard = levelCard;
     this.fair = true;
     this.peerFair = true;
     this.peerLevels = null;
     this.leveled = false;
+    this.revision = 0;
+    this.peerRevision = -1;
   }
 
   // Before the own team is confirmed the player may switch the equaliser; the peer is told at once.
   setFair(fair) {
     if (this.team || this.matchId || this.reason || !this.levelCard) return false;
+    if (this.fair === Boolean(fair)) return true;
     this.fair = Boolean(fair);
+    this.revision++;
     this.hello(this.peer);
     this.onChange();
     return true;
@@ -80,19 +84,16 @@ export class DuelRoom {
     return this.team ? Object.fromEntries(this.team.map(id => [id, this.catalog.get(id)?.level ?? 1])) : null;
   }
 
-  // The outcome is fixed once the last move is played. If the peer's acknowledgment never
-  // arrives before the reconnect window closes, the result still stands on this device.
-  get finished() {
-    return !!this.state && this.state.winner !== null &&
-      (this.confirmed === this.history.length || this.settledAlone);
+  get equalized() {
+    return this.fair || this.peerFair || !this.levelCard;
   }
 
-  expire() {
-    if (this.state && this.state.winner !== null) {
-      this.settledAlone = true;
-      this.lostAt = null;
-      this.onChange();
-    } else this.cancel('timeout');
+  get confirmedFinal() {
+    return !!this.state && this.state.winner !== null && this.confirmed === this.history.length;
+  }
+
+  get finished() {
+    return this.confirmedFinal && this.peerConfirmedFinal;
   }
 
   get actionable() {
@@ -101,16 +102,17 @@ export class DuelRoom {
   }
 
   packet(peer, body) {
-    if (peer) this.send(peer, { v: PROTOCOL, side: this.side, ...body });
+    if (peer) this.send(peer, { v: DUEL_PROTOCOL, side: this.side, ...body });
   }
 
   hello(peer) {
-    this.packet(peer, { kind: 'hello', team: this.team, fair: this.fair, levels: this.fair ? null : this.ownLevels() });
+    this.packet(peer, { kind: 'hello', revision: this.revision, team: this.team, fair: this.fair, levels: this.fair ? null : this.ownLevels() });
   }
 
   ready(ids) {
     if (this.team || this.reason || !validTeam(ids, this.catalog)) return false;
     this.team = [...ids];
+    this.revision++;
     this.hello(this.peer);
     this.startIfHost();
     this.onChange();
@@ -138,6 +140,24 @@ export class DuelRoom {
     this.onChange();
   }
 
+  rejectVersion(peer, version) {
+    this.peer ??= peer;
+    this.cancel('version', false);
+    // A legacy client accepts a stop only after a hello in its own protocol from the other seat.
+    const header = { v: version, side: this.side };
+    this.send(peer, { ...header, kind: 'hello', revision: 0, team: null, fair: true, levels: null });
+    this.send(peer, { ...header, kind: 'stop', matchId: this.matchId, reason: 'version' });
+  }
+
+  acceptsTeam(team, peer) {
+    if (validTeam(team, this.catalog)) return true;
+    if (Array.isArray(team) && team.length >= 1 && team.length <= MAX_TEAM &&
+        team.every(id => typeof id === 'string') && team.some(id => !this.catalog.has(id))) {
+      this.rejectVersion(peer, DUEL_PROTOCOL);
+    }
+    return false;
+  }
+
   // Both devices build all statistics from their own catalog. Only item IDs cross the connection.
   // With the equaliser on, every fighter fights at its base (level 1) numbers; off on both sides,
   // each fighter at the level its owner sent.
@@ -155,7 +175,7 @@ export class DuelRoom {
   startIfHost() {
     if (this.side || this.matchId || !this.team || !this.peerTeam || this.reason) return;
     this.teams = [this.team, this.peerTeam];
-    this.leveled = !this.fair && !this.peerFair && !!this.peerLevels && !!this.levelCard;
+    this.leveled = !this.equalized;
     this.levels = this.leveled ? [this.ownLevels(), this.peerLevels] : null;
     const setup = this.setup(this.teams, this.leveled, this.levels);
     this.matchId = this.makeId();
@@ -168,7 +188,7 @@ export class DuelRoom {
     if (!this.matchId || this.reason) return;
     this.packet(this.peer, {
       kind: 'state', matchId: this.matchId, teams: this.teams, signature: this.signature,
-      leveled: this.leveled, levels: this.levels, history: [...this.history]
+      leveled: this.leveled, levels: this.levels, history: [...this.history], finalAck: this.confirmedFinal
     });
   }
 
@@ -184,12 +204,17 @@ export class DuelRoom {
   }
 
   receive(peer, data) {
-    if (!peer || !data || data.v !== PROTOCOL || data.side !== 1 - this.side ||
+    if (!peer || !data || data.side !== 1 - this.side ||
         (this.peer && peer !== this.peer)) return;
     // A hello can only bind a peer already admitted by the authenticated transport.
     if (!this.known.has(peer)) return;
+    if (data.v !== DUEL_PROTOCOL) {
+      if (data.kind === 'hello' && Number.isSafeInteger(data.v) && data.v > 0 &&
+          (!this.reason || this.reason === 'version')) this.rejectVersion(peer, data.v);
+      return;
+    }
     if (peer === this.peer && this.lostAt !== null && this.now() - this.lostAt >= RECONNECT_MS) {
-      this.expire();
+      this.cancel('timeout');
     }
     if (this.reason) {
       if (peer === this.peer && data.kind !== 'stop') {
@@ -198,22 +223,25 @@ export class DuelRoom {
       return;
     }
     if (data.kind === 'hello') {
-      if (data.team !== null && !validTeam(data.team, this.catalog)) return;
+      if (!Number.isSafeInteger(data.revision) || data.revision < 0) return;
       const joined = !this.peer;
-      const newlyReady = !this.peerTeam && data.team !== null;
-      this.peer = peer;
-      if (newlyReady) this.peerTeam = [...data.team];
-      // The peer's equaliser (older versions do not send it: on). Its levels come with its team.
-      const peerFair = data.fair !== false;
-      const switched = peerFair !== this.peerFair;
-      if (!this.matchId) {
+      let changed = false;
+      if (!this.matchId && !this.peerTeam && data.revision > this.peerRevision) {
+        if (data.team !== null && !this.acceptsTeam(data.team, peer)) return;
+        const peerFair = data.fair !== false;
+        const levels = !peerFair && data.team ? cleanLevels(data.levels, data.team) : null;
+        if (!peerFair && data.team && !levels) { this.rejectVersion(peer, DUEL_PROTOCOL); return; }
+        changed = peerFair !== this.peerFair || data.team !== null;
+        this.peerRevision = data.revision;
         this.peerFair = peerFair;
-        this.peerLevels = !peerFair && this.peerTeam ? cleanLevels(data.levels, this.peerTeam) : null;
+        this.peerLevels = levels;
+        if (data.team) this.peerTeam = [...data.team];
       }
+      this.peer = peer;
       this.touch();
       if (joined) this.hello(peer);
       this.startIfHost();
-      if (joined || newlyReady || switched) this.onChange();
+      if (joined || changed) this.onChange();
       return;
     }
     if (peer !== this.peer) return;
@@ -238,16 +266,19 @@ export class DuelRoom {
     let started = false;
     if (!this.matchId) {
       if (!this.side || !Array.isArray(data.teams) || data.teams.length !== 2 ||
-          !validTeam(data.teams[0], this.catalog) || !sameTeam(data.teams[1], this.team) ||
+          !this.acceptsTeam(data.teams[0], this.peer) || !sameTeam(data.teams[1], this.team) ||
           (this.peerTeam && !sameTeam(data.teams[0], this.peerTeam))) return;
       // Levels count only with both equalisers off; the guest checks its own levels went in as sent.
       const leveled = data.leveled === true;
-      if (leveled && (this.fair || !this.levelCard || !Array.isArray(data.levels) ||
-          !cleanLevels(data.levels[0], data.teams[0]) || JSON.stringify(cleanLevels(data.levels[1], this.team)) !== JSON.stringify(this.ownLevels()))) {
+      const levels = leveled && Array.isArray(data.levels) ?
+        [cleanLevels(data.levels[0], data.teams[0]), cleanLevels(data.levels[1], this.team)] : null;
+      if ((this.peerTeam && leveled === this.equalized) ||
+          (leveled && (this.fair || !this.levelCard || !levels?.[0] ||
+            JSON.stringify(levels[1]) !== JSON.stringify(this.ownLevels()) ||
+            (this.peerTeam && JSON.stringify(levels[0]) !== JSON.stringify(this.peerLevels))))) {
         this.cancel('version');
         return;
       }
-      const levels = leveled ? [cleanLevels(data.levels[0], data.teams[0]), cleanLevels(data.levels[1], this.team)] : null;
       const setup = this.setup(data.teams, leveled, levels);
       if (setup.signature !== data.signature) {
         this.cancel('version');
@@ -280,11 +311,15 @@ export class DuelRoom {
       this.history.push(command);
     }
     const oldConfirmed = this.confirmed;
+    const wasFinished = this.finished;
     this.peerHasState = true;
     this.confirmed = Math.max(this.confirmed, data.history.length);
+    if (this.confirmedFinal && data.history.length === this.history.length && data.finalAck === true) {
+      this.peerConfirmedFinal = true;
+    }
     this.touch();
-    if (started || extra !== 0) this.sync();
-    if (started || extra > 0 || oldConfirmed !== this.confirmed) this.onChange();
+    if (started || extra !== 0 || (this.confirmedFinal && oldConfirmed !== this.confirmed)) this.sync();
+    if (started || extra > 0 || oldConfirmed !== this.confirmed || wasFinished !== this.finished) this.onChange();
   }
 
   tick() {
@@ -295,7 +330,7 @@ export class DuelRoom {
       this.onChange();
     }
     if (this.lostAt !== null && now - this.lostAt >= RECONNECT_MS) {
-      this.expire();
+      this.cancel('timeout');
       return;
     }
     if (!this.matchId || !this.peerHasState) {

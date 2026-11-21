@@ -1,3 +1,5 @@
+import { skillDamage } from './duel-engine.js';
+
 // Every fighter is defined by hand. The menu catalog (menu.json) supplies the dish name,
 // photo and official link; this table supplies what the dish does in a fight.
 //
@@ -435,7 +437,7 @@ export function describeSkill(skill, attack) {
   if (skill.shatter) parts.push('сначала сбивает щит и защиту соперника');
   if (skill.purge) parts.push('сначала стирает с соперника щит, защиту и усиления атаки');
   if (Number.isFinite(skill.power)) {
-    parts.push(count(Math.max(0, attack + skill.power), { one: 'урон', few: 'урона', many: 'урона', other: 'урона' }) + (skill.pierce ? ' сквозь защиту' : ''));
+    parts.push(count(skillDamage(skill, attack), { one: 'урон', few: 'урона', many: 'урона', other: 'урона' }) + (skill.pierce ? ' сквозь защиту' : ''));
   }
   if (skill.hits > 1) parts.push('серией из ' + skill.hits + ' ударов');
   if (skill.execute) parts.push('+' + skill.execute + ' по раненому сопернику');

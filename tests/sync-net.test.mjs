@@ -6,9 +6,9 @@ import test from 'node:test';
 import {
   claimVisit, createProfileStore, freshProfile, grantStarter, normalizeProfile, recordBattle, setTeam,
 } from '../public/js/game.js';
-import { stableJson } from '../public/js/sync-merge.js';
+import { DOC_VERSION, stableJson } from '../public/js/sync-merge.js';
 import {
-  accountOf, createSync, formatSyncKey, newSyncKey, openDoc, parseSyncKey, sealDoc, SYNC_KIND, SYNC_TAG,
+  accountOf, createSync, formatSyncKey, newSyncKey, openDoc, parseSyncKey, sealDoc, signEvent, SYNC_KIND, SYNC_TAG,
 } from '../public/js/sync.js';
 
 const menu = JSON.parse(readFileSync(new URL('../public/data/menu.json', import.meta.url)));
@@ -230,7 +230,7 @@ test('a document written by a newer game version is merged but never overwritten
   const net = relayNet();
   const key = newSyncKey(), account = await accountOf(key);
   const d = await device(net, 9);
-  const future = await sealDoc(account, { v: 2, devices: { futuredev1: { xp: 50, wins: 0, losses: 0, draws: 0, cards: {}, visits: {} } }, newThing: [1, 2, 3] }, Math.floor(Date.now() / 1000));
+  const future = await sealDoc(account, { v: DOC_VERSION + 1, devices: { futuredev1: { xp: 50, wins: 0, losses: 0, draws: 0, cards: {}, visits: {} } }, newThing: [1, 2, 3] }, Math.floor(Date.now() / 1000));
   for (const url of net.urls) net.stored.set(url, future);
   const xp = d.store.read().xp;
   const { status } = await d.sync.link(key);
@@ -284,9 +284,12 @@ test('a game change on a linked device is synced by itself, and two quick calls 
   assert.notEqual(x, y, 'a request during a run gets a fresh run');
   assert.equal(y, z, 'requests during the same run share one follow-up');
   await z;
+  const previous = new Map(net.stored);
   await play(a, 1, Date.UTC(2026, 11, 20));
-  for (let i = 0; i < 20 && net.urls.some(url => !net.stored.get(url)); i++) await settle();
-  await settle(); await settle();
+  const changed = () => net.urls.every(url => net.stored.get(url)?.id !== previous.get(url)?.id);
+  const deadline = Date.now() + 5000;
+  while (!changed() && Date.now() < deadline) await settle();
+  assert.ok(changed(), 'each relay received a new event after playing');
   await b.sync.syncNow();
   assert.equal(counters(b.store.read()), counters(a.store.read()));
   a.sync.stop(); b.sync.stop();
@@ -329,4 +332,117 @@ test('while a wild fight is in progress the sync waits and merges right after it
   await a.sync.syncNow();
   assert.equal(counters(store.read()), counters(a.store.read()));
   a.sync.stop(); b.stop();
+});
+
+test('a signed backup this browser cannot decompress protects all replicas and the local profile', async t => {
+  const net = relayNet(), key = newSyncKey(), account = await accountOf(key);
+  const existing = await device(net, 31);
+  await existing.store.update(p => recordBattle(p, {xp: 95, won: true, matchId: 'saved-match'}));
+  await existing.sync.link(key);
+  existing.sync.stop();
+  const first = net.stored.get(net.urls[0]);
+  assert.match(first.content, /^z1:/);
+  assert.ok(await openDoc(account, first));
+  const storedIds = [...net.stored.values()].map(e => e.id);
+  const target = memoryStore();
+  const newcomer = createSync({store: target, relays: net.urls, Socket: net.Socket, initializeEmpty: p => grantStarter(p, menu)});
+  t.after(() => newcomer.stop());
+  const codec = t.mock.method(globalThis, 'DecompressionStream', function () { throw new TypeError('unsupported format'); });
+  assert.equal((await newcomer.link(key)).status.state, 'unreadable');
+  assert.equal((await newcomer.readNow()).state, 'unreadable');
+  assert.deepEqual([...net.stored.values()].map(e => e.id), storedIds);
+  assert.deepEqual(target.read().collection, {});
+  codec.mock.restore();
+  assert.equal((await newcomer.syncNow()).state, 'ok');
+  assert.equal(target.read().xp, 95);
+  assert.deepEqual(target.read().collection, existing.store.read().collection);
+});
+
+test('a fresh read for a claim finishes while a preceding upload still waits for acknowledgements', async t => {
+  const net = relayNet(), store = memoryStore();
+  let withhold = false, signalStart, release;
+  const started = new Promise(resolve => { signalStart = resolve; });
+  const released = new Promise(resolve => { release = resolve; });
+  class SlowWrites extends net.Socket {
+    send(raw) {
+      if (withhold && JSON.parse(raw)[0] === 'EVENT') {
+        signalStart();
+        released.then(() => super.send(raw));
+      } else super.send(raw);
+    }
+  }
+  const sync = createSync({store, relays: net.urls, Socket: SlowWrites, debounceMs: 1e8});
+  t.after(() => { release(); sync.stop(); });
+  await sync.link(newSyncKey());
+  withhold = true;
+  await store.update(p => recordBattle(p, {xp: 15, won: true, matchId: 'just-played'}));
+  const upload = sync.syncNow();
+  await started;
+  const read = await sync.readNow();
+  assert.equal(read.state, 'ok');
+  assert.equal(store.read().xp, 15);
+  release();
+  assert.equal((await upload).state, 'ok');
+});
+
+test('an offline link and reload defer the starter until the shared collection has been read', async t => {
+  for (const existing of [false, true]) {
+    const key = newSyncKey(), net = relayNet(), store = memoryStore();
+    const owner = await device(net, 17);
+    if (existing) await owner.sync.link(key);
+    owner.sync.stop();
+    let grants = 0;
+    const connect = () => createSync({store, relays: net.urls, Socket: net.Socket,
+      initializeEmpty(profile) { grants++; return grantStarter(profile, menu, {rng: () => 0}); }});
+    net.urls.forEach(url => net.down.add(url));
+    const first = connect();
+    assert.equal((await first.link(key)).status.state, 'offline');
+    first.stop();
+    const loaded = connect();
+    t.after(() => loaded.stop());
+    assert.equal((await loaded.start()).state, 'offline');
+    assert.equal(grants, 0);
+    assert.deepEqual(store.read().collection, {});
+    net.down.clear();
+    await loaded.syncNow();
+    await loaded.syncNow();
+    assert.equal(grants, existing ? 0 : 1);
+    assert.equal(Object.keys(store.read().collection).length, 1);
+    if (existing) assert.deepEqual(store.read().collection, owner.store.read().collection);
+  }
+});
+
+test('a valid oversized account snapshot is read and its progress kept; an unrelated oversized frame excludes only its relay', async t => {
+  const net = relayNet(), key = newSyncKey(), acc = await accountOf(key);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const doc = {v: 1, devices: {oldphone1: {xp: 95}}, padding: 'X'.repeat(152_000)};
+  const body = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, acc.aes, new TextEncoder().encode(JSON.stringify(doc))));
+  const content = 'p1:' + Buffer.concat([Buffer.from(iv), Buffer.from(body)]).toString('base64');
+  const valid = await signEvent(acc.secret, {kind: SYNC_KIND, created_at: Math.floor(Date.now() / 1000) - 1, tags: [['d', SYNC_TAG]], content});
+  for (const url of net.urls) net.stored.set(url, valid);
+  const newcomer = await device(net, 38);
+  t.after(() => newcomer.sync.stop());
+  // A large but valid save (an older uncompressed one) is read, not mistaken for unreadable: its
+  // progress survives into the new, compact save instead of blocking the account for good.
+  assert.equal((await newcomer.sync.link(key)).status.state, 'ok');
+  assert.equal(newcomer.store.read().xp, 95);
+  assert.ok([...net.stored.values()].every(e => e.id !== valid.id && e.content.length < 200_000));
+
+  const healthy = relayNet();
+  const writes = [];
+  class BadNode extends healthy.Socket {
+    send(raw) {
+      const [kind] = JSON.parse(raw);
+      if (kind === 'REQ' && this.url === healthy.urls[0]) {
+        this.onmessage({data: 'x'.repeat(2_000_001)});
+        return;
+      }
+      if (kind === 'EVENT') writes.push(this.url);
+      super.send(raw);
+    }
+  }
+  const local = createSync({store: memoryStore(), relays: healthy.urls, Socket: BadNode});
+  t.after(() => local.stop());
+  assert.equal((await local.link(newSyncKey())).status.state, 'ok');
+  assert.deepEqual(writes.sort(), [...healthy.urls.slice(1)].sort());
 });

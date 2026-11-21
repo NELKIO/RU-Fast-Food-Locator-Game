@@ -1,8 +1,8 @@
 // Merging one player's progress across devices, without a server.
 //
 // Every device keeps a ledger inside the profile: for each device it has heard of, what that
-// device added to each counter (player XP, wins, copies and XP of every fighter, visits to every
-// venue). Only the device itself grows its own entry. A merge takes, per device and per counter,
+// device added to each counter (player XP, battle results, card copies and XP, battle XP per fighter,
+// visits per venue). Only the device itself grows its own entry. A merge takes, per device and per counter,
 // the larger of the two known values, and the profile shows the sum over all devices. That is a
 // grow-only counter CRDT: merging is commutative, associative and idempotent, so the order of
 // syncs, repeated syncs and a stale copy on a relay never count anything twice or lose it.
@@ -16,10 +16,12 @@
 //   login week             the latest claimed day
 //   battleIds              stay on the device that played the match
 import {
-  CARD_XP_CAP, MAX_TEAM_SIZE, WILD_COOLDOWN_MS, cleanContribution, encounterTime, keepNewestRetired, normalizeProfile,
+  CARD_XP_CAP, MAX_TEAM_SIZE, WILD_COOLDOWN_MS, cleanContribution, encounterTime, keepNewestRetired, mergeRoutes, normalizeProfile, sharedRouteXp,
 } from './game.js';
 
-export const DOC_VERSION = 1;
+export const DOC_VERSION = 2;
+const SCALAR_COUNTERS = ['xp', 'wins', 'losses', 'draws'];
+const COUNTERS_BY_ID = ['battleXp', 'visits'];
 
 export function newDeviceId() {
   const bytes = crypto.getRandomValues(new Uint8Array(12));
@@ -39,18 +41,21 @@ function totalsOf(profile) {
   const cards = {}, visits = {};
   for (const [id, entry] of Object.entries(profile.collection)) cards[id] = [entry.copies, entry.xp];
   for (const [id, visit] of Object.entries(profile.visits)) visits[id] = visit.count;
-  return {xp: profile.xp, wins: profile.battles.wins, losses: profile.battles.losses, draws: profile.battles.draws, cards, visits};
+  return {xp: profile.xp, wins: profile.battles.wins, losses: profile.battles.losses, draws: profile.battles.draws,
+    cards, battleXp: profile.battleXp, visits};
 }
 
 function sumEntries(entries) {
   const sum = cleanContribution(null);
   for (const entry of entries) {
-    for (const key of ['xp', 'wins', 'losses', 'draws']) sum[key] += entry[key];
+    for (const key of SCALAR_COUNTERS) sum[key] += entry[key];
     for (const [id, [copies, xp]] of Object.entries(entry.cards)) {
       const kept = sum.cards[id] ?? [0, 0];
       sum.cards[id] = [kept[0] + copies, kept[1] + xp];
     }
-    for (const [id, visits] of Object.entries(entry.visits)) sum.visits[id] = (sum.visits[id] ?? 0) + visits;
+    for (const key of COUNTERS_BY_ID) {
+      for (const [id, value] of Object.entries(entry[key])) sum[key][id] = (sum[key][id] ?? 0) + value;
+    }
   }
   return sum;
 }
@@ -58,36 +63,42 @@ function sumEntries(entries) {
 // Zero entries carry nothing; dropping them keeps every device's ledger byte-for-byte the same.
 function compact(entry) {
   for (const [id, [copies, xp]] of Object.entries(entry.cards)) if (!copies && !xp) delete entry.cards[id];
-  for (const [id, visits] of Object.entries(entry.visits)) if (!visits) delete entry.visits[id];
+  for (const key of COUNTERS_BY_ID) {
+    for (const [id, value] of Object.entries(entry[key])) if (!value) delete entry[key][id];
+  }
   return entry;
 }
 
 // True when `a` is ahead of `b` in at least one counter.
 function exceeds(a, b) {
-  if (['xp', 'wins', 'losses', 'draws'].some(key => a[key] > b[key])) return true;
+  if (SCALAR_COUNTERS.some(key => a[key] > b[key])) return true;
   if (Object.entries(a.cards).some(([id, [copies, xp]]) => copies > (b.cards[id]?.[0] ?? 0) || xp > (b.cards[id]?.[1] ?? 0))) return true;
-  return Object.entries(a.visits).some(([id, visits]) => visits > (b.visits[id] ?? 0));
+  return COUNTERS_BY_ID.some(key => Object.entries(a[key]).some(([id, value]) => value > (b[key][id] ?? 0)));
 }
 
 function minus(a, b) {
   const out = cleanContribution(null);
-  for (const key of ['xp', 'wins', 'losses', 'draws']) out[key] = Math.max(0, a[key] - b[key]);
+  for (const key of SCALAR_COUNTERS) out[key] = Math.max(0, a[key] - b[key]);
   for (const [id, [copies, xp]] of Object.entries(a.cards)) {
     out.cards[id] = [Math.max(0, copies - (b.cards[id]?.[0] ?? 0)), Math.max(0, xp - (b.cards[id]?.[1] ?? 0))];
   }
-  for (const [id, visits] of Object.entries(a.visits)) out.visits[id] = Math.max(0, visits - (b.visits[id] ?? 0));
+  for (const key of COUNTERS_BY_ID) {
+    for (const [id, value] of Object.entries(a[key])) out[key][id] = Math.max(0, value - (b[key][id] ?? 0));
+  }
   return compact(out);
 }
 
 function larger(a, b) {
   const out = cleanContribution(null);
-  for (const key of ['xp', 'wins', 'losses', 'draws']) out[key] = Math.max(a[key], b[key]);
+  for (const key of SCALAR_COUNTERS) out[key] = Math.max(a[key], b[key]);
   for (const id of new Set([...Object.keys(a.cards), ...Object.keys(b.cards)])) {
     const x = a.cards[id] ?? [0, 0], y = b.cards[id] ?? [0, 0];
     out.cards[id] = [Math.max(x[0], y[0]), Math.max(x[1], y[1])];
   }
-  for (const id of new Set([...Object.keys(a.visits), ...Object.keys(b.visits)])) {
-    out.visits[id] = Math.max(a.visits[id] ?? 0, b.visits[id] ?? 0);
+  for (const key of COUNTERS_BY_ID) {
+    for (const id of new Set([...Object.keys(a[key]), ...Object.keys(b[key])])) {
+      out[key][id] = Math.max(a[key][id] ?? 0, b[key][id] ?? 0);
+    }
   }
   return compact(out);
 }
@@ -97,14 +108,10 @@ function larger(a, b) {
 function ownEntry(profile, device, devices) {
   const others = sumEntries(Object.entries(devices).filter(([id]) => id !== device).map(([, entry]) => entry));
   const totals = totalsOf(profile);
-  const own = cleanContribution(null);
-  for (const key of ['xp', 'wins', 'losses', 'draws']) own[key] = Math.max(0, totals[key] - others[key]);
-  for (const [id, [copies, xp]] of Object.entries(totals.cards)) {
-    const theirs = others.cards[id] ?? [0, 0];
-    own.cards[id] = [Math.max(0, copies - theirs[0]), Math.max(0, xp - theirs[1])];
-  }
-  for (const [id, visits] of Object.entries(totals.visits)) own.visits[id] = Math.max(0, visits - (others.visits[id] ?? 0));
-  return larger(Object.hasOwn(devices, device) ? devices[device] : cleanContribution(null), own);
+  // This part belongs to the account once per day, independently of who completed the route.
+  totals.xp -= sharedRouteXp(profile.routes);
+  const own = Object.hasOwn(devices, device) ? devices[device] : cleanContribution(null);
+  return larger(own, minus(totals, others));
 }
 
 // What this browser itself has added to the profile: the whole profile when it never synced,
@@ -124,7 +131,7 @@ export function cleanDoc(value) {
   // A document from a newer version is read for what this version knows, but never rewritten.
   const profile = normalizeProfile({
     sync: {device: 'documentreader', devices: value.devices, team: value.team, teamAt: value.teamAt},
-    daily: value.daily, encounter: value.encounter,
+    daily: value.daily, routes: value.routes, encounter: value.encounter,
     retired: Array.isArray(value.retired) ? Object.fromEntries(value.retired.slice(0, 500).map(id => [String(id), true])) : {},
     lastScoutAt: value.lastScoutAt, encounterSequence: value.encounterSequence, login: value.login, wildSeed: value.wildSeed,
     visits: record(value.visitsAt)
@@ -136,6 +143,7 @@ export function cleanDoc(value) {
     team: profile.sync.team,
     teamAt: profile.sync.teamAt,
     daily: profile.daily,
+    routes: profile.routes,
     encounter: profile.encounter,
     retired: Object.keys(profile.retired),
     lastScoutAt: profile.lastScoutAt,
@@ -144,13 +152,6 @@ export function cleanDoc(value) {
     wildSeed: profile.wildSeed,
     visitsAt: Object.fromEntries(Object.entries(profile.visits).map(([id, visit]) => [id, visit.lastAt])),
   };
-}
-
-function laterRoute(a, b) {
-  if (a.day !== b.day) return a.day > b.day ? a : b;
-  // Sorted, so every device keeps the same two points whatever the merge order.
-  const pointIds = [...new Set([...a.pointIds, ...b.pointIds])].sort().slice(0, 2);
-  return {day: a.day, pointIds, claimed: (a.claimed || b.claimed) && pointIds.length === 2};
 }
 
 // Merge shared documents into the local profile. Pure: returns a new normalized profile.
@@ -183,8 +184,10 @@ export function mergeProfile(local, docs = [], {now = Date.now(), device} = {}) 
 
   // 2. Counters are the sums.
   const merged = normalizeProfile(base);
-  merged.xp = totals.xp;
+  merged.routes = mergeRoutes([base.routes, ...clean.map(doc => doc.routes)]);
+  merged.xp = totals.xp + sharedRouteXp(merged.routes);
   merged.battles = {wins: totals.wins, losses: totals.losses, draws: totals.draws};
+  merged.battleXp = totals.battleXp;
   merged.collection = {};
   for (const [id, [copies, xp]] of Object.entries(totals.cards)) {
     if (copies > 0) merged.collection[id] = {copies, xp: Math.min(CARD_XP_CAP, xp)};
@@ -199,11 +202,19 @@ export function mergeProfile(local, docs = [], {now = Date.now(), device} = {}) 
   }
 
   // 3. The rest by meaning.
-  merged.daily = clean.reduce((route, doc) => laterRoute(route, doc.daily), {...base.daily, pointIds: [...base.daily.pointIds].sort()});
+  const day = Object.keys(merged.routes).sort().at(-1);
+  if (day) merged.daily = {day, pointIds: [...merged.routes[day].pointIds], claimed: Boolean(merged.routes[day].credit)};
   // One wild-fighter stream for the account: every device ends up with the same (smallest) seed.
   merged.wildSeed = [base.wildSeed, ...clean.map(doc => doc.wildSeed)].filter(Boolean).sort()[0] ?? '';
   // The login week: the latest claimed day wins, so a reward taken on one device is taken everywhere.
-  merged.login = clean.reduce((a, doc) => (doc.login.day > a.day || (doc.login.day === a.day && doc.login.streak > a.streak) ? doc.login : a), base.login);
+  // A day more than one ahead of this device's own day comes from a clock set wrong elsewhere; it
+  // is left out, so it can neither lock the reward here nor make it claimable again and again.
+  const latestDay = dayKey(now + 86_400_000);
+  const plausible = login => (login.day <= latestDay ? login : { ...login, day: '', streak: 0 });
+  merged.login = clean.reduce((a, doc) => {
+    const login = plausible(doc.login);
+    return login.day > a.day || (login.day === a.day && login.streak > a.streak) ? login : a;
+  }, plausible(base.login));
   merged.lastScoutAt = Math.max(base.lastScoutAt ?? -1, ...clean.map(doc => doc.lastScoutAt ?? -1));
   if (merged.lastScoutAt < 0) merged.lastScoutAt = null;
   merged.encounterSequence = Math.max(base.encounterSequence, ...clean.map(doc => doc.encounterSequence));
@@ -254,7 +265,10 @@ export function docOf(profile) {
     devices: saved.sync.devices,
     team: saved.team,
     teamAt: saved.sync.teamAt,
-    daily: saved.daily,
+    // V1 readers see only device XP. Advertising a shared reward as paid in their legacy
+    // projection would make an upgraded reader think the bonus was already in that XP.
+    daily: {...saved.daily, claimed: saved.routes[saved.daily.day]?.credit === 'legacy'},
+    routes: saved.routes,
     encounter: saved.encounter,
     retired: Object.keys(saved.retired),
     lastScoutAt: saved.lastScoutAt,
@@ -270,4 +284,10 @@ export function stableJson(value) {
   if (Array.isArray(value)) return '[' + value.map(stableJson).join(',') + ']';
   if (record(value)) return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + stableJson(value[key])).join(',') + '}';
   return JSON.stringify(value);
+}
+
+// The local calendar day (YYYY-MM-DD) of a moment, as the login week counts days.
+function dayKey(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applyMove, battleStats, botMove, legalMoves, MAX_ENERGY, opener, SPEED, START_ENERGY, startBattle, validTeam } from '../public/js/duel-engine.js';
-import { DuelRoom, newRoomCode, parseRoomCode, RECONNECT_MS, SILENT_MS } from '../public/js/duel-room.js';
+import { DUEL_PROTOCOL, DuelRoom, newRoomCode, parseRoomCode, RECONNECT_MS, SILENT_MS } from '../public/js/duel-room.js';
 import { SIGNAL_RELAYS } from '../public/js/duel-transport.js';
 import { makeCodec } from '../public/js/duel-relay.js';
 import { schnorr } from '../public/vendor/duel-trystero-0.27.0.js';
@@ -226,14 +226,14 @@ test('relay events keep commands private, authenticate the sender, bind the room
   assert.equal(await recipient.open(event), null);
 });
 
-function pair({ guestCatalog = catalog } = {}) {
+function pair({ hostCatalog = catalog, guestCatalog = catalog, levelCard = null } = {}) {
   let time = 1_000;
   const queue = [];
   const make = (role, cards) => new DuelRoom({
-    role, cards, code: 'AAAAA2222A', now: () => time, makeId: () => 'match-12345', onChange() {},
+    role, cards, code: 'AAAAA2222A', now: () => time, makeId: () => 'match-12345', onChange() {}, levelCard,
     send: (to, packet) => queue.push({ to, packet: structuredClone(packet) })
   });
-  const host = make('host', catalog);
+  const host = make('host', hostCatalog);
   const guest = make('guest', guestCatalog);
   const deliver = () => {
     for (let count = 0; queue.length; count++) {
@@ -340,21 +340,41 @@ test('catalog mismatch aborts both seats; leaving a live match also reaches the 
   assert.deepEqual([normal.host.reason, normal.guest.reason], ['quit', 'quit']);
 });
 
-test('the last mover keeps a finished result when the acknowledgment never arrives', () => {
+function finalMoveInFlight() {
   const network = pair();
-  const { host, guest, queue, deliver } = network;
+  const { host, guest, deliver } = network;
   network.ready();
   for (let turn = 0; turn < 6; turn++) { (turn % 2 ? guest : host).move('hit'); deliver(); }
   assert.equal(host.move('hit'), true);
   assert.equal(host.state.winner, 0);
   assert.equal(host.finished, false);
+  return network;
+}
+
+test('a permanent outage before the last move or its first receipt cancels both results', () => {
+  for (const deliveredLastMove of [false, true]) {
+    const { host, guest, queue, elapse } = finalMoveInFlight();
+    if (deliveredLastMove) guest.receive('h', queue.shift().packet);
+    assert.deepEqual([host.finished, guest.finished], [false, false]);
+    queue.length = 0;
+    host.disconnect('g'); guest.disconnect('h');
+    elapse(RECONNECT_MS + 1);
+    host.tick(); guest.tick();
+    assert.deepEqual([host.reason, guest.reason], ['timeout', 'timeout']);
+    assert.deepEqual([host.finished, guest.finished], [false, false]);
+  }
+});
+
+test('reconnecting before the deadline recovers the last move and both receipts', () => {
+  const { host, guest, queue, elapse, deliver } = finalMoveInFlight();
   queue.length = 0;
-  host.disconnect('g');
-  network.elapse(RECONNECT_MS + 10);
-  host.tick();
-  assert.deepEqual([host.finished, host.reason, host.settledAlone], [true, null, true]);
-  host.cancel('left');
-  assert.equal(host.reason, null, 'a settled match cannot be cancelled afterwards');
+  host.disconnect('g'); guest.disconnect('h');
+  elapse(RECONNECT_MS - 1);
+  host.contact('g'); guest.contact('h'); deliver();
+  assert.deepEqual([host.finished, guest.finished], [true, true]);
+  assert.equal(host.matchId, guest.matchId);
+  assert.deepEqual(host.state, guest.state);
+  assert.equal(host.state.winner, 0);
 });
 
 test('speed decides who opens, equal speed falls back to the tie rule, and odd values are clamped', () => {
@@ -639,10 +659,51 @@ test('level equaliser: a host cannot force levels on a guest that kept it on, no
   const { guest } = pair();
   guest.levelCard = levelCard;
   guest.contact('h');
-  guest.receive('h', { v: 3, side: 0, kind: 'hello', team: ['burger'], fair: false, levels: { burger: 9 } });
+  guest.receive('h', { v: DUEL_PROTOCOL, side: 0, kind: 'hello', revision: 1, team: ['burger'], fair: false, levels: { burger: 9 } });
   guest.ready(['fries']);
-  guest.receive('h', { v: 3, side: 0, kind: 'state', matchId: 'match-12345', teams: [['burger'], ['fries']], signature: 'x',
+  guest.receive('h', { v: DUEL_PROTOCOL, side: 0, kind: 'state', matchId: 'match-12345', teams: [['burger'], ['fries']], signature: 'x',
     leveled: true, levels: [{ burger: 9 }, { fries: 1 }], history: [] });
   assert.equal(guest.state, null);
   assert.equal(guest.reason, 'version', 'the guest refuses a leveled match it did not agree to');
+});
+
+test('a delayed lobby heartbeat cannot reverse an equaliser change or erase a confirmed team', () => {
+  const { host, guest, bind, queue, deliver } = pair({
+    guestCatalog: catalog.map(card => ({ ...card, level: 8 })),
+    levelCard: (card, level) => ({ ...card, maxHp: card.baseHp + 2 * (level - 1) }),
+  });
+  bind();
+  guest.tick();
+  const early = queue.shift().packet;
+  host.setFair(false); guest.setFair(false); deliver();
+  host.receive('g', early);
+  assert.equal(host.equalized, false);
+  guest.tick();
+  const beforeReady = queue.shift().packet;
+  guest.ready(['fries']); deliver();
+  host.receive('g', beforeReady);
+  host.receive('g', early);
+  host.ready(['burger']); deliver();
+  assert.deepEqual([host.leveled, guest.leveled], [true, true]);
+  assert.equal(host.state.teams[1][0].maxHp, 32);
+  assert.deepEqual(host.state, guest.state);
+});
+
+test('a legacy peer receives an update notice in the protocol it understands', () => {
+  for (const version of [2, 3]) {
+    const { guest, queue } = pair();
+    guest.contact('h'); queue.length = 0;
+    guest.receive('h', { v: version, side: 0, kind: 'hello', team: null });
+    assert.equal(guest.reason, 'version');
+    assert.deepEqual(queue.map(({ packet }) => [packet.v, packet.kind]), [[version, 'hello'], [version, 'stop']]);
+    assert.equal(queue[1].packet.reason, 'version');
+    assert.equal(guest.matchId, null);
+  }
+});
+
+test('two clients with different catalogs immediately report an unknown team to both players', () => {
+  const { host, guest, bind, deliver } = pair({ hostCatalog: catalog.slice(0, 2) });
+  bind(); host.ready(['burger']); guest.ready(['cola']); deliver();
+  assert.deepEqual([host.reason, guest.reason], ['version', 'version']);
+  assert.deepEqual([host.matchId, guest.matchId], [null, null]);
 });

@@ -3,13 +3,14 @@
 // progress twice or drop it. The property tests below play the real game actions on several
 // devices, sync them through lossy relays in random order and compare against a ground truth.
 import assert from 'node:assert/strict';
+import {recordVisit, routeBonus} from './sync-route-oracle.mjs';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   CARD_XP_CAP, claimVisit, freshProfile, grantStarter, normalizeProfile, recordBattle, resolveEncounter, setTeam,
   wildEncounter, WILD_COOLDOWN_MS, VISIT_COOLDOWN_MS,
 } from '../public/js/game.js';
-import { cleanDoc, docOf, mergeProfile, stableJson } from '../public/js/sync-merge.js';
+import { DOC_VERSION, cleanDoc, docOf, mergeProfile, ownContribution, stableJson } from '../public/js/sync-merge.js';
 
 const menu = JSON.parse(readFileSync(new URL('../public/data/menu.json', import.meta.url)));
 const venues = JSON.parse(readFileSync(new URL('../public/data/venues.json', import.meta.url))).slice(0, 40);
@@ -24,19 +25,19 @@ function counters(p) {
   const cards = Object.fromEntries(Object.entries(p.collection).map(([id, c]) => [id, c.copies]).sort());
   const cardXp = Object.fromEntries(Object.entries(p.collection).map(([id, c]) => [id, c.xp]).sort());
   const visits = Object.fromEntries(Object.entries(p.visits).map(([id, v]) => [id, v.count]).sort());
-  return { xp: p.xp, wins: p.battles.wins, losses: p.battles.losses, draws: p.battles.draws, cards, cardXp, visits };
+  return { xp: p.xp, wins: p.battles.wins, losses: p.battles.losses, draws: p.battles.draws, cards, cardXp, battleXp: {...p.battleXp}, visits };
 }
 
 function addInto(total, delta) {
   for (const key of ['xp', 'wins', 'losses', 'draws']) total[key] += delta[key];
-  for (const field of ['cards', 'cardXp', 'visits']) {
+  for (const field of ['cards', 'cardXp', 'battleXp', 'visits']) {
     for (const [id, n] of Object.entries(delta[field])) total[field][id] = (total[field][id] ?? 0) + n;
   }
 }
 
 function diff(after, before) {
-  const out = { xp: after.xp - before.xp, wins: after.wins - before.wins, losses: after.losses - before.losses, draws: after.draws - before.draws, cards: {}, cardXp: {}, visits: {} };
-  for (const field of ['cards', 'cardXp', 'visits']) {
+  const out = { xp: after.xp - before.xp, wins: after.wins - before.wins, losses: after.losses - before.losses, draws: after.draws - before.draws, cards: {}, cardXp: {}, battleXp: {}, visits: {} };
+  for (const field of ['cards', 'cardXp', 'battleXp', 'visits']) {
     for (const [id, n] of Object.entries(after[field])) {
       const d = n - (before[field][id] ?? 0);
       if (d) out[field][id] = d;
@@ -45,7 +46,7 @@ function diff(after, before) {
   return out;
 }
 
-const empty = () => ({ xp: 0, wins: 0, losses: 0, draws: 0, cards: {}, cardXp: {}, visits: {} });
+const empty = () => ({ xp: 0, wins: 0, losses: 0, draws: 0, cards: {}, cardXp: {}, battleXp: {}, visits: {} });
 
 // A device plays real game actions and remembers what it earned itself (the ground truth).
 class Device {
@@ -65,6 +66,7 @@ class Device {
     if (result.ok === false) return result;
     this.profile = normalizeProfile(result.profile);
     addInto(this.earned, diff(counters(this.profile), before));
+    recordVisit(this, before.visits, result);
     return result;
   }
   play() {
@@ -148,9 +150,10 @@ test('two independent profiles merge into one with every fighter, visit and win 
   addInto(total, laptop.earned); addInto(total, phone.earned);
   for (const device of [laptop, phone]) {
     const c = counters(device.profile);
-    assert.equal(c.xp, total.xp, device.name + ' player XP is the sum');
+    assert.equal(c.xp, total.xp + routeBonus([laptop, phone]), device.name + ' player XP');
     assert.deepEqual([c.wins, c.losses, c.draws], [total.wins, total.losses, total.draws]);
     assert.deepEqual(c.cards, Object.fromEntries(Object.entries(total.cards).sort()));
+    assert.deepEqual(c.battleXp, total.battleXp);
     assert.deepEqual(c.visits, Object.fromEntries(Object.entries(total.visits).sort()));
     for (const [id, xp] of Object.entries(c.cardXp)) assert.equal(xp, Math.min(CARD_XP_CAP, total.cardXp[id] ?? 0), id);
   }
@@ -218,9 +221,10 @@ for (let seed = 1; seed <= 30; seed++) {
     for (const d of devices) {
       assert.equal(comparable(d.profile), reference, d.name + ' sees the same profile: ' + firstDifference(comparable(d.profile), reference));
       const c = counters(d.profile);
-      assert.equal(c.xp, total.xp, 'player XP');
+      assert.equal(c.xp, total.xp + routeBonus(devices), 'player XP');
       assert.deepEqual([c.wins, c.losses, c.draws], [total.wins, total.losses, total.draws], 'battles');
       assert.deepEqual(c.cards, Object.fromEntries(Object.entries(total.cards).sort()), 'copies');
+      assert.deepEqual(c.battleXp, total.battleXp, 'battle XP per fighter');
       assert.deepEqual(c.visits, Object.fromEntries(Object.entries(total.visits).sort()), 'visits');
       for (const [id, xp] of Object.entries(c.cardXp)) {
         assert.ok(xp <= CARD_XP_CAP && xp >= Math.min(CARD_XP_CAP, total.cardXp[id] ?? 0), `${id} XP ${xp}`);
@@ -313,6 +317,30 @@ test('fighter XP stays capped and keeps growing on each device until the cap', (
   assert.equal(back.sync.devices.devicea1.cards[id][1], 200, 'own share is not reduced by the cap');
 });
 
+test('restoring a backup recovers battle XP under the previous device id and keeps new awards separate', () => {
+  const id = 'bk-whopper';
+  const legacy = {v: 1, devices: {legacydev1: {wins: 1, cards: {[id]: [1, CARD_XP_CAP]}}}, team: [id]};
+  const first = mergeProfile(freshProfile(), [legacy], {device: 'oldphone1'});
+  assert.deepEqual(first.battleXp, {}, 'a v1 card has no recorded source for its XP');
+  const win = (profile, xp, matchId) => recordBattle(profile, {won: true, xp, cardId: id, mode: 'online', matchId}).profile;
+
+  const backup = mergeProfile(win(first, 4, 'saved-fight'));
+  const published = mergeProfile(win(backup, 20, 'next-fight'));
+  let laptop = mergeProfile(freshProfile(), [docOf(published)], {device: 'laptopnew'});
+  laptop = mergeProfile(win(laptop, 6, 'laptop-fight'));
+  // The restored phone plays offline before seeing its old device's latest report.
+  const restored = mergeProfile(win(backup, 3, 'offline-fight'), [docOf(laptop)]);
+  assert.notEqual(restored.sync.device, backup.sync.device);
+  assert.deepEqual(restored.battleXp, {[id]: 33});
+  assert.equal(restored.collection[id].xp, CARD_XP_CAP);
+  assert.deepEqual(restored.sync.devices[backup.sync.device].battleXp, {[id]: 24});
+  assert.deepEqual(ownContribution(restored).battleXp, {[id]: 3});
+  assert.deepEqual(ownContribution(restored, [backup.sync.device, backup.sync.device]).battleXp, {[id]: 27});
+  const settled = mergeProfile(laptop, [legacy, docOf(restored), docOf(published), docOf(restored)]);
+  assert.deepEqual(settled.battleXp, restored.battleXp);
+  assert.deepEqual(ownContribution(settled).battleXp, {[id]: 6});
+});
+
 test('renamed dishes in an old document land on their new fighter', () => {
   const a = mergeProfile(normalizeProfile({ ...freshProfile(), collection: { 'bk-whopper': { copies: 1, xp: 0 } }, sync: { device: 'devicea1', devices: {} } }), [], { now: START });
   const old = docOf(a);
@@ -346,7 +374,7 @@ test('broken or hostile documents never throw and never change the local counter
   assert.equal(Object.getPrototypeOf(p.collection), Object.prototype);
   assert.equal(({}).xp, undefined, 'no prototype pollution');
   // A document from a newer version is still read for what this version knows.
-  const newer = { ...docOf(a.profile), v: 2, futureField: { anything: true } };
+  const newer = { ...docOf(a.profile), v: DOC_VERSION + 1, futureField: { anything: true } };
   assert.ok(cleanDoc(newer));
 });
 
@@ -361,7 +389,7 @@ test('a brand-new device with only its starter joins without losing the account 
   sync(a, relay, time.now);
   const total = empty();
   addInto(total, a.earned); addInto(total, fresh.earned);
-  assert.equal(counters(fresh.profile).xp, total.xp);
+  assert.equal(counters(fresh.profile).xp, total.xp + routeBonus([a, fresh]));
   assert.deepEqual(counters(fresh.profile).cards, Object.fromEntries(Object.entries(total.cards).sort()));
   assert.equal(comparable(fresh.profile), comparable(a.profile), firstDifference(comparable(fresh.profile), comparable(a.profile)));
 });
@@ -397,4 +425,17 @@ test('many devices: a hundred linked browsers sum up exactly, and the ledger kee
   const merged = mergeProfile(late, [], { now: START });
   assert.ok(merged.sync.devices.zzzzzzzzlast, 'own entry survives');
   assert.ok(Object.keys(merged.sync.devices).length <= 257);
+});
+
+test('a login day from a clock set a year ahead on a linked device neither locks nor loops the reward', async () => {
+  const { claimDaily, dailyStatus } = await import('../public/js/game.js');
+  const now = Date.UTC(2026, 10, 21, 12);
+
+  // The wrong clock claimed "2027-11-21"; this device merges its document and claims today.
+  let wrong = mergeProfile(normalizeProfile({ ...freshProfile(), login: { day: '2027-11-21', streak: 1, v: 2 } }), [], { now: now + 365 * 86_400_000 });
+  let here = mergeProfile(freshProfile(), [docOf(wrong)], { now });
+  assert.equal(dailyStatus(here, now).claimable, true, 'not locked until next year');
+  here = claimDaily(here, menu, { now }).profile;
+  for (let i = 0; i < 3; i++) here = mergeProfile(here, [docOf(wrong)], { now: now + i });
+  assert.equal(dailyStatus(here, now).claimable, false, 'claimed once today, the far day does not make it claimable again');
 });

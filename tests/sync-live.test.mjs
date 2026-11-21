@@ -3,6 +3,7 @@
 // down and come back, and refuse events from the future. Afterwards every device must hold the
 // same profile and exactly what all devices earned.
 import assert from 'node:assert/strict';
+import {recordVisit, routeBonus} from './sync-route-oracle.mjs';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
@@ -58,12 +59,13 @@ const counters = p => ({
   xp: p.xp, wins: p.battles.wins, losses: p.battles.losses, draws: p.battles.draws,
   cards: Object.fromEntries(Object.entries(p.collection).map(([id, c]) => [id, c.copies]).sort()),
   cardXp: Object.fromEntries(Object.entries(p.collection).map(([id, c]) => [id, c.xp]).sort()),
+  battleXp: {...p.battleXp},
   visits: Object.fromEntries(Object.entries(p.visits).map(([id, v]) => [id, v.count]).sort()),
 });
-const zero = () => ({ xp: 0, wins: 0, losses: 0, draws: 0, cards: {}, cardXp: {}, visits: {} });
+const zero = () => ({ xp: 0, wins: 0, losses: 0, draws: 0, cards: {}, cardXp: {}, battleXp: {}, visits: {} });
 function add(total, delta, sign = 1) {
   for (const key of ['xp', 'wins', 'losses', 'draws']) total[key] += sign * delta[key];
-  for (const f of ['cards', 'cardXp', 'visits']) for (const [id, n] of Object.entries(delta[f])) total[f][id] = (total[f][id] ?? 0) + sign * n;
+  for (const f of ['cards', 'cardXp', 'battleXp', 'visits']) for (const [id, n] of Object.entries(delta[f])) total[f][id] = (total[f][id] ?? 0) + sign * n;
   return total;
 }
 const view = p => { const s = normalizeProfile(p); delete s.battleIds; delete s.recentWild; delete s.sync.device; delete s.sync.key; return stableJson(s); };
@@ -90,7 +92,11 @@ for (let seed = 1; seed <= 8; seed++) {
     async function act(d, change) {
       await d.store.update(p => {
         const result = change(p);
-        if (result.ok !== false) add(d.earned, add(counters(normalizeProfile(result.profile)), counters(p), -1));
+        if (result.ok !== false) {
+          const before = counters(p);
+          add(d.earned, add(counters(normalizeProfile(result.profile)), before, -1));
+          recordVisit(d, before.visits, result);
+        }
         return result;
       });
     }
@@ -140,9 +146,10 @@ for (let seed = 1; seed <= 8; seed++) {
       const p = d.store.read();
       assert.equal(view(p), reference, d.name + ' holds the same profile');
       const c = counters(p);
-      assert.equal(c.xp, total.xp, 'player XP');
+      assert.equal(c.xp, total.xp + routeBonus(devices), 'player XP');
       assert.deepEqual([c.wins, c.losses, c.draws], [total.wins, total.losses, total.draws], 'battles');
       assert.deepEqual(c.cards, Object.fromEntries(Object.entries(total.cards).filter(([, n]) => n).sort()), 'copies');
+      assert.deepEqual(c.battleXp, Object.fromEntries(Object.entries(total.battleXp).filter(([, n]) => n)), 'battle XP');
       assert.deepEqual(c.visits, Object.fromEntries(Object.entries(total.visits).filter(([, n]) => n).sort()), 'visits');
       for (const [id, xp] of Object.entries(c.cardXp)) assert.ok(xp <= CARD_XP_CAP && xp >= Math.min(CARD_XP_CAP, total.cardXp[id] ?? 0), id);
       assert.ok(p.team.every(id => p.collection[id]));
