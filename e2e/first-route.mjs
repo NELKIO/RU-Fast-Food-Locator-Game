@@ -243,6 +243,15 @@ try {
   assert.equal(await p.locator('[data-act="claim"]').count(), 0);
   assert.deepEqual((await saved(p)).collection, afterBattle.collection);
   log('Wild fight from the reward, deck edits, earned fighters and six-hour location cooldown survive reload');
+  // «Подобрать»: the deck becomes the strongest owned fighters (up to three).
+  await p.locator('.main-nav [data-nav="collection"]').click();
+  const ownedBefore = Object.keys((await saved(p)).collection).length;
+  if (ownedBefore > 1) {
+    await p.locator('[data-deck-auto]').click();
+    await p.waitForFunction((key) => JSON.parse(localStorage.getItem(key)).team.length > 0, profileKey);
+    await p.waitForTimeout(200);
+    assert.equal((await saved(p)).team.length, Math.min(3, ownedBefore), 'the suggested deck is full');
+  }
   // The trainer's team follows the strength of the own team, not its order; «Новая команда» rolls a new one.
   await p.locator('.main-nav [data-nav="arena"]').click();
   await p.locator('.duel-trainer').waitFor();

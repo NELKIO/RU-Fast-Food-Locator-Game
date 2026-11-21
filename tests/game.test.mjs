@@ -359,3 +359,19 @@ test('login spins favour dishes the player does not have yet', () => {
   }
   assert.ok(newOnes / total > 0.65, `new fighters in ${newOnes} of ${total} spins`);
 });
+
+test('the suggested team: the three strongest by measured strength and level, the strongest leads', async () => {
+  const { suggestTeam } = await import('../public/js/game.js');
+  const { RATING } = await import('../public/js/ratings.js');
+  const card = (id, level = 1) => cardFor(realMenu.find(m => m.id === id), level);
+  // At level 5 only the measured strength counts.
+  const owned = ['bk-fries', 'bk-big-king', 'vkusno-nuggets', 'dodo-pepperoni', 'rostics-strips'].map(id => card(id, 5));
+  const team = suggestTeam(owned);
+  assert.equal(team.length, 3);
+  assert.deepEqual(new Set(team), new Set(['bk-big-king', 'dodo-pepperoni', [ 'bk-fries', 'vkusno-nuggets', 'rostics-strips'].sort((a, b) => RATING[b] - RATING[a])[0]]));
+  assert.ok(RATING[team[0]] >= RATING[team[1]] && RATING[team[1]] >= RATING[team[2]], 'the strongest leads');
+  // A well-trained common can beat an untrained rarer one.
+  const trained = suggestTeam([card('bk-fries', 10), card('rostics-strips', 1)]);
+  assert.equal(trained[0], 'bk-fries');
+  assert.deepEqual(suggestTeam([card('vkusno-nuggets')]), ['vkusno-nuggets'], 'fewer than three: all of them');
+});

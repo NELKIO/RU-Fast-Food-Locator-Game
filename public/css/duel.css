@@ -478,3 +478,7 @@
 @media (prefers-reduced-motion: reduce) {
   .duel-morph-old { display: none; }
 }
+/* The suggested team sits right of the team heading and wraps under it on a narrow screen. */
+.duel-team-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 10px; }
+.duel-team-head h3 { flex: 1 1 220px; margin: 0; }
+.duel-page .duel-team-head .duel-quiet { border-color: var(--duel-line); padding: 7px 12px; }

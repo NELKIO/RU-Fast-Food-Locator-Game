@@ -11,6 +11,7 @@ import {
   cardFor,
   collectionCards,
   setTeam,
+  suggestTeam,
   todayRoute,
   wildEncounter,
   wildFighter,
@@ -965,7 +966,9 @@ function renderCollection() {
   const deckBox = count
     ? '<section class="deck panel" aria-labelledby="deck-title"><div class="deck-head"><h2 id="deck-title">Колода</h2><small>' +
       deck.length +
-      ' из 3 · выходят по порядку</small></div><div class="deck-slots">' +
+      ' из 3 · выходят по порядку</small>' +
+      (count > 1 ? '<button type="button" class="soft-btn deck-auto" data-deck-auto>' + icon('spark', 15) + 'Подобрать</button>' : '') +
+      '</div><div class="deck-slots">' +
       slots +
       '</div></section>'
     : '';
@@ -1113,12 +1116,26 @@ function showCard(id, { readOnly = false } = {}) {
       action,
   );
 }
+// The three strongest owned fighters (measured strength and level), the strongest leading.
+async function autoTeam() {
+  const cards = strongCards().filter((c) => Object.hasOwn(profile.collection, c.id));
+  const best = suggestTeam(cards);
+  if (!best.length) return;
+  if (best.join() === profile.team.join()) return showToast('Это уже самая сильная команда.');
+  const result = await store.update((p) => setTeam(p, best));
+  if (result.ok) {
+    const names = best.map((id) => cards.find((c) => c.id === id)?.name).filter(Boolean);
+    showToast('Команда: ' + names.join(', '));
+  }
+}
 $('collection-view').addEventListener('click', (e) => {
   const f = e.target.closest('[data-catalog]'),
     card = e.target.closest('[data-card]'),
     open = e.target.closest('[data-open]'),
-    deckEdit = e.target.closest('[data-deck-add], [data-deck-remove]');
-  if (deckEdit) toggleTeam(deckEdit.dataset.deckAdd || deckEdit.dataset.deckRemove);
+    deckEdit = e.target.closest('[data-deck-add], [data-deck-remove]'),
+    auto = e.target.closest('[data-deck-auto]');
+  if (auto) autoTeam();
+  else if (deckEdit) toggleTeam(deckEdit.dataset.deckAdd || deckEdit.dataset.deckRemove);
   else if (f) {
     collectionFilter = f.dataset.catalog;
     renderCollection();
