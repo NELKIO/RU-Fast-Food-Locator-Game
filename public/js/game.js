@@ -1,3 +1,4 @@
+import {RATING} from './ratings.js';
 import { FIGHTERS, RARITIES, RENAMED, ROLES } from './fighters.js';
 
 export const VISIT_COOLDOWN_MS = 6 * 60 * 60 * 1000;
@@ -349,6 +350,23 @@ export function teamCards(profile, menu) {
   const saved = normalizeProfile(profile);
   const catalogue = new Map(menuItems(menu).map(item => [String(item.id), item]));
   return saved.team.filter(id => catalogue.has(id)).map(id => ownedCard(catalogue.get(id), saved.collection[id]));
+}
+
+// The suggested team: the three fighters that help most, by their measured strength (RATING, at
+// level 5) corrected for their own level. In battle a fighter's chances grow with health × attack;
+// about 3 points of strength per unit of log power, as the balance runs show. The strongest leads.
+const LEVEL_WEIGHT = 3;
+export function suggestTeam(cards) {
+  const score = card => {
+    const base = FIGHTERS[card.id];
+    if (!base) return -Infinity;
+    const ref = (base.hp + 8) * (base.attack + 2); // health and attack at level 5
+    return (RATING[card.id] ?? 0) + LEVEL_WEIGHT * Math.log((card.maxHp * card.attack) / ref);
+  };
+  return [...cards].filter(card => card && FIGHTERS[card.id])
+    .map(card => ({id: card.id, value: score(card)}))
+    .sort((a, b) => b.value - a.value || (a.id < b.id ? -1 : 1))
+    .slice(0, MAX_TEAM_SIZE).map(entry => entry.id);
 }
 
 export function setTeam(profile, ids) {

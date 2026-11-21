@@ -2,6 +2,7 @@ import { brands, countdown, esc, icon, rarityNames, transformBadge } from './ui.
 import { applyMove, battleStats, currentFighter, legalMoves, MAX_ENERGY, opener, startBattle } from './duel-engine.js';
 import { smartMove } from './duel-ai.js';
 import { describeSkill, describeTrait, describeTransform } from './fighters.js';
+import { suggestTeam } from './game.js';
 import { DuelRoom, newRoomCode, parseRoomCode, RECONNECT_MS } from './duel-room.js';
 import { connectDuel } from './duel-transport.js';
 import { createFx } from './battle-fx.js';
@@ -366,7 +367,8 @@ export function mountDuels(container, options) {
         <button type="button" class="duel-slot" data-duel-action="pick:${esc(id)}" aria-pressed="${number >= 0}" aria-label="${esc(label)}"
           ${locked || (number < 0 && selected.length === 3) ? 'disabled' : ''}>${number < 0 ? '+' : number + 1}</button></div>`;
     }).join('');
-    return `<section class="duel-team"><h3>Твоя команда <small>${selected.length} из 3 · выходят по номерам · нажми на бойца, чтобы открыть карточку</small></h3>
+    const auto = !locked && owned.length > 1 ? button('team-auto', 'Подобрать команду', { quiet: true, icon: 'spark' }) : '';
+    return `<section class="duel-team"><div class="duel-team-head"><h3>Твоя команда <small>${selected.length} из 3 · выходят по номерам · нажми на бойца, чтобы открыть карточку</small></h3>${auto}</div>
       <div class="duel-roster">${items}</div></section>`;
   }
 
@@ -980,6 +982,11 @@ export function mountDuels(container, options) {
     else if (action === 'trainer') startTrainer();
     else if (action === 'trainer-new') { trainerFor(true); draw(); }
     else if (action === 'trainer-roll') { trainerRoll++; trainerFor(); draw(); }
+    // The three strongest owned fighters by measured strength and level, the strongest first.
+    else if (action === 'team-auto') {
+      const best = suggestTeam(owned.map(id => catalog.get(id)));
+      if (best.length && !room?.team) { selected = best; saveTeam(); trainerFor(); draw(); }
+    }
     else if (action.startsWith('trainer-level:')) { data.setTrainerLevel?.(action.slice(14)); trainerFor(); draw(); }
     else if (action === 'trainer-again') { trainerFor(true); startTrainer(); }
     else if (action === 'online') reset('online');

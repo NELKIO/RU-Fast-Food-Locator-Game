@@ -676,3 +676,5 @@ button:disabled, .duel-page button:disabled {
 @media (min-width: 701px) {
   .nearby .venue-list { max-height: none; min-height: 0; }
 }
+/* «Подобрать»: the suggested team, next to the deck heading. */
+.deck-head .deck-auto { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 13px; }
