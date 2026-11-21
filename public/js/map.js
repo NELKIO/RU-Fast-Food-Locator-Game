@@ -55,6 +55,7 @@ export function makeMap({ onPick, venues }) {
     selected = null,
     target = null,
     fix = null;
+  let playerMarker;
 
   function pinIcon(group, isSelected, active) {
     const lead = group[0];
@@ -234,7 +235,7 @@ export function makeMap({ onPick, venues }) {
         interactive: false,
       }).addTo(paths);
     }
-    L.marker(origin, {
+    playerMarker = L.marker(origin, {
       icon: L.divIcon({ className: 'user-map-dot' + (fix ? ' live' : ''), iconSize: [14, 14], iconAnchor: [7, 7] }),
       title: fix ? 'Твоя позиция' : 'Центр обзора',
       interactive: false,
@@ -277,6 +278,9 @@ export function makeMap({ onPick, venues }) {
   }).observe(card);
   let centered = false;
   const update = (s, options = {}) => {
+    // Follow a confirmed relocation only if the player was looking at the previous position.
+    const bounds = map.getBounds();
+    const follow = options.follow && fix && s.fix && bounds.contains(point(fix)) && !bounds.contains(point(s.fix));
     const locChanged =
       fix?.lat !== s.fix?.lat || fix?.lon !== s.fix?.lon || fix?.accuracy !== s.fix?.accuracy;
     const pathChanged = locChanged || target?.id !== s.target?.id;
@@ -284,9 +288,8 @@ export function makeMap({ onPick, venues }) {
       brand !== s.brand || selected?.id !== s.selected?.id || target?.id !== s.target?.id;
     ({ brand, selected, target, fix } = s);
     if (pathChanged) drawPaths();
-    if (options.center) {
-      // The first GPS fix glides there; later ones jump only if the map was never moved. A hidden map
-      // (the arena was opened first) has no size to animate in, so it just jumps.
+    if (options.center || follow) {
+      // A hidden map (e.g. the arena was opened first) has no size to animate in.
       if (centered || !card.offsetWidth) map.setView(point(fix || MOSCOW), centered ? Math.max(14, map.getZoom()) : 15);
       else map.flyTo(point(fix || MOSCOW), 15, { duration: 0.8 });
       centered = true;
@@ -298,6 +301,11 @@ export function makeMap({ onPick, venues }) {
   drawLocations();
   return {
     update,
+    setPositionLabel(label, live) {
+      const element = playerMarker.getElement();
+      element.title = label;
+      element.classList.toggle('live', live);
+    },
     resize: () => requestAnimationFrame(() => map.invalidateSize({ pan: false })),
     recenter,
   };
