@@ -4,6 +4,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { checkDesktopZoom, checkMobilePinch, observeMapZoom } from './map-zoom.mjs';
 
 // Serve at the real Pages-style subpath so root-relative assets break this test.
 const root = fileURLToPath(new URL('../public/', import.meta.url));
@@ -74,6 +75,26 @@ async function checkWidth(page) {
 }
 async function saved(page) {
   return page.evaluate((key) => JSON.parse(localStorage.getItem(key)), profileKey);
+}
+// Read the coordinates of the visible Leaflet marker, independently of pan, zoom and scrolling.
+async function playerMarker(page) {
+  return page.locator('#map .user-map-dot').evaluate((dot) => {
+    const marker = window.lastPlayerMarker;
+    if (marker?.getElement() !== dot) throw new Error('The displayed player marker was not recorded');
+    const { lat, lng } = marker.getLatLng();
+    return [lat, lng];
+  });
+}
+async function gpsSample(context, page, point, accuracy) {
+  const previous = await page.evaluate(() => window.deliveredGps?.timestamp ?? 0);
+  await context.setGeolocation({ ...point, accuracy });
+  // A negative assertion is meaningful only after the browser has delivered this particular fix.
+  await page.waitForFunction(({ previous, latitude, longitude, accuracy }) => {
+    const fix = window.deliveredGps;
+    return fix?.timestamp > previous && fix.latitude === latitude &&
+      fix.longitude === longitude && fix.accuracy === accuracy;
+  }, { previous, ...point, accuracy });
+  return page.evaluate(() => window.deliveredGps.timestamp);
 }
 async function battle(page) {
   const final = page.getByRole('heading', { name: /^(Победа!|Поражение|Ничья)$/ });
@@ -146,14 +167,38 @@ try {
   }
   log('Two tabs share one statistics identity with Web Locks and with the IndexedDB fallback');
 
+  const street = { latitude: 55.751, longitude: 37.626 };
+  const restaurant = { latitude: 55.7561, longitude: 37.6149 };
+  const nearDoor = { ...restaurant, latitude: restaurant.latitude + 0.000025 };
   const mobile = await browser.newContext({
     viewport: { width: 390, height: 844 },
     isMobile: true,
     hasTouch: true,
     reducedMotion: 'reduce',
-    geolocation: { latitude: 55.751, longitude: 37.626, accuracy: 15 },
+    geolocation: { ...street, accuracy: 15 },
     permissions: ['geolocation'],
     locale: 'ru-RU',
+  });
+  await mobile.addInitScript(() => {
+    const gps = navigator.geolocation;
+    const watch = gps.watchPosition.bind(gps);
+    const get = gps.getCurrentPosition.bind(gps);
+    let lastPosition;
+    gps.watchPosition = (onPosition, onError, options) => watch((position) => {
+      lastPosition = position;
+      onPosition(position);
+      const { latitude, longitude, accuracy } = position.coords;
+      window.deliveredGps = { latitude, longitude, accuracy, timestamp: position.timestamp };
+    }, onError, options);
+    // A stationary receiver can return its last measurement to a one-shot query, timestamp intact.
+    gps.getCurrentPosition = (onPosition, onError, options) => {
+      if (!lastPosition) return get(onPosition, onError, options);
+      const cached = lastPosition;
+      queueMicrotask(() => {
+        onPosition(cached);
+        window.replayedGpsAt = cached.timestamp;
+      });
+    };
   });
   await offline(mobile);
   const p = await watchPage(mobile);
@@ -213,14 +258,52 @@ try {
   await p.locator('[data-point]').nth(1).click();
   await p.getByRole('button', { name: /Текущая цель/ }).click();
   assert.match(await p.locator('.route-detail').textContent(), /Манежная/);
-  await mobile.setGeolocation({ latitude: 55.7561, longitude: 37.6149, accuracy: 750 });
-  await p.waitForFunction(() =>
-    document.getElementById('geo-status').textContent.includes('неточен'),
-  );
+  await p.evaluate(() => {
+    window.L.Marker.addInitHook(function () {
+      if (this.options.icon?.options.className?.split(' ').includes('user-map-dot')) {
+        window.lastPlayerMarker = this;
+      }
+    });
+  });
+  await gpsSample(mobile, p, restaurant, 750);
+  await p.locator('#geo-status').filter({ hasText: /неточен/ }).waitFor();
   assert.equal(await p.locator('[data-act="claim"]').count(), 0);
-  await mobile.setGeolocation({ latitude: 55.7561, longitude: 37.6149, accuracy: 12 });
+  await gpsSample(mobile, p, street, 14);
+  assert.ok(await p.locator('#geo-status').isHidden(), 'a fresh street fix clears the poor-GPS notice');
+  assert.equal(await p.locator('.route-stat').textContent(), far);
+  const streetMarker = await playerMarker(p);
+  assert.deepEqual(streetMarker, [street.latitude, street.longitude]);
+  const stillOnStreet = async (description) => {
+    assert.equal(await p.locator('.route-stat').textContent(), far, description + ': distance');
+    assert.deepEqual(await playerMarker(p), streetMarker, description + ': map marker');
+    assert.equal(await p.locator('[data-act="claim"]').count(), 0, description + ': reward');
+  };
+  // Street → door → street: the return cancels the first roughly 900 m jump.
+  const firstJump = await gpsSample(mobile, p, nearDoor, 11);
+  await stillOnStreet('An isolated jump to the restaurant');
+  await p.waitForFunction((time) => window.replayedGpsAt === time, firstJump);
+  await stillOnStreet('Replaying the same measurement for a stationary phone');
+  await gpsSample(mobile, p, street, 13);
+  await stillOnStreet('One reading back on the original street');
+  // If that return failed to cancel the suspicion, this next jump could unlock the reward alone.
+  const nextJump = await gpsSample(mobile, p, nearDoor, 10);
+  await stillOnStreet('First reading of the new arrival');
+  await p.waitForFunction((time) => Date.now() >= time + 1200, nextJump);
+  const confirmedAt = await gpsSample(mobile, p, restaurant, 12);
+  assert.ok(confirmedAt - nextJump >= 1000, 'two independent fixes near the door');
   await p.locator('[data-act="claim"]').waitFor();
   assert.equal(await p.locator('.route-stat').textContent(), '0 м');
+  const arrivalMarker = await playerMarker(p);
+  assert.deepEqual(arrivalMarker, [restaurant.latitude, restaurant.longitude],
+    'the player marker moves to the confirmed location');
+  // Last known position at the door is no proof of visiting while a jump away is unresolved.
+  await gpsSample(mobile, p, street, 9);
+  assert.equal(await p.locator('.route-stat').textContent(), '0 м');
+  assert.deepEqual(await playerMarker(p), arrivalMarker);
+  assert.equal(await p.locator('[data-act="claim"]').count(), 0, 'a jump away suspends the open reward');
+  await gpsSample(mobile, p, restaurant, 8);
+  await p.locator('[data-act="claim"]').waitFor();
+  log('GPS jumps, repeated timestamps and a poor fix cannot unlock the reward; a confirmed arrival can');
   await p.locator('[data-act="claim"]').click();
   const toArena = p.getByRole('button', { name: 'На арену' });
   await toArena.waitFor();
@@ -349,6 +432,7 @@ try {
   });
   await offline(denied);
   const q = await watchPage(denied);
+  await observeMapZoom(q);
   await q.goto(base);
   await q.getByRole('button', { name: 'Поехали' }).click();
   await q.locator('[data-point]').first().waitFor();
@@ -359,6 +443,8 @@ try {
   assert.equal(await q.locator('#map-location').textContent(), 'Москва · обзор');
   assert.equal(await q.locator('[data-act="claim"]').count(), 0);
   await checkWidth(q);
+  await checkMobilePinch(q);
+  log('Two-finger pinch changes the mobile map in both directions and preserves page scale');
   await q.locator('.main-nav [data-nav="arena"]').click();
   await q.getByRole('button', { name: 'Сразиться' }).click();
   await battle(q);
@@ -407,6 +493,7 @@ try {
     }
   });
   const d = await watchPage(desktop);
+  await observeMapZoom(d);
   await d.goto(base);
   await d.getByRole('button', { name: 'Поехали' }).click();
   await d.locator('[data-point]').first().waitFor();
@@ -460,12 +547,12 @@ try {
   assert.equal(await d.locator('#map-size').getAttribute('aria-pressed'), 'true');
   await d.keyboard.press('Escape');
   assert.equal(await d.locator('#map-size').getAttribute('aria-pressed'), 'false');
-  await d.locator('#zoom-in').click();
-  await d.locator('#zoom-out').click();
   await d.locator('#sound').click();
   assert.equal(await d.locator('#sound').getAttribute('aria-pressed'), 'false');
   await checkWidth(d);
   await capture(d, 'desktop-radar');
+  await checkDesktopZoom(d);
+  log('Map zoom stays anchored and the page scrolls outside the map');
   assert.deepEqual(errors, []);
   assert.deepEqual(missing, []);
   log('Desktop map controls, sound toggle, clean runtime and all local resources present');

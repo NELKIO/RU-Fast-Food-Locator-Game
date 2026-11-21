@@ -10,7 +10,11 @@ export const GPS_RULES = Object.freeze({
   maxAccuracy: 120,
   maxAgeMs: 120_000,
   futureToleranceMs: 10_000,
+  minConfirmationMs: 1000,
+  confirmationWindowMs: 30_000,
 });
+
+export const INITIAL_GPS_TRACK = Object.freeze({fix: null, candidate: null, status: 'empty', lastTimestamp: -1});
 
 const BRANDS = new Set(['bk', 'vkusno', 'rostics', 'dodo']);
 // Each chain has two legendaries: 1.5% each per visit.
@@ -291,6 +295,49 @@ export function distanceMeters(from, to) {
   return 2 * 6_371_008.8 * Math.asin(Math.sqrt(Math.min(1, Math.max(0, h))));
 }
 
+function accurateGps(accuracy) {
+  return Number.isFinite(accuracy) && accuracy >= 0 && accuracy <= GPS_RULES.maxAccuracy;
+}
+
+function freshGps(sampleTime, now) {
+  return sampleTime !== null && timestamp(now) !== null &&
+    now - sampleTime <= GPS_RULES.maxAgeMs && sampleTime - now <= GPS_RULES.futureToleranceMs;
+}
+
+// The map keeps its last reliable fix (or a coarse first estimate). Only 'ready' can prove a visit.
+export function updateGpsTrack(track, position, now = Date.now()) {
+  const point = coordinate(position);
+  const time = timestamp(position?.timestamp);
+  if (!point || time === null || !Number.isFinite(point.accuracy) || point.accuracy < 0 || time <= track.lastTimestamp) return track;
+  if (!freshGps(time, now)) {
+    // A future timestamp must not prevent the next real reading from being accepted.
+    return track.fix || track.status === 'stale' ? track : {...track, status: 'stale'};
+  }
+  const sample = {...point, timestamp: time};
+  const anchor = track.fix && accurateGps(track.fix.accuracy) ? track.fix : null;
+  if (!accurateGps(sample.accuracy)) {
+    return {fix: anchor ?? sample, candidate: null, status: 'inaccurate', lastTimestamp: time};
+  }
+  if (anchor) {
+    const candidate = track.candidate;
+    const agrees = candidate && distanceMeters(candidate, sample) <=
+      Math.max(50, Math.min(GPS_RULES.maxAccuracy, candidate.accuracy + sample.accuracy));
+    // Allow ordinary urban travel (15 m/s) and the uncertainty of both readings. Cap the
+    // elapsed allowance so the first fix after a long sleep cannot silently jump across a city.
+    const seconds = Math.min(30, (time - anchor.timestamp) / 1000);
+    const travelLimit = Math.max(100, anchor.accuracy + sample.accuracy) + 15 * seconds;
+    if (agrees || distanceMeters(anchor, sample) > travelLimit) {
+      if (!agrees || time - candidate.timestamp > GPS_RULES.confirmationWindowMs) {
+        return {fix: anchor, candidate: sample, status: 'confirming', lastTimestamp: time};
+      }
+      if (time - candidate.timestamp < GPS_RULES.minConfirmationMs) {
+        return {...track, lastTimestamp: time};
+      }
+    }
+  }
+  return {fix: sample, candidate: null, status: 'ready', lastTimestamp: time};
+}
+
 export function nearestRestaurants(points, brand, fix, limit = 10) {
   if (!Array.isArray(points) || !coordinate(fix)) return [];
   const matches = [];
@@ -308,7 +355,7 @@ export function visitStatus(profile, point, fix, now = Date.now()) {
   const position = coordinate(fix);
   const distance = distanceMeters(point, position);
   const accuracy = position?.accuracy;
-  const reliable = Number.isFinite(accuracy) && accuracy >= 0 && accuracy <= GPS_RULES.maxAccuracy;
+  const reliable = accurateGps(accuracy);
   const radius = GPS_RULES.baseRadius + (reliable ? Math.min(accuracy, GPS_RULES.maxRadiusBonus) : 0);
   const last = id ? timestamp(profile?.visits?.[id]?.lastAt) : null;
   const remainingMs = last === null ? 0 : Math.max(0, last + VISIT_COOLDOWN_MS - now);
@@ -317,7 +364,7 @@ export function visitStatus(profile, point, fix, now = Date.now()) {
   if (!id || !coordinate(point) || !BRANDS.has(point.brand)) reason = 'invalid-point';
   else if (remainingMs > 0) reason = 'cooldown';
   else if (!position) reason = 'no-location';
-  else if (sample === null || timestamp(now) === null || now - sample > GPS_RULES.maxAgeMs || sample - now > GPS_RULES.futureToleranceMs) reason = 'stale';
+  else if (!freshGps(sample, now)) reason = 'stale';
   else if (!reliable) reason = 'inaccurate';
   else if (distance > radius) reason = 'too-far';
   return {ok: reason === 'ready', reason, distance, radius, remainingMs};

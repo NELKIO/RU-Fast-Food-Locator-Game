@@ -72,39 +72,41 @@
         <div class="filters" id="brands" role="group" aria-label="Сеть ресторанов"></div>
         <div class="radar-grid">
           <section class="map-card" id="map-card" aria-label="Карта заведений">
-            <div id="map" aria-label="Интерактивная карта"></div>
-            <div class="map-top">
-              <span class="map-tag"
-                ><span class="status-dot"></span><span id="map-location">Москва · обзор</span></span
-              >
-              <button
-                type="button"
-                class="map-tool"
-                id="map-size"
-                aria-label="Развернуть карту"
-                aria-pressed="false"
-              >
-                <i data-icon="resize"></i>
-              </button>
-            </div>
-            <div class="map-tools">
-              <div class="zoom-set">
-                <button type="button" id="zoom-in" aria-label="Приблизить карту">
-                  <i data-icon="plus"></i></button
-                ><button type="button" id="zoom-out" aria-label="Отдалить карту">
-                  <i data-icon="minus"></i>
+            <div id="map" aria-label="Интерактивная карта">
+              <div class="map-top">
+                <span class="map-tag">
+                  <span class="status-dot"></span><span id="map-location">Москва · обзор</span>
+                </span>
+                <button
+                  type="button"
+                  class="map-tool"
+                  id="map-size"
+                  aria-label="Развернуть карту"
+                  aria-pressed="false"
+                >
+                  <i data-icon="resize"></i>
                 </button>
               </div>
-              <button
-                type="button"
-                class="map-tool"
-                id="recenter"
-                aria-label="Вернуть карту к точке отсчёта"
-              >
-                <i data-icon="gps"></i>
-              </button>
+              <div class="map-tools">
+                <div class="zoom-set">
+                  <button type="button" id="zoom-in" aria-label="Приблизить карту">
+                    <i data-icon="plus"></i>
+                  </button>
+                  <button type="button" id="zoom-out" aria-label="Отдалить карту">
+                    <i data-icon="minus"></i>
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  class="map-tool"
+                  id="recenter"
+                  aria-label="Вернуть карту к точке отсчёта"
+                >
+                  <i data-icon="gps"></i>
+                </button>
+              </div>
+              <div class="map-key"><b></b><span id="map-key-label">Центр обзора</span></div>
             </div>
-            <div class="map-key"><b></b><span id="map-key-label">Центр обзора</span></div>
           </section>
           <section class="route-box panel" id="route-box" aria-label="Цель"></section>
           <section class="nearby panel" aria-labelledby="near-title">

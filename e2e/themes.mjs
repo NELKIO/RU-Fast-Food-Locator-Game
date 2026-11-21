@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
 
 // Run npm start in another terminal, or point this test at a Pages-style preview.
@@ -81,7 +82,8 @@ async function renderedColors(page) {
 }
 
 async function chooseTheme(page, theme) {
-  const requestsBefore = await page.evaluate(() => window.geolocationCalls);
+  await page.waitForFunction(() => window.geolocationCalls.watchPosition > 0);
+  const watchesBefore = await page.evaluate(() => window.geolocationCalls.watchPosition);
   await page.locator('#theme-btn').click();
   const dialog = page.getByRole('dialog');
   const choices = dialog.locator('button[data-pick-theme]');
@@ -95,7 +97,8 @@ async function chooseTheme(page, theme) {
   await dialog.locator(`button[data-pick-theme="${theme}"]`).click();
   await dialog.waitFor({ state: 'hidden' });
   assert.equal(await page.locator('html').getAttribute('data-theme'), theme);
-  assert.equal(await page.evaluate(() => window.geolocationCalls), requestsBefore, 'Theme selection must not start GPS');
+  assert.equal(await page.evaluate(() => window.geolocationCalls.watchPosition), watchesBefore,
+    'Theme selection must not restart location tracking');
 }
 
 async function assertBrand(page, brand) {
@@ -130,12 +133,12 @@ try {
   });
   await context.grantPermissions([], { origin: url.origin });
   await context.addInitScript(() => {
-    let calls = 0;
-    Object.defineProperty(window, 'geolocationCalls', { get: () => calls });
+    const calls = { watchPosition: 0, getCurrentPosition: 0 };
+    window.geolocationCalls = calls;
     for (const method of ['getCurrentPosition', 'watchPosition']) {
       const actual = navigator.geolocation[method].bind(navigator.geolocation);
       Object.defineProperty(navigator.geolocation, method, {
-        value(...args) { calls++; return actual(...args); },
+        value(...args) { calls[method]++; return actual(...args); },
       });
     }
   });
@@ -182,7 +185,9 @@ try {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await firstRow.waitFor();
     assert.equal(await page.locator('html').getAttribute('data-theme'), theme, 'Theme survives reload');
-    assert.equal(await page.evaluate(() => window.geolocationCalls), 1, 'Each load asks for location once, by itself');
+    await page.waitForFunction(() => window.geolocationCalls.watchPosition > 0);
+    assert.deepEqual(await page.evaluate(() => window.geolocationCalls), { watchPosition: 1, getCurrentPosition: 0 },
+      'Every fresh page starts one location watch without asking for a second reading');
   }
   assert.equal(signatures.size, themes.length, 'Six themes produce six different rendered palettes');
   console.log('PASS Six distinct mobile palettes, contrast, width, one automatic location request per load and persistence');
@@ -198,8 +203,11 @@ try {
       const selectedId = await chooseRestaurant(page, brand);
       await assertBrand(page, active || brand);
       const destination = byId.get(selectedId);
-      await context.setGeolocation({ latitude: destination.lat, longitude: destination.lon, accuracy: 8 });
+      await context.setGeolocation({ latitude: destination.lat + 0.000025, longitude: destination.lon, accuracy: 9 });
       await page.locator('#route-box button[data-act="target"]').click();
+      // Moving between restaurants needs two independent readings a few metres apart.
+      await delay(1200);
+      await context.setGeolocation({ latitude: destination.lat, longitude: destination.lon, accuracy: 8 });
       await page.locator('#route-box button[data-act="claim"]').waitFor();
       const ratio = await assertBrand(page, brand);
       assert.ok(ratio, 'Measured the active restaurant’s ready-to-claim button');
